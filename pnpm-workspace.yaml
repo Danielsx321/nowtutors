@@ -1,0 +1,10 @@
+# Single-package repo. Also carries pnpm settings that pnpm 11+ no longer
+# reads from package.json. Native post-install build scripts are denied by
+# default; Phase 0 does not require any of them (sharp = runtime image
+# optimization, @sentry/cli = source-map upload needing an auth token we do
+# not set, esbuild/unrs-resolver ship prebuilt platform binaries).
+allowBuilds:
+  '@sentry/cli': false
+  esbuild: false
+  sharp: false
+  unrs-resolver: false

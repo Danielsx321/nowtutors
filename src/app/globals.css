@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* Brand tokens — SPEC §10.1. Tokens only; no component styles in Phase 0. */
+@theme {
+  /* Brand */
+  --color-purple-500: #8434a8; /* primary — buttons, links, active states */
+  --color-purple-700: #6b2a8a; /* hover */
+  --color-purple-100: #f3e8f8; /* tints, selected backgrounds */
+  --color-ink-900: #332042; /* app background, dark surfaces */
+  --color-ink-800: #3e2a50; /* elevated dark surface */
+  --color-gold-400: #fee401; /* CTA — high contrast on ink */
+  --color-live-500: #44c96f; /* live indicators only */
+
+  /* Neutrals */
+  --color-white: #ffffff;
+  --color-gray-50: #fafafb;
+  --color-gray-200: #e7e5ea;
+  --color-gray-500: #6e6880;
+  --color-gray-700: #453d57;
+
+  /* Semantic */
+  --color-success: #44c96f;
+  --color-warning: #f5a524;
+  --color-danger: #e5484d;
+
+  /* Type — the DM Sans face is provided by next/font via --font-dm-sans */
+  --font-sans: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui,
+    sans-serif;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+body {
+  font-family: var(--font-sans);
+}
