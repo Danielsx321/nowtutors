@@ -110,3 +110,55 @@ inferred spec where the export disagrees; SPEC §4 amended in the same commit.
 - **Seed placeholders (Decision D).** `platform_settings` values are provisional pending
   SPEC §18 answers. Credit packages seeded at **1 credit = 1 minute** (credits ≡ minutes). The
   seed subject list is a placeholder pending the real Bubble Subjects export.
+
+## Phase 2 — Design system
+
+Approved with the user before building (scope + deps). Implements SPEC §10.1/§10.2 and
+the §16 Phase 2 layouts. No data/auth work.
+
+- **Scope: primitives only.** Phase 2 builds the **34 §10.2 primitives** + layouts. The 11
+  **Composed** components (`TutorCard`, `BookingCard`, `SlotPicker`, `AvailabilityGrid`,
+  `MessageBubble`, `ConversationListItem`, `TransactionRow`, `VideoTile`, `SessionControlBar`,
+  `IncomingRequestModal`, `WaitingForTutorModal`) are **deferred to their feature phases**
+  (they bind to domain data that doesn't exist yet — TutorCard→P3, BookingCard/Slot/Grid→P4,
+  Transaction→P5, session ones→P6, message ones→P9). Matches §16's "every primitive" wording.
+- **Dependencies added** (approved; all flow from §2's `shadcn/ui (Radix under the hood)` +
+  `date-fns`, none named literally so confirmed explicitly): `class-variance-authority`,
+  `clsx`, `tailwind-merge`, `lucide-react`, `sonner`, `react-day-picker`, `date-fns`, and
+  `@radix-ui/react-{dialog,tabs,tooltip,dropdown-menu,switch,checkbox,radio-group,select,label,slot}`.
+  All pure-JS → no `pnpm-workspace.yaml allowBuilds` change.
+- **No `@radix-ui/react-popover`.** Modal **and** Drawer are both built on `@radix-ui/react-dialog`
+  (Drawer = side-positioned Dialog). DatePicker uses a **local popover** (open state + outside-
+  pointer/Escape close) — avoids a dependency not on the approved list.
+- **Third-party palettes mapped to tokens** (amendment #2). `sonner` runs `unstyled` with full
+  `classNames` overrides; `react-day-picker` is used **without importing its stylesheet**, all
+  colour via `classNames`. So neither ships its own palette and the brand grep stays clean.
+- **Token additions to `globals.css`** (the one allowed home for raw values): paired type-scale
+  tokens (`--text-h1` + `--text-h1--line-height`, amendment #3) for every §10.1 step; `--shadow-*`;
+  `container-page` + `focus-ring` `@utility`s; **hand-rolled Radix enter/exit keyframes** (no
+  animation dependency, amendment #4) driven by `data-slot`/`data-state`, all gated under a global
+  `prefers-reduced-motion` block.
+- **Button variants = primary/secondary/ghost/danger** (§10.2). `primary` is **purple**
+  (§10.1: "purple — buttons"); **gold is reserved for CTA emphasis** and is deliberately not a
+  Button variant (§10.1 rule: gold for primary CTAs only).
+- **Surface toggle catches purple-on-ink (amendment #1).** The kitchen sink renders every
+  primitive on a light surface and on ink-900 via a toggle. Finding, as expected from §10.1:
+  **on-surface-text primitives** (Ghost `Button`, `Breadcrumb`, `Pagination`, `PriceTag`/
+  `RatingStars` labels) use dark text and are **light-surface components** — low-contrast if
+  placed bare on ink. The dark authenticated shell composes them on white `Card`s, and its own
+  chrome (`SidebarNav`) uses light-on-dark with purple only as an active **fill**. `Card`/
+  `StatCard` carry an explicit `surface="ink"` variant; `LivePill` and fill-based `Badge`s are
+  surface-agnostic.
+- **No `setInterval` in the kitchen sink** (honours the CLAUDE.md polling rule). `ProgressRing`'s
+  `live` prop wires `role="timer"` + `aria-live`; the real per-second tick is the Phase 6
+  instant-request flow, not a demo loop.
+- **Filenames: kebab-case** in `components/ui/` (shadcn copy-in convention), imported via the
+  `@/components/ui` barrel.
+- **Single `/` resolver.** `src/app/page.tsx` moved to `src/app/(public)/page.tsx` so only the
+  (public) group resolves `/`. Public shell (header/footer) and the authenticated shell
+  (`AppShell`: dark sidebar + topbar + mobile drawer) are **presentational only** — the §6 role
+  guards (`requireRole`, tutor-approval gate) land in Phase 3. Nav is the static §6 config.
+- **`/dev/*` is dev-only.** `src/app/dev/layout.tsx` returns `notFound()` in production so the
+  kitchen-sink gallery never ships to real users.
+- **Avatar** hand-built (no `@radix-ui/react-avatar`) with an initials fallback that also fires on
+  image `onError`, so the "photos not rendering" failure never shows a broken image (§7.2).
