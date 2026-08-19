@@ -5,8 +5,50 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1787132151143,
-      "tag": "0000_loud_network",
+      "when": 1787146740640,
+      "tag": "0000_core_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787146787851,
+      "tag": "0001_constraints_and_extensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787146794312,
+      "tag": "0002_auth_integration",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787146799416,
+      "tag": "0003_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787146803847,
+      "tag": "0004_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787146807632,
+      "tag": "0005_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787146812037,
+      "tag": "0006_realtime",
       "breakpoints": true
     }
   ]

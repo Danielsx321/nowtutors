@@ -159,6 +159,18 @@ A cron sweep also exists (Section 12) to tidy the underlying rows, but correctne
 Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `created_at timestamptz not null default now()`, and `updated_at timestamptz not null default now()` unless stated. All timestamps are `timestamptz` stored in UTC. Money in USD is `numeric(10,2)`; credits are `integer`.
 
 > Reconcile against the Bubble editor export before implementing. Fields marked **[verify]** are inferred from behaviour rather than confirmed.
+>
+> **Phase 1 amendments (reconciled with the Bubble export; see `docs/DECISIONS.md`):**
+> `profiles.phone` dropped; `profiles.notification_preferences jsonb` added; `profiles.role`
+> nullable. `tutor_profiles.paypal_email` moved to a new `tutor_payout_details` table;
+> `tutor_profiles.instant_rate_credits_per_minute` made nullable (instant price derives from
+> `hourly_rate_credits / 60`). `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at` added.
+> `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`.
+> The `reviews` table is deferred (no Review type in the current build). `broadcasts` /
+> `broadcast_viewers` are NET-NEW, not parity. `platform_settings.presence_stale_seconds`
+> removed (threshold baked into the `live_tutors` view); `max_instant_minutes`,
+> `min_instant_credits`, `credit_packages` added. Booking overlap is a scheduled-only GiST
+> exclusion (`bookings_no_overlap`).
 
 ### 4.1 Identity
 
@@ -167,18 +179,18 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid PK | = auth.users.id |
-| role | enum `student` \| `tutor` \| `admin` | immutable after onboarding except by admin |
+| role | enum `student` \| `tutor` \| `admin` **nullable** | null until onboarding sets it; immutable after except by admin (Decision #5) |
 | email | text not null | mirrored from auth for querying |
 | full_name | text |  |
 | display_name | text |  |
 | avatar_url | text | Supabase Storage path |
-| phone | text | **[verify]** |
 | country | text (ISO 3166-1 alpha-2) |  |
 | timezone | text (IANA, e.g. `Asia/Shanghai`) | default from browser at signup |
 | bio | text |  |
 | onboarding_completed_at | timestamptz | null until onboarding done |
 | is_suspended | boolean default false | admin action |
 | last_seen_at | timestamptz | general presence, all roles |
+| notification_preferences | jsonb not null default `'{}'` | opt-out model; missing key = on (§11) |
 
 **`tutor_profiles`** — one row per tutor, created at tutor onboarding.
 
@@ -193,9 +205,8 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer not null | see Section 7.4 |
+| instant_rate_credits_per_minute | integer **nullable** | optional; instant price derives from `hourly_rate_credits / 60` |
 | accepts_instant | boolean default true |  |
-| paypal_email | text | payout destination |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
 | approved_at | timestamptz |  |
@@ -208,6 +219,10 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | total_minutes_taught | integer default 0 |  |
 
 Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(hourly_rate_credits)`, GIN on `languages`.
+
+**`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
+
+`tutor_id uuid unique FK → profiles.id, payout_method enum('paypal') default 'paypal', paypal_email text`
 
 **`subjects`** — `id, name, slug unique, icon, sort_order, is_active`. Seeded (Section 18 open question: the canonical list).
 
@@ -257,10 +272,12 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 | cancelled_by | uuid FK → profiles.id |  |
 | cancellation_reason | text |  |
 | student_notes | text | "what I want help with" |
+| reminder_24h_sent_at | timestamptz | idempotency stamp for the 24h reminder cron (Decision #2) |
+| reminder_1h_sent_at | timestamptz | idempotency stamp for the 1h reminder cron |
 
 `status` enum: `pending_payment`, `confirmed`, `in_progress`, `completed`, `cancelled_by_student`, `cancelled_by_tutor`, `no_show_student`, `no_show_tutor`, `expired`.
 
-Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, scheduled_start_at)` for cron, unique partial index preventing a tutor having two `confirmed`/`in_progress` bookings that overlap.
+Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, scheduled_start_at)` for cron. Overlap prevention is a scheduled-only GiST exclusion constraint `bookings_no_overlap` (`tutor_id =`, `tstzrange(scheduled_start_at, scheduled_end_at) &&`) `where type='scheduled' and status in ('confirmed','in_progress')` — requires `btree_gist` (Decision #6).
 
 **`session_requests`** — the instant-session handshake. Replaces `has_live_request`.
 
@@ -277,9 +294,7 @@ Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, sch
 
 Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this table.
 
-**`reviews`** — **[verify this feature exists in the current build]**
-
-`booking_id uuid unique FK, student_id, tutor_id, rating smallint check (rating between 1 and 5), comment text, is_published boolean default true`
+**`reviews`** — **DEFERRED (not built in Phase 1).** No Review type exists in the current Bubble build (Decision C). Ratings are denormalized scalars on `tutor_profiles` (`rating_avg`, `rating_count`) with nothing writing them yet. If reviews become a feature: `booking_id uuid unique FK, student_id, tutor_id, rating smallint check (rating between 1 and 5), comment text, is_published boolean default true`.
 
 ### 4.4 Money
 
@@ -292,7 +307,7 @@ Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this tab
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment` |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: instant-session hold, Decision #3) |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -348,6 +363,8 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 
 ### 4.6 Broadcasts
 
+> **NET-NEW, not Bubble parity** (Decision C) — new one-to-many teaching functionality beyond the current build.
+
 **`broadcasts`** — `tutor_id FK, title, description, subject_id FK, agora_channel text unique, status enum('live','ended'), started_at, ended_at, peak_viewers integer default 0`
 
 **`broadcast_viewers`** — `broadcast_id FK, user_id FK nullable (anonymous allowed?**[verify]**), joined_at, left_at`
@@ -361,12 +378,18 @@ credit_usd_rate              # USD per 1 credit
 platform_fee_percent
 earnings_hold_hours
 instant_request_ttl_seconds  # default 60
-presence_stale_seconds       # default 120
 min_withdrawal_credits
 min_booking_notice_minutes
 max_booking_days_ahead
 cancellation_window_hours    # free cancellation cutoff
+max_instant_minutes          # default 60 (Decision #4)
+min_instant_credits          # default 5, provisional (Decision #4)
+credit_packages              # jsonb array of buyable packages (seeded 1 credit = 1 minute)
 ```
+
+> `presence_stale_seconds` intentionally removed (Decision #8): the 2-minute staleness
+> threshold is baked into the `live_tutors` view so the view and the presence-cleanup cron
+> share one source of truth.
 
 **`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here.
 
