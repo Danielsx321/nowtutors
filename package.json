@@ -15,10 +15,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:reset": "tsx src/db/reset.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:verify-rls": "tsx src/db/verify-rls.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.5.0",
+    "@supabase/supabase-js": "^2.112.3",
     "drizzle-orm": "^0.44.2",
     "next": "^15.5.0",
     "postgres": "^3.4.5",
@@ -37,6 +41,7 @@
     "eslint-config-next": "^15.5.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.1.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }
