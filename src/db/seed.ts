@@ -247,8 +247,14 @@ async function main() {
     "scheduled booking",
   ) as { id: string }[];
 
+  // Flat instant model (§18/§7.4): duration ∈ {30,60,90}; charge = duration/3 credits,
+  // upfront. billed_minutes is no longer a metered value — omitted. ended_at = started_at +
+  // the booked duration (server enforces length from started_at). Values derived from the
+  // constants so the fixture can't drift from the model again.
+  const INSTANT_DURATION = 30; // minutes
+  const instantPrice = INSTANT_DURATION / 3; // 10 credits, flat
   const start = new Date(Date.now() - 864e5);
-  const finish = new Date(start.getTime() + 15 * 60000);
+  const finish = new Date(start.getTime() + INSTANT_DURATION * 60000);
   const instant = check(
     await admin
       .from("bookings")
@@ -260,22 +266,27 @@ async function main() {
         agora_channel: "session_seed_instant",
         started_at: start.toISOString(),
         ended_at: finish.toISOString(),
-        duration_minutes: 15,
-        billed_minutes: 15,
-        price_credits: 15,
+        duration_minutes: INSTANT_DURATION,
+        price_credits: instantPrice,
         payment_method: "credits",
       })
       .select("id"),
     "instant booking",
   ) as { id: string }[];
 
+  // Earnings at platform_fee_percent = 25 (tutor keeps 75%). 25% of 10 = 2.5; 10 credits
+  // can't split exactly 25/75, so the fee rounds half-up to 3 (net 7). The authoritative
+  // rounding rule is Phase 5 code — this is a dev fixture, kept internally consistent.
+  const grossCredits = instantPrice; // 10
+  const platformFeeCredits = Math.round((grossCredits * 25) / 100); // 3
+  const netCredits = grossCredits - platformFeeCredits; // 7
   check(
     await admin.from("tutor_earnings").insert({
       tutor_id: id.tutor2,
       booking_id: instant[0].id,
-      gross_credits: 15,
-      platform_fee_credits: 3,
-      net_credits: 12,
+      gross_credits: grossCredits,
+      platform_fee_credits: platformFeeCredits,
+      net_credits: netCredits,
       status: "available",
       available_at: now,
     }),
