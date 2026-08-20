@@ -163,13 +163,14 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 > **Phase 1 amendments (reconciled with the Bubble export; see `docs/DECISIONS.md`):**
 > `profiles.phone` dropped; `profiles.notification_preferences jsonb` added; `profiles.role`
 > nullable. `tutor_profiles.paypal_email` moved to a new `tutor_payout_details` table;
-> `tutor_profiles.instant_rate_credits_per_minute` made nullable (instant price derives from
-> `hourly_rate_credits / 60`). `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at` added.
-> `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`.
+> `tutor_profiles.instant_rate_credits_per_minute` made nullable (and, since §18, unused — instant
+> price is flat: `duration_minutes / 3`, §7.4). `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
+> added. `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`
+> (now **unused** — §18 made instant billing a single flat `booking_debit`; enum values retained).
 > The `reviews` table is deferred (no Review type in the current build). `broadcasts` /
 > `broadcast_viewers` are NET-NEW, not parity. `platform_settings.presence_stale_seconds`
-> removed (threshold baked into the `live_tutors` view); `max_instant_minutes`,
-> `min_instant_credits`, `credit_packages` added. Booking overlap is a scheduled-only GiST
+> removed (threshold baked into the `live_tutors` view); `credit_packages` added
+> (`max_instant_minutes` / `min_instant_credits` later removed by §18). Booking overlap is a scheduled-only GiST
 > exclusion (`bookings_no_overlap`).
 
 ### 4.1 Identity
@@ -205,7 +206,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer **nullable** | optional; instant price derives from `hourly_rate_credits / 60` |
+| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price is flat, derived from the booked duration (`duration_minutes / 3`), not a per-minute rate (§7.4, §18) |
 | accepts_instant | boolean default true |  |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
@@ -307,7 +308,7 @@ Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this tab
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: instant-session hold, Decision #3) |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: the old instant-session hold, Decision #3 — **now unused**; §18 made instant billing a single flat `booking_debit`, §7.4) |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -336,7 +337,7 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 
 `tutor_id, booking_id unique FK, gross_credits, platform_fee_credits, net_credits, status enum('held','available','withdrawn'), available_at timestamptz`
 
-`available_at = booking.ended_at + earnings_hold_hours` (Section 18 open question).
+`available_at = booking.ended_at + earnings_hold_hours` (§18: **48 hours**). Platform fee is `platform_fee_percent` = **25%** (tutor keeps 75%).
 
 **`withdrawal_requests`**
 
@@ -374,18 +375,23 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 **`platform_settings`** — `key text PK, value jsonb, description text`. Editable in admin. Keys:
 
 ```
-credit_usd_rate              # USD per 1 credit
-platform_fee_percent
-earnings_hold_hours
-instant_request_ttl_seconds  # default 60
-min_withdrawal_credits
-min_booking_notice_minutes
-max_booking_days_ahead
-cancellation_window_hours    # free cancellation cutoff
-max_instant_minutes          # default 60 (Decision #4)
-min_instant_credits          # default 5, provisional (Decision #4)
-credit_packages              # jsonb array of buyable packages (seeded 1 credit = 1 minute)
+credit_minutes_ratio         # 3 — 1 credit = 3 minutes (§18)
+platform_fee_percent         # 25 — tutor keeps 75%
+earnings_hold_hours          # 48
+instant_request_ttl_seconds  # default 60 (instant-request accept window)
+min_withdrawal_usd           # 30 — enforced server-side, not just the button
+min_booking_notice_minutes   # 120 (existing default, kept)
+max_booking_days_ahead       # 7
+session_durations            # [30, 60, 90] — fixed menu, not tutor-configurable
+cancellation_enabled         # false — no user cancel path (§7.3)
+credit_packages              # jsonb array of buyable packages: credits + USD price, no minutes column
 ```
+
+> **§18 resolution (2026-08-20)** removed the keys tied to now-deleted models:
+> `credit_usd_rate` (pricing is per-package, not a flat rate), `min_withdrawal_credits`
+> (→ `min_withdrawal_usd`), `cancellation_window_hours` (→ `cancellation_enabled = false`),
+> and `max_instant_minutes` / `min_instant_credits` (the instant hold model is gone — §7.4).
+> Added: `credit_minutes_ratio`, `session_durations`, `cancellation_enabled`.
 
 > `presence_stale_seconds` intentionally removed (Decision #8): the 2-minute staleness
 > threshold is baked into the `live_tutors` view so the view and the presence-cleanup cron
@@ -532,7 +538,7 @@ Pagination: cursor-based, 24 per page.
 
 **Joining:** the join button on `/dashboard/bookings/[id]` becomes active 10 minutes before `scheduled_start_at` and stays active until 30 minutes after `scheduled_end_at`. It calls `/api/lessonspace/join` (7.7) and navigates to `/classroom/[bookingId]`.
 
-**Cancellation:** free if more than `cancellation_window_hours` before start → full credit refund via ledger. Inside the window → **[open question: refund policy]**. Tutor cancellation always fully refunds and notifies.
+**Cancellation:** there is **no cancellation path for either party** — neither student nor tutor can cancel a booking, and there are **no refunds** on the normal path (`cancellation_enabled = false`, §18). The **only** unwind is an **admin force-cancel with refund** in `/admin/bookings` (full credit refund via the ledger). The booking-status values `cancelled_by_student` / `cancelled_by_tutor` / `no_show_student` / `no_show_tutor` are **retained in the enum but are admin- or cron-set only, never user-set**.
 
 **Completion:** when both parties have left and `scheduled_end_at` has passed, or by cron 30 minutes after `scheduled_end_at`, status → `completed`, `tutor_earnings` row created `held`.
 
@@ -573,7 +579,7 @@ Rules:
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
 
-**Billing (instant):** charge per minute against credits. On session start, place an authorization hold equal to `instant_rate_credits_per_minute × max_instant_minutes`; on end, debit `billed_minutes × rate` and release the remainder. `billed_minutes = ceil(actual_seconds / 60)`, minimum 1. **[Open question: confirm the current build's instant pricing — per-minute vs flat.]**
+**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = duration_minutes / 3` (30 min = 10 credits, 60 = 20, 90 = 30). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price derives from the booked duration, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
 
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
@@ -962,36 +968,57 @@ Phases 0–2 are fast. Phases 4, 6, and 8 carry the real risk. Phase 9 is the mo
 
 ---
 
-## 18. Open questions
+## 18. Resolved decisions (formerly open questions)
 
-These need answers before the phases that depend on them. Most are for Noora; a few you can decide yourself.
+These were the open questions gating later phases. They are now **settled (2026-08-20)**. Each
+value lives in `platform_settings` unless noted, so a change is a settings edit, not a rebuild. The
+SPEC sections each answer affects were updated in the **same commit** as this resolution, per the
+CLAUDE.md standing rule. Original numbering is kept so existing cross-references still resolve.
 
-**Blocking Phase 1 (data model):**
-1. **Session durations offered** — 30/60/90? Fixed or tutor-configurable?
-2. **Reviews** — does the current build have student reviews of tutors? If not, is v1 parity or do we add them?
-3. **Broadcast chat** — does the current build have live chat during broadcasts? Anonymous viewers allowed, or sign-in required?
+**Phase 1 (data model):**
+1. **Session durations** — fixed menu of **30 / 60 / 90 minutes**, not tutor-configurable
+   (`session_durations = [30, 60, 90]`).
+2. **Reviews** — **dropped for v1** (no Review type in the current Bubble build; recorded in the
+   Phase 1 DECISIONS). No `reviews` table; rating stays a denormalized scalar on `tutor_profiles`.
+3. **Broadcast chat** — broadcasts are **net-new** functionality beyond current parity (Phase 1
+   decision), so live broadcast chat is **deferred to the broadcast phase** and is not a v1-parity
+   question. (Not covered by the resolution batch that settled the rest — see DECISIONS.)
 
-**Blocking Phase 4 (bookings):**
-4. **Cancellation and refund policy** — what's the free-cancellation window, and what happens inside it (partial refund, no refund, credit-only)?
-5. **Minimum booking notice** and **how far ahead** students can book.
-6. **Rescheduling** — supported in the current build, or cancel-and-rebook only?
+**Phase 4 (bookings):**
+4. **Cancellation & refunds** — **no cancellation path for either party, and no refunds** on the
+   normal path. The only unwind is an **admin force-cancel + refund** in `/admin/bookings`
+   (`cancellation_enabled = false`). See §7.3.
+5. **Booking window** — students may book at most **7 days ahead** (`max_booking_days_ahead = 7`);
+   **minimum notice keeps the existing default** (`min_booking_notice_minutes = 120`).
+6. **Rescheduling** — **not supported**, and there is no cancel-and-rebook either (no cancel path);
+   admin force-cancel is the only change mechanism.
 
-**Blocking Phase 5 (payments):**
-7. **Credit-to-USD rate** and the **credit package tiers**.
-8. **Platform fee percentage** on tutor earnings.
+**Phase 5 (payments):**
+7. **Credit rate & packages** — **1 credit = 3 minutes** (`credit_minutes_ratio = 3`). Five package
+   tiers (§4.7 / seed): Starter 5cr/$9.99, Standard 15cr/$24.99, Popular 30cr/$39.99,
+   Pro 60cr/$67.99, Premium 100cr/$97.99. There is **no flat credit-to-USD rate** — price is per
+   package. (Bubble's per-package "minutes" labels are inconsistent marketing copy and are **not**
+   seeded; see DECISIONS.)
+8. **Platform fee** — **25%** (`platform_fee_percent = 25`); tutor keeps 75%.
 
-**Blocking Phase 6 (instant sessions):**
-9. **Instant session pricing** — per-minute or flat rate? Minimum charge? Maximum session length?
+**Phase 6 (instant sessions):**
+9. **Instant pricing** — **flat, charged upfront** at booking creation: `duration_minutes / 3`
+   credits (30→10, 60→20, 90→30), debited via the ledger in the same transaction. No metering, no
+   hold, no per-minute rate. Session length is enforced server-side from `bookings.started_at`.
+   See §7.4.
 
-**Blocking Phase 8 (withdrawals):**
-10. **Earnings hold period** and **minimum withdrawal amount**.
+**Phase 8 (withdrawals):**
+10. **Earnings hold & minimum withdrawal** — hold **48 hours** (`earnings_hold_hours = 48`);
+    minimum withdrawal **$30** (`min_withdrawal_usd = 30`), **enforced server-side** in the
+    withdrawal action, not only by a disabled button (see DECISIONS).
 
-**Not blocking, but decide early:**
-11. Canonical **subject list**.
-12. Whether tutor approval stays **manual** (recommend yes).
-13. Whether an existing tutor can also be a student (recommend no — matches current single-role behaviour).
-
-Everything above has a sensible default I can propose if Noora is slow to respond, and every one of them lives in `platform_settings` rather than in code, so a wrong initial guess is a settings change and not a rebuild. Say the word and I'll fill the whole list with recommended defaults so the build isn't gated on her replies.
+**Cross-cutting:**
+11. **Canonical subject list** — resolved to the 26-subject Bubble export. That list currently lives
+    only on `phase-3-auth-onboarding-browse` (`cf4e5b8`); `main`'s seed intentionally keeps its 8
+    placeholders to avoid a `seed.ts` rebase conflict. Two name corrections are queued on the
+    deferred-for-rebase list (see DECISIONS).
+12. **Tutor approval** — stays **manual**.
+13. **Dual role** — **no**. One account, one role (matches current single-role behaviour).
 
 ---
 

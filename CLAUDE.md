@@ -11,6 +11,7 @@ Read docs/SPEC.md before doing anything. It is authoritative.
 - Write the migration, then the query layer, then the UI. In that order.
 - No setInterval polling anywhere except the presence heartbeat.
 - If something in the spec is ambiguous, stop and ask. Do not guess and proceed.
+- When an open question or product decision is settled, update the affected SPEC.md section in the same commit as the DECISIONS.md entry. Settled answers must not live only in DECISIONS.
 - One phase at a time. Do not start the next phase until told.
 
 ## Log

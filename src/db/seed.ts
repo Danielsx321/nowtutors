@@ -6,7 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 // DEV seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
 // wallets, subjects, settings, availability, and a couple of sample bookings.
-// Placeholder values are provisional pending SPEC §18 (see docs/DECISIONS.md).
+// platform_settings + credit_packages now carry the resolved SPEC §18 values. The SUBJECTS
+// list below is still the 8 dev placeholders — the canonical 26-subject list lives on
+// phase-3-auth-onboarding-browse (cf4e5b8) and is not ported here (see docs/DECISIONS.md).
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -29,26 +31,32 @@ const SUBJECTS = [
   { name: "History", slug: "history", sort_order: 8 },
 ];
 
-// Provisional; all live in platform_settings so retuning is a settings change.
+// Resolved values from SPEC §18 (2026-08-20). All live in platform_settings so retuning is a
+// settings change, not a rebuild. Keys removed by §18 (credit_usd_rate, min_withdrawal_credits,
+// cancellation_window_hours, max_instant_minutes, min_instant_credits) are intentionally gone —
+// see docs/DECISIONS.md.
 const SETTINGS: { key: string; value: unknown; description: string }[] = [
-  { key: "credit_usd_rate", value: 0.5, description: "USD per 1 credit (placeholder)" },
-  { key: "platform_fee_percent", value: 20, description: "platform fee on earnings (placeholder)" },
-  { key: "earnings_hold_hours", value: 72, description: "hold before earnings become available (placeholder)" },
-  { key: "instant_request_ttl_seconds", value: 60, description: "instant request lifetime" },
-  { key: "min_withdrawal_credits", value: 100, description: "minimum withdrawal (placeholder)" },
-  { key: "min_booking_notice_minutes", value: 120, description: "min notice before a slot (placeholder)" },
-  { key: "max_booking_days_ahead", value: 30, description: "how far ahead students can book (placeholder)" },
-  { key: "cancellation_window_hours", value: 24, description: "free-cancellation cutoff (placeholder)" },
-  { key: "max_instant_minutes", value: 60, description: "instant session hard cap (Decision #4)" },
-  { key: "min_instant_credits", value: 5, description: "min balance to start instant (Decision #4, placeholder)" },
+  { key: "credit_minutes_ratio", value: 3, description: "1 credit = 3 minutes (§18)" },
+  { key: "platform_fee_percent", value: 25, description: "platform fee on earnings; tutor keeps 75% (§18)" },
+  { key: "earnings_hold_hours", value: 48, description: "hold before earnings become available (§18)" },
+  { key: "instant_request_ttl_seconds", value: 60, description: "instant-request accept window" },
+  { key: "min_withdrawal_usd", value: 30, description: "minimum withdrawal in USD; enforced server-side (§18)" },
+  { key: "min_booking_notice_minutes", value: 120, description: "min notice before a slot (existing default, kept)" },
+  { key: "max_booking_days_ahead", value: 7, description: "how far ahead students can book (§18)" },
+  { key: "session_durations", value: [30, 60, 90], description: "fixed duration menu, not tutor-configurable (§18)" },
+  { key: "cancellation_enabled", value: false, description: "no user cancel path; admin force-cancel only (§7.3, §18)" },
   {
+    // Real Bubble tiers. No "minutes" column: Bubble's minutes labels are marketing copy
+    // inconsistent with the enforced 1-credit-=-3-minutes rate — see docs/DECISIONS.md.
     key: "credit_packages",
     value: [
-      { id: "mins_30", credits: 30, minutes: 30 },
-      { id: "mins_60", credits: 60, minutes: 60 },
-      { id: "mins_120", credits: 120, minutes: 120 },
+      { id: "starter", name: "Starter", credits: 5, price_usd: 9.99 },
+      { id: "standard", name: "Standard", credits: 15, price_usd: 24.99 },
+      { id: "popular", name: "Popular", credits: 30, price_usd: 39.99 },
+      { id: "pro", name: "Pro", credits: 60, price_usd: 67.99 },
+      { id: "premium", name: "Premium", credits: 100, price_usd: 97.99 },
     ],
-    description: "buyable credit packages (seeded 1 credit = 1 minute)",
+    description: "buyable credit packages: credits + USD price (no minutes column — §18/DECISIONS)",
   },
 ];
 

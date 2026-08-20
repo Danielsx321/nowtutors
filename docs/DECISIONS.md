@@ -254,3 +254,73 @@ the §16 Phase 2 layouts. No data/auth work.
     type sizes** — the "too sparse" read that motivated the tightening came from a screenshot taken
     while the `cn()` bug was suppressing font sizes, so the calibration was against a broken render.
     Verify, don't assume. `liveStatus` still derives from `live_tutors`, never `is_live` — untouched.
+  - **Subject-name corrections (added 2026-08-20, §18 resolution).** Two corrections to the canonical
+    26-subject list, which lives only on `phase-3-auth-onboarding-browse` (`cf4e5b8`), **not on
+    `main`**. They are queued here rather than applied because porting the list to `main`'s seed would
+    create a `seed.ts` conflict on the rebase — the **same reasoning as the `TutorCard` deferral**
+    above. Apply during the rebase:
+    - #3  `"English as a Second Language"` → `"English as a Second Language (ESL)"`
+    - #11 `"Live IELTS / TOEFL Speaking"` → `"Live IELTS / TOEFL Speaking Prep"`
+    - #6 (`IELTS / TOEFL Essay Proofreading`) and #10 (`Data Science & Machine Learning`) confirmed
+      **correct as seeded** — no change.
+    Slugs derive from the name via `slugify()` in that seed, so they update automatically. `main`'s
+    seed keeps its 8 dev placeholders in the meantime.
+
+## Phase-agnostic — §18 resolution (2026-08-20)
+
+The SPEC §18 open questions were settled with the user and applied to `main` in a **docs + seed
+commit** (no application code, no schema change). SPEC §18 rewritten from questions to resolutions;
+§7.3, §7.4, §4.1, §4.4, §4.7 updated in the same commit (per the CLAUDE.md standing rule). Non-obvious
+choices recorded here:
+
+- **Instant billing is flat, upfront — the Bubble metering bug was NOT ported ("bug not ported,
+  intended behaviour built").** The Bubble build runs a **180 ms client `setInterval`** that
+  decrements a `credits_remaining` field, which is a **units bug**: at ~5.5 ticks/second a 60-minute
+  session would drain to zero in **~4 seconds**. We deleted the entire authorization-hold /
+  per-minute / release-the-remainder model from §7.4 and replaced it with: charge `duration_minutes
+  / 3` credits **upfront at booking creation** (30→10, 60→20, 90→30), one `booking_debit` ledger row
+  in the same transaction; **no metering, no hold, no partial refund, no remainder release**. Session
+  length is enforced **server-side from `bookings.started_at`** — elapsed time is never read off a
+  client interval. *Why record it:* the temptation on a "parity" build is to reproduce the existing
+  behaviour; here the existing behaviour is a defect, so the intended behaviour is built instead and
+  the divergence is deliberate.
+- **`instant_rate_credits_per_minute` stays dropped in spirit — retained-but-unused, not deleted.**
+  §4.1 keeps the (nullable) column; instant price now derives from the booked **duration**
+  (`duration_minutes / 3`), not a per-minute rate, so the column is unused. It is **not** removed
+  from the schema: this was a docs + seed commit, and dropping a column is a migration (CLAUDE.md:
+  no schema change without a §4 amendment in the same commit). The `instant_hold` / `instant_release`
+  / `instant_capture` credit-transaction enum values are likewise now unused but retained; an enum
+  cleanup can be a later migration if wanted.
+- **No cancellation, no refunds — admin force-cancel is the only unwind (§7.3).** Neither student nor
+  tutor can cancel; there is no refund on the normal path (`cancellation_enabled = false`). The
+  booking-status values `cancelled_by_student` / `cancelled_by_tutor` / `no_show_student` /
+  `no_show_tutor` are **kept in the enum** but are now **admin- or cron-set only, never user-set**.
+  Removed `cancellation_window_hours`.
+- **`$30` minimum withdrawal is enforced server-side, not only by a disabled button.** The Bubble
+  build enforces the minimum **client-side only** (a button conditional, no backend validation) — a
+  gap that does **not** carry over. The withdrawal server action must validate `amount_usd >= 30`
+  itself and reject below that, independent of any client state. Seeded as `min_withdrawal_usd = 30`
+  (replaces the old `min_withdrawal_credits`). *Wiring the check itself is Phase 8 code, out of this
+  docs commit — recorded so it is not forgotten.*
+- **Credit packages seed no `minutes` column.** Five real Bubble tiers seeded as credits + USD price
+  only: Starter 5cr/$9.99, Standard 15cr/$24.99, Popular 30cr/$39.99, Pro 60cr/$67.99, Premium
+  100cr/$97.99. Bubble's per-package "minutes" labels imply ratios of **3.0 / 2.0 / 2.0 / 1.67 / 1.2
+  min-per-credit** while the code charges at a flat **3** — the labels are inconsistent marketing
+  copy, so they are **not** seeded. The purchase page shows **credits + price** plus a single line
+  stating **1 credit = 3 minutes**. *Why:* seeding the inconsistent per-package minutes would bake a
+  contradiction into the data.
+- **`credit_usd_rate` removed; price is per-package.** With five fixed tiers there is no single
+  USD-per-credit rate (the tiers span $2.00→$0.98 per credit), so the old flat `credit_usd_rate`
+  setting is gone. Amounts remain computed server-side from the package the client names (§7 intent
+  model), never a client-sent price.
+- **Settings keys removed by this resolution:** `credit_usd_rate`, `min_withdrawal_credits`,
+  `cancellation_window_hours`, `max_instant_minutes`, `min_instant_credits`. **Added:**
+  `credit_minutes_ratio` (3), `session_durations` (`[30,60,90]`), `cancellation_enabled` (false),
+  `min_withdrawal_usd` (30). **Changed:** `platform_fee_percent` 20→25, `earnings_hold_hours` 72→48,
+  `max_booking_days_ahead` 30→7. **Kept:** `min_booking_notice_minutes` (120, existing default),
+  `instant_request_ttl_seconds` (60 — the instant-request accept window, unaffected by billing).
+- **§18 Q3 (broadcast chat) was NOT in the resolution batch.** The user's answer set covered every
+  §18 item except broadcast chat. Recorded as **deferred**, grounded in the existing Phase 1 decision
+  that broadcasts are **net-new** functionality beyond current parity — so broadcast chat is decided
+  at the broadcast phase, not a v1-parity question. Flagged to the user; revisit if that framing is
+  wrong.
