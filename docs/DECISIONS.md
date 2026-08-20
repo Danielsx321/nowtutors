@@ -149,7 +149,9 @@ the §16 Phase 2 layouts. No data/auth work.
   chrome (`SidebarNav`) uses light-on-dark with purple only as an active **fill**. `Card`/
   `StatCard` carry an explicit `surface="ink"` variant; `LivePill` and fill-based `Badge`s are
   surface-agnostic.
-- **Ink chrome vs light surfaces — the dividing line (settled; do not re-litigate in Phase 3).**
+- **Ink chrome vs light surfaces — the dividing line.** **⚠️ SUPERSEDED** by *"Ink shell +
+  ink cards — the Phase 2 ink amendment"* at the bottom of this section (wrong on parity against
+  the live Bubble build; kept here as history). Original ruling:
   Keep the ink surface area small: **ink chrome = the desktop sidebar and the mobile nav drawer
   only.** The **topbar is a light surface** (`bg-white`) — `CreditBalance`, ghost icon `Button`s,
   and (in Phase 3) `Breadcrumb` compose there as-is with no ink treatment. All content areas are
@@ -194,3 +196,61 @@ the §16 Phase 2 layouts. No data/auth work.
   behaviour change this broad must be findable outside a commit message. Surfaced while building the
   Phase 2 ink `PriceTag`/`RatingStars` (the ink numerals fell back to black), but the fix stands on
   its own and lands ahead of the ink amendment.
+
+### Phase 2 ink amendment (2026-08-20) — before PR merge
+
+- **Ink shell + ink cards — supersedes the "ink chrome = sidebar + drawer only" ruling above.**
+  Review against the live Bubble build showed the earlier dividing line was wrong on parity. The
+  Bubble original is an **ink shell (sidebar + topbar) wrapping a white content panel, with ink
+  cards inside that panel** — ink shell → white panel → ink cards. The Phase 2 PR was still held,
+  so this is an amendment on the branch, not a revert of a merged decision.
+  - **One ink surface, sampled from Bubble.** `ink-900 = #34495E`; the whole ink ramp is a hue-210
+    ramp derived from it (`ink-950/900/800/700/300`). Sidebar and cards are the **same** value —
+    a card reads distinct only because it sits on the white panel (or, on ink, by an `ink-700`
+    border). The old purple ink (`#332042`) is gone.
+  - **`ink-800` reclassified: surface → interaction state.** With a single ink surface there is no
+    lighter ink to elevate onto, so a card/dropdown/drawer on ink separates by an `ink-700` border
+    or a shadow, never by a lighter fill. `ink-800` is now hover/pressed only; `ink-950` is the
+    darker recess (active nav item, modal/drawer scrim, StatCard icon chip).
+  - **Topbar flips light → ink**, reversing the "white topbar" call above. `AppShell` is now
+    `bg-ink-900` frame → `Topbar` `bg-ink-900` → white `main` panel (`md:rounded-tl-lg`). Topbar
+    controls take on-ink treatment (white ghost buttons, `ink-800` hover, gold focus ring,
+    `CreditBalance tone="ink"` separated by an `ink-700` border rather than an `ink-800` fill).
+  - **Purple is fill-only on ink, measured.** White-on-purple-500 = 6.91:1 (OK as a fill); purple
+    text/border/ring on ink = **1.34:1**, failing both the 4.5:1 text floor and the 3:1 non-text
+    floor. Recorded in SPEC §10.1 so it is not re-litigated. Gold (7.22:1) carries CTAs, focus
+    rings, and active accents on ink; secondary text on ink is `ink-300` (4.69:1).
+  - **Dual focus rings (SPEC §10.3).** Split the single purple ring into `--focus-ring` (purple,
+    light) and `--focus-ring-on-ink` (gold, ink), with a matching `.focus-ring-on-ink` utility.
+    Wired ink-surface chrome (sidebar nav, topbar controls, drawer) to the gold ring. A purple ring
+    on ink is invisible — this is an a11y fix, not a preference.
+  - **LIVE badge lightened, not the green darkened.** New `live-400 = #4FD179` as the badge fill
+    carrying `ink-900` text (4.75:1); `live-500` stays for non-text indicators (dots, pulses). The
+    `TutorCard` LIVE badge that consumes it lands on the Phase 3 rebase (below).
+  - **Density pass (token/scale level, not per-page).** Desktop page gutter 32→24; `Card`/`StatCard`
+    padding `p-5`→`p-4`. Browse grid gap / filter-rail width are browse-specific and land with the
+    browse view on the rebase, so the eight unbuilt Phase 3 pages inherit the tighter rhythm from
+    the tokens rather than from hand-tuned browse edits. **Caveat (see the rebase list):** this pass
+    was calibrated against a render made *before* the `cn()` type-scale fix (separate commit), which
+    was suppressing font sizes — so the tightening must be re-evaluated against correct type sizes,
+    not assumed.
+
+- **Amendment scope split — what shipped here vs. what's pending on the Phase 3 rebase.** `TutorCard`
+  is a **composed Phase 3 component** that lives only on `phase-3-auth-onboarding-browse` (`cf4e5b8`),
+  not on this branch; copying it onto `phase-2-design-system` would duplicate it across branches and
+  conflict on the scheduled rebase. So the amendment was partitioned (user-approved):
+  - **Shipped in this commit (phase-2):** the ink token ramp + focus tokens; `PriceTag` and
+    `RatingStars` ink variants (Phase 2 primitives, needed now even though their consumer lands
+    later — this reverses their earlier "light-surface-only" note); `Card`/`StatCard` ink surface on
+    `ink-900`+`ink-700`; the ink shell (`AppShell`/`Topbar`/`Sidebar`); dual focus rings; the density
+    pass; the kitchen-sink Foundations section (ramp swatches, both focus rings, the `ink-800` hover
+    demo); and all of the above documentation.
+  - **Pending on the Phase 3 rebase (do first, before resuming the batch):** (1) restyle `TutorCard`
+    per the amendment — `ink-900` surface, `ink-700` border, white name/price, `ink-300` secondary,
+    `ink-800` subject chips, `live-400` LIVE fill with `ink-900` text, `ink-800` hover,
+    `focus-ring-on-ink`; (2) add the ink `TutorCard` (all three live states) to the kitchen sink; (3)
+    verify the browse view renders ink shell → white panel → ink cards at Bubble-comparable density,
+    incl. the browse grid gap + filter-rail width; (4) **re-evaluate the density pass against correct
+    type sizes** — the "too sparse" read that motivated the tightening came from a screenshot taken
+    while the `cn()` bug was suppressing font sizes, so the calibration was against a broken render.
+    Verify, don't assume. `liveStatus` still derives from `live_tutors`, never `is_live` — untouched.

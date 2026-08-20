@@ -2,8 +2,10 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Surface container. `white` reads on any background; `ink` is the elevated
- * dark surface for the authenticated shell (SPEC §10.1).
+ * Surface container. `white` reads on any background; `ink` is the single dark
+ * surface (ink-900) for the authenticated shell (SPEC §10.1). There is no
+ * lighter ink to elevate onto, so an ink card separates from the ink shell by
+ * its ink-700 border + shadow, never by a lighter fill.
  */
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   surface?: "white" | "ink";
@@ -17,7 +19,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
         "rounded-lg border shadow-sm",
         surface === "white"
           ? "border-gray-200 bg-white text-gray-700"
-          : "border-ink-800 bg-ink-800 text-white",
+          : "border-ink-700 bg-ink-900 text-white",
         className,
       )}
       {...props}
@@ -30,7 +32,7 @@ export function CardHeader({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col gap-1 p-5", className)} {...props} />;
+  return <div className={cn("flex flex-col gap-1 p-4", className)} {...props} />;
 }
 
 export function CardTitle({
@@ -55,7 +57,7 @@ export function CardContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-5 pt-0", className)} {...props} />;
+  return <div className={cn("p-4 pt-0", className)} {...props} />;
 }
 
 export function CardFooter({
@@ -63,6 +65,6 @@ export function CardFooter({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex items-center gap-3 p-5 pt-0", className)} {...props} />
+    <div className={cn("flex items-center gap-3 p-4 pt-0", className)} {...props} />
   );
 }

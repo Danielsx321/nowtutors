@@ -23,7 +23,7 @@ export const DrawerContent = React.forwardRef<
   <Dialog.Portal>
     <Dialog.Overlay
       data-slot="overlay"
-      className="fixed inset-0 z-50 bg-ink-900/60"
+      className="fixed inset-0 z-50 bg-ink-950/60"
     />
     <Dialog.Content
       ref={ref}

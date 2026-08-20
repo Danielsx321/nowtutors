@@ -24,12 +24,12 @@ export function StatCard({
   ...props
 }: StatCardProps) {
   return (
-    <Card surface={surface} className={cn("p-5", className)} {...props}>
+    <Card surface={surface} className={cn("p-4", className)} {...props}>
       <div className="flex items-start justify-between gap-3">
         <p
           className={cn(
             "text-small font-medium",
-            surface === "ink" ? "text-gray-200" : "text-gray-500",
+            surface === "ink" ? "text-ink-300" : "text-gray-500",
           )}
         >
           {label}
@@ -38,8 +38,10 @@ export function StatCard({
           <span
             className={cn(
               "grid size-9 place-items-center rounded-md",
+              // On the single ink surface the chip recesses (ink-950) rather
+              // than elevating with a lighter fill.
               surface === "ink"
-                ? "bg-ink-900 text-gold-400"
+                ? "bg-ink-950 text-gold-400"
                 : "bg-purple-100 text-purple-500",
             )}
             aria-hidden
@@ -62,7 +64,7 @@ export function StatCard({
             </span>
           )}
           {hint && (
-            <span className={surface === "ink" ? "text-gray-200" : "text-gray-500"}>
+            <span className={surface === "ink" ? "text-ink-300" : "text-gray-500"}>
               {hint}
             </span>
           )}

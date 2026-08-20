@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import type { Surface } from "./_sections/kit";
+import { ring, type Surface } from "./_sections/kit";
+import { FoundationsSection } from "./_sections/foundations";
 import { ButtonsSection } from "./_sections/buttons";
 import { FormsSection } from "./_sections/forms";
 import { FeedbackSection } from "./_sections/feedback";
@@ -11,6 +12,7 @@ import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
 
 const sections = [
+  { id: "foundations", label: "Foundations" },
   { id: "buttons", label: "Buttons" },
   { id: "forms", label: "Forms" },
   { id: "feedback", label: "Feedback" },
@@ -33,7 +35,7 @@ export default function KitchenSink() {
         className={cn(
           "sticky top-0 z-30 border-b backdrop-blur",
           surface === "ink"
-            ? "border-ink-800 bg-ink-900/90"
+            ? "border-ink-700 bg-ink-900/90"
             : "border-gray-200 bg-white/90",
         )}
       >
@@ -50,7 +52,7 @@ export default function KitchenSink() {
             <p
               className={cn(
                 "text-caption",
-                surface === "ink" ? "text-gray-200" : "text-gray-500",
+                surface === "ink" ? "text-ink-300" : "text-gray-500",
               )}
             >
               Every §10.2 primitive, in every state.
@@ -64,7 +66,7 @@ export default function KitchenSink() {
             aria-label="Preview surface"
             className={cn(
               "inline-flex rounded-full border p-1",
-              surface === "ink" ? "border-ink-800 bg-ink-800" : "border-gray-200 bg-white",
+              surface === "ink" ? "border-ink-700 bg-ink-950" : "border-gray-200 bg-white",
             )}
           >
             {(["light", "ink"] as const).map((s) => (
@@ -74,11 +76,12 @@ export default function KitchenSink() {
                 aria-pressed={surface === s}
                 onClick={() => setSurface(s)}
                 className={cn(
-                  "focus-ring rounded-full px-4 py-1.5 text-small font-medium capitalize transition-colors",
+                  "rounded-full px-4 py-1.5 text-small font-medium capitalize transition-colors",
+                  ring(surface),
                   surface === s
                     ? "bg-purple-500 text-white"
                     : surface === "ink"
-                      ? "text-gray-200"
+                      ? "text-ink-300"
                       : "text-gray-500",
                 )}
               >
@@ -94,8 +97,9 @@ export default function KitchenSink() {
               key={s.id}
               href={`#${s.id}`}
               className={cn(
-                "focus-ring rounded-sm text-small hover:underline",
-                surface === "ink" ? "text-gray-200" : "text-gray-500",
+                "rounded-sm text-small hover:underline",
+                ring(surface),
+                surface === "ink" ? "text-ink-300" : "text-gray-500",
               )}
             >
               {s.label}
@@ -105,6 +109,7 @@ export default function KitchenSink() {
       </header>
 
       <main className="container-page space-y-16 py-12">
+        <FoundationsSection surface={surface} />
         <ButtonsSection surface={surface} />
         <FormsSection surface={surface} />
         <FeedbackSection surface={surface} />

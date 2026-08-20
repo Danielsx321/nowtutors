@@ -6,6 +6,8 @@ export interface PriceTagProps extends React.HTMLAttributes<HTMLSpanElement> {
   unit?: string; // e.g. "hr", "min", "session"
   usd?: number; // optional secondary USD label
   size?: "sm" | "md" | "lg";
+  /** `ink` for dark surfaces (e.g. the ink TutorCard); `light` on white. */
+  surface?: "light" | "ink";
 }
 
 const sizeMap = {
@@ -20,21 +22,24 @@ export function PriceTag({
   unit,
   usd,
   size = "md",
+  surface = "light",
   className,
   ...props
 }: PriceTagProps) {
   const s = sizeMap[size];
+  const amountColor = surface === "ink" ? "text-white" : "text-gray-700";
+  const unitColor = surface === "ink" ? "text-ink-300" : "text-gray-500";
   return (
     <span className={cn("inline-flex items-baseline gap-1", className)} {...props}>
-      <span className={cn("text-gray-700", s.amount)}>
+      <span className={cn(amountColor, s.amount)}>
         {credits.toLocaleString()}
       </span>
-      <span className={cn("text-gray-500", s.unit)}>
+      <span className={cn(unitColor, s.unit)}>
         {credits === 1 ? "credit" : "credits"}
         {unit ? ` / ${unit}` : ""}
       </span>
       {usd != null && (
-        <span className={cn("text-gray-500", s.unit)}>
+        <span className={cn(unitColor, s.unit)}>
           (${usd.toFixed(2)})
         </span>
       )}

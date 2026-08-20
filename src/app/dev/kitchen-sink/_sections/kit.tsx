@@ -10,7 +10,11 @@ export function heading(surface: Surface) {
   return surface === "ink" ? "text-white" : "text-gray-700";
 }
 export function muted(surface: Surface) {
-  return surface === "ink" ? "text-gray-200" : "text-gray-500";
+  return surface === "ink" ? "text-ink-300" : "text-gray-500";
+}
+/** Surface-correct focus ring: gold on ink, purple on light (SPEC §10.3). */
+export function ring(surface: Surface) {
+  return surface === "ink" ? "focus-ring-on-ink" : "focus-ring";
 }
 
 export function Section({

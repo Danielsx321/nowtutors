@@ -30,15 +30,15 @@ export function LayoutsPreviewSection({ surface }: { surface: Surface }) {
         </div>
       </Demo>
 
-      <Demo label="Authenticated shell (dark sidebar + topbar)" surface={surface} className="items-stretch">
-        <div className="flex w-full overflow-hidden rounded-lg border border-gray-200">
+      <Demo label="Authenticated shell (ink frame → white panel → ink card)" surface={surface} className="items-stretch">
+        <div className="flex w-full overflow-hidden rounded-lg border border-ink-700">
           <div className="hidden w-56 shrink-0 flex-col gap-4 bg-ink-900 p-4 sm:flex">
             <span className="px-2 text-h3 font-bold text-white">
               Now<span className="text-gold-400">Tutors</span>
             </span>
             <SidebarNav items={studentNav} />
           </div>
-          <div className="min-w-0 flex-1 bg-gray-50">
+          <div className="min-w-0 flex-1 bg-white">
             <Topbar
               title="Dashboard"
               showCredits
@@ -53,6 +53,7 @@ export function LayoutsPreviewSection({ surface }: { surface: Surface }) {
                 hint="this week"
               />
               <StatCard
+                surface="ink"
                 label="Wallet balance"
                 value="1,240"
                 icon={<Wallet className="size-5" />}

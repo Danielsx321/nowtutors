@@ -38,7 +38,7 @@ export function SidebarNav({
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "focus-ring flex items-center gap-3 rounded-md px-3 py-2.5 text-body font-medium transition-colors",
+              "focus-ring-on-ink flex items-center gap-3 rounded-md px-3 py-2.5 text-body font-medium transition-colors",
               active
                 ? "bg-purple-500 text-white"
                 : "text-gray-200 hover:bg-ink-800 hover:text-white",
@@ -67,7 +67,7 @@ export function Sidebar({
           Now<span className="text-gold-400">Tutors</span>
         </span>
       </div>
-      <p className="px-3 text-caption font-medium uppercase tracking-wide text-gray-500">
+      <p className="px-3 text-caption font-medium uppercase tracking-wide text-ink-300">
         {roleLabel}
       </p>
       <SidebarNav items={items} />

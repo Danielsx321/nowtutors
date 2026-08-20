@@ -722,13 +722,21 @@ The brand is established and carries over exactly. This section exists so Claude
 ```css
 @theme {
   /* Brand */
-  --color-purple-500: #8434A8;   /* primary — buttons, links, active states */
+  --color-purple-500: #8434A8;   /* primary on LIGHT surfaces; FILL-ONLY on ink */
   --color-purple-700: #6B2A8A;   /* hover */
   --color-purple-100: #F3E8F8;   /* tints, selected backgrounds */
-  --color-ink-900:    #332042;   /* app background, dark surfaces */
-  --color-ink-800:    #3E2A50;   /* elevated dark surface */
-  --color-gold-400:   #FEE401;   /* CTA — high contrast on ink */
-  --color-live-500:   #44C96F;   /* live indicators only */
+
+  /* Ink — ONE surface, hue-210 ramp (sampled from the Bubble shell). ink-900 is
+     the only ink surface; ink-800 is an INTERACTION state, never a surface. */
+  --color-ink-950:    #263544;   /* active nav item, modal scrim */
+  --color-ink-900:    #34495E;   /* THE ink surface: shell, topbar, cards */
+  --color-ink-800:    #3E566E;   /* hover / pressed on ink — NOT a surface */
+  --color-ink-700:    #4A6076;   /* borders, dividers on ink */
+  --color-ink-300:    #ACBAC8;   /* muted / secondary text on ink (4.69:1) */
+
+  --color-gold-400:   #FEE401;   /* CTA + focus ring on ink — high contrast */
+  --color-live-500:   #44C96F;   /* live indicators only — dots, pulses (non-text) */
+  --color-live-400:   #4FD179;   /* LIVE badge fill — carries ink-900 text (4.75:1) */
 
   /* Neutrals */
   --color-white: #FFFFFF;
@@ -750,14 +758,20 @@ The brand is established and carries over exactly. This section exists so Claude
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-full: 9999px;
+
+  /* Focus rings — one per surface (§10.3) */
+  --focus-ring:         var(--color-purple-500);  /* light surfaces */
+  --focus-ring-on-ink:  var(--color-gold-400);    /* ink surfaces */
 }
 ```
 
 Type scale (DM Sans throughout, weights 400/500/700): display 40/44, h1 32/38, h2 24/30, h3 20/26, body-lg 17/26, body 15/24, small 13/20, caption 12/16.
 
-Spacing on a 4px grid. Container max-width 1200px, page gutter 20px mobile / 32px desktop.
+Spacing on a 4px grid. Container max-width 1200px, page gutter 20px mobile / 24px desktop (desktop gutter tightened from 32px in the density pass).
 
-**Rules:** gold is for primary CTAs only, never for body text or borders. Live green appears only on live status — never as a generic success colour in the same view as a LIVE badge. Purple on ink-900 fails contrast for small text, so on dark surfaces use white or gold for text and purple only for fills.
+**The ink surface (parity with the Bubble build).** The authenticated app is an **ink shell** (sidebar + topbar) wrapping a **white content panel**, with **ink cards** inside that panel — ink shell → white panel → ink cards. There is exactly **one** ink surface (`ink-900`, `#34495E`, sampled from the live build; sidebar and cards are the same value). Elevation-by-lightness is unavailable: an ink card, a dropdown over the ink topbar, or the drawer contents cannot separate from their background by being lighter — they separate by an `ink-700` border or a shadow. `ink-800` is an **interaction state** (hover/pressed), never a surface; `ink-950` is the darker recess (active nav item, modal scrim).
+
+**Rules:** gold is for primary CTAs only, never for body text or borders. Live green appears only on live status — never as a generic success colour in the same view as a LIVE badge. **Purple on ink is fill-only, carrying white text** (white on `purple-500` = 6.91:1): at **1.34:1** purple fails not just the 4.5:1 text floor but the 3:1 non-text UI floor, so it is never text, a border, a focus ring, or an active-indicator bar on ink — gold does that job. On ink, body/headings/names use white freely, secondary text uses `ink-300` (4.69:1). Purple remains the primary on light surfaces, unchanged.
 
 ### 10.2 Component inventory
 
@@ -767,9 +781,11 @@ Port the 27 NT- global styles into these components. Building this list in Phase
 
 Composed: `TutorCard`, `BookingCard`, `SlotPicker`, `AvailabilityGrid`, `MessageBubble`, `ConversationListItem`, `TransactionRow`, `VideoTile`, `SessionControlBar`, `IncomingRequestModal`, `WaitingForTutorModal`.
 
+**Surface variants.** `Card`/`StatCard` carry an explicit `surface="ink"` variant (ink-900 fill, ink-700 border, white text). `PriceTag` and `RatingStars` take a `surface="ink"` prop — because they compose onto the ink `TutorCard`: `PriceTag` numerals go white (unit/USD → ink-300); `RatingStars` keeps gold fill (7.22:1 on ink) with empty stars in ink-700 and the value label white/ink-300. `LivePill` and fill-based `Badge`s are surface-agnostic. `Breadcrumb` and `Pagination` stay **light-surface only** with no ink variant — they render on the white content panel (breadcrumbs in the topbar region were the reason the topbar could not go ink under the old model; under the ink-shell model breadcrumbs live in the white panel, not the ink topbar).
+
 ### 10.3 Quality floor
 
-Responsive from 360px. Visible keyboard focus rings (`--color-purple-500`, 2px, 2px offset). `prefers-reduced-motion` respected. All interactive elements at least 44×44px on touch. Real `<button>`/`<a>` elements, labelled inputs, `aria-live` on toasts and the session timer. Loading and empty states designed, not afterthoughts — an empty bookings list invites the student to browse tutors.
+Responsive from 360px. Visible keyboard focus rings, 2px width / 2px offset, **surface-specific**: `--focus-ring` (purple-500) on light surfaces, `--focus-ring-on-ink` (gold-400) on ink — a purple ring on ink is invisible (1.34:1), so this is an accessibility requirement, not a preference. `prefers-reduced-motion` respected. All interactive elements at least 44×44px on touch. Real `<button>`/`<a>` elements, labelled inputs, `aria-live` on toasts and the session timer. Loading and empty states designed, not afterthoughts — an empty bookings list invites the student to browse tutors.
 
 ---
 

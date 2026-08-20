@@ -23,9 +23,10 @@ export interface AppShellProps {
 }
 
 /**
- * Authenticated shell: dark sidebar + light content, with a mobile nav drawer.
- * Presentational only — role guards land in Phase 3. Nav comes from the static
- * §6 config keyed by role.
+ * Authenticated shell: an INK frame (sidebar + topbar) wrapping a white content
+ * panel, with a mobile nav drawer. Supersedes the earlier "dark sidebar + white
+ * topbar + light content" model (DECISIONS.md). Presentational only — role
+ * guards land in Phase 3. Nav comes from the static §6 config keyed by role.
  */
 export function AppShell({
   role,
@@ -39,12 +40,12 @@ export function AppShell({
   const items = navByRole[role];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-ink-900">
       <Sidebar items={items} roleLabel={roleHome[role]} />
 
       <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
         <DrawerContent className="bg-ink-900 [&_[aria-label=Close]]:text-gray-200 [&_[aria-label=Close]]:hover:bg-ink-800 [&_[aria-label=Close]]:hover:text-white">
-          <DrawerHeader className="border-ink-800">
+          <DrawerHeader className="border-ink-700">
             <DrawerTitle className="text-white">
               Now<span className="text-gold-400">Tutors</span>
             </DrawerTitle>
@@ -63,7 +64,8 @@ export function AppShell({
           credits={credits}
           userName={userName}
         />
-        <main className="flex-1 p-4 md:p-6">
+        {/* White content panel inset into the ink frame (§ Bubble parity). */}
+        <main className="flex-1 bg-white p-4 md:rounded-tl-lg md:p-5">
           <div className="container-page px-0">{children}</div>
         </main>
       </div>

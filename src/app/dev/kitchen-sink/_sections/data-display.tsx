@@ -61,13 +61,14 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <Card surface="ink" className="w-72">
           <CardHeader>
             <CardTitle>Go live</CardTitle>
-            <CardDescription className="text-gray-200">
+            <CardDescription className="text-ink-300">
               Broadcast to your audience
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-body text-gray-200">
-              Elevated dark surface for the authenticated shell.
+            <p className="text-body text-ink-300">
+              The single ink surface — separated from the shell by its ink-700
+              border, not by a lighter fill.
             </p>
           </CardContent>
           <CardFooter>
@@ -160,10 +161,10 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <Avatar size="xl" name="Marie Curie" />
       </Demo>
 
-      <Demo label="Rating stars" surface={surface}>
-        <RatingStars value={4.5} count={128} />
-        <RatingStars value={3} count={12} size="lg" />
-        <RatingStars value={0} showValue={false} />
+      <Demo label="Rating stars (track the surface)" surface={surface}>
+        <RatingStars value={4.5} count={128} surface={surface} />
+        <RatingStars value={3} count={12} size="lg" surface={surface} />
+        <RatingStars value={0} showValue={false} surface={surface} />
       </Demo>
 
       <Demo label="Subject chips (static, selectable, removable)" surface={surface}>
@@ -183,9 +184,9 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <SubjectChip onRemove={() => {}}>Removable</SubjectChip>
       </Demo>
 
-      <Demo label="Price & credit balance" surface={surface}>
-        <PriceTag credits={60} unit="hr" usd={6} size="lg" />
-        <PriceTag credits={1} unit="min" size="md" />
+      <Demo label="Price & credit balance (track the surface)" surface={surface}>
+        <PriceTag credits={60} unit="hr" usd={6} size="lg" surface={surface} />
+        <PriceTag credits={1} unit="min" size="md" surface={surface} />
         <CreditBalance credits={1240} />
         <CreditBalance credits={1240} tone="ink" />
       </Demo>

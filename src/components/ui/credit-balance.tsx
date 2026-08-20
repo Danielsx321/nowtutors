@@ -32,7 +32,7 @@ export function CreditBalance({
         s.pad,
         s.text,
         tone === "ink"
-          ? "bg-ink-800 text-gold-400"
+          ? "border border-ink-700 text-gold-400"
           : "bg-purple-100 text-purple-700",
         className,
       )}

@@ -7,13 +7,23 @@
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
   /* Brand */
-  --color-purple-500: #8434a8; /* primary — buttons, links, active states */
+  --color-purple-500: #8434a8; /* primary on LIGHT surfaces only — buttons, links, active states. FILL-ONLY on ink (1.34:1 as text/border — forbidden). */
   --color-purple-700: #6b2a8a; /* hover */
   --color-purple-100: #f3e8f8; /* tints, selected backgrounds */
-  --color-ink-900: #332042; /* app background, dark surfaces */
-  --color-ink-800: #3e2a50; /* elevated dark surface */
-  --color-gold-400: #fee401; /* CTA — high contrast on ink */
-  --color-live-500: #44c96f; /* live indicators only */
+
+  /* Ink — ONE surface, hue-210 ramp (sampled from the Bubble shell). There is a
+     single ink surface (#34495E); a card/dropdown/drawer on ink cannot separate
+     by being lighter — it separates by an ink-700 border or a shadow. ink-800 is
+     an INTERACTION state (hover/pressed), NEVER a surface. */
+  --color-ink-950: #263544; /* active nav item, modal scrim */
+  --color-ink-900: #34495e; /* THE surface: shell, topbar, cards */
+  --color-ink-800: #3e566e; /* hover / pressed on ink — NOT a surface */
+  --color-ink-700: #4a6076; /* borders, dividers on ink */
+  --color-ink-300: #acbac8; /* muted / secondary text on ink (4.69:1) */
+
+  --color-gold-400: #fee401; /* CTA + focus ring on ink — high contrast (7.22:1) */
+  --color-live-500: #44c96f; /* live indicators only — dots, pulses (non-text) */
+  --color-live-400: #4fd179; /* LIVE badge fill — carries ink-900 text (4.75:1) */
 
   /* Neutrals */
   --color-white: #ffffff;
@@ -66,6 +76,11 @@
 
   /* Motion — shared easing for the hand-rolled Radix keyframes below */
   --ease-out-brand: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Focus rings — SPEC §10.3. Two tokens, one per surface: purple is invisible
+     on ink (1.34:1, below the 3:1 non-text floor), so ink surfaces ring in gold. */
+  --focus-ring: var(--color-purple-500); /* light surfaces */
+  --focus-ring-on-ink: var(--color-gold-400); /* ink surfaces */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -77,24 +92,34 @@ body {
   line-height: var(--text-body--line-height);
 }
 
-/* Shared focus ring — SPEC §10.3: purple-500, 2px, 2px offset. Applied via the
-   `.focus-ring` utility on every interactive primitive. */
+/* Focus rings — SPEC §10.3. Two surface-specific utilities, 2px / 2px offset.
+   `.focus-ring` (purple) is the default for light-surface primitives;
+   `.focus-ring-on-ink` (gold) is used by anything rendered on an ink surface,
+   where a purple ring would be invisible. */
 @utility focus-ring {
   outline: none;
   &:focus-visible {
-    outline: 2px solid var(--color-purple-500);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+@utility focus-ring-on-ink {
+  outline: none;
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-on-ink);
     outline-offset: 2px;
   }
 }
 
-/* Page container — 1200px max, 20px gutter mobile / 32px desktop (§10.1) */
+/* Page container — 1200px max, 20px gutter mobile / 24px desktop (§10.1).
+   Desktop gutter tightened 32→24 in the density pass (denser, Bubble-comparable). */
 @utility container-page {
   width: 100%;
   max-width: var(--container-page);
   margin-inline: auto;
   padding-inline: 20px;
   @media (width >= 768px) {
-    padding-inline: 32px;
+    padding-inline: 24px;
   }
 }
 
