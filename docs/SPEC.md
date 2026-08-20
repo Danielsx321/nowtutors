@@ -536,7 +536,9 @@ Google OAuth users skip password but still complete onboarding. Handle the case 
 
 `/tutors` server-renders results from search params so filters are shareable and back-button-safe.
 
-Filters: subject (multi), price range (**credit bands in credits/hour**, compared directly against `hourly_rate_credits` — no USD conversion: Under 50 · 50–100 · 100–200 · 200–400 · 400+), language, minimum rating, availability window, `live_now` toggle, sort (`relevance | rating | price_asc | price_desc | most_sessions`).
+Filters: subject (multi), price range (**credit bands in credits/hour**, compared directly against `hourly_rate_credits` — no USD conversion: Under 50 · 50–100 · 100–200 · 200–400 · 400+), language, minimum rating, availability window, `live_now` toggle, sort (`relevance | price_asc | price_desc | most_sessions`).
+
+> **No `rating` sort** — reviews are dropped for v1 (§18), so there is no rating data to sort by; the code has never had one. The **`minRating` filter stays** in both spec and code (parsed, composed, and unit-tested) but is dormant and unsurfaced until reviews exist. An unrecognised `sort` value is rejected, not silently coerced (§3.3).
 
 Base query: `tutor_profiles` where `approval_status = 'approved'` and owning profile not suspended. When `live_now` is on, query the `live_tutors` view instead (Section 3.1) — **this is the fix for the stale LIVE badge, and it must be a view join, not a boolean check.**
 

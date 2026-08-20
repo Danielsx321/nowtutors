@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 import { sessionPoolerUrl } from "./session-url";
 import { splitEarnings } from "../lib/credits/fees";
+import { sessionPriceCredits } from "../lib/credits/pricing";
 
 // DEV seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
@@ -74,7 +75,6 @@ const slugOf = Object.fromEntries(SUBJECTS.map((s) => [s.name, s.slug]));
 // cancellation_window_hours, max_instant_minutes, min_instant_credits) are intentionally gone —
 // see docs/DECISIONS.md.
 const SETTINGS: { key: string; value: unknown; description: string }[] = [
-  { key: "credit_minutes_ratio", value: 3, description: "1 credit = 3 minutes (§18)" },
   { key: "platform_fee_percent", value: 25, description: "platform fee on earnings; tutor keeps 75% (§18)" },
   { key: "earnings_hold_hours", value: 48, description: "hold before earnings become available (§18)" },
   { key: "instant_request_ttl_seconds", value: 60, description: "instant-request accept window" },
@@ -84,8 +84,8 @@ const SETTINGS: { key: string; value: unknown; description: string }[] = [
   { key: "session_durations", value: [30, 60, 90], description: "fixed duration menu, not tutor-configurable (§18)" },
   { key: "cancellation_enabled", value: false, description: "no user cancel path; admin force-cancel only (§7.3, §18)" },
   {
-    // Real Bubble tiers. No "minutes" column: Bubble's minutes labels are marketing copy
-    // inconsistent with the enforced 1-credit-=-3-minutes rate — see docs/DECISIONS.md.
+    // Real Bubble tiers. No "minutes" column: credits are a purchased currency, not a
+    // unit of time (credits-are-money amendment) — see docs/DECISIONS.md.
     key: "credit_packages",
     value: [
       { id: "starter", name: "Starter", credits: 5, price_usd: 9.99 },
@@ -107,8 +107,8 @@ type SeedUser = {
   country?: string;
 };
 
-// Rates chosen so tutors span every price band at credit_usd_rate=0.5
-// ($0.50/credit): <30cr=Under$15 · 30–50=$15–25 · 50–100=$25–50 · 100–200=$50–100 · 200+=$100+.
+// Rates (credits/hour) chosen to span every browse price band:
+// <50=Under 50 · 50–100 · 100–200 · 200–400 · 400+ (see src/lib/tutors/filters.ts).
 type TutorDef = {
   key: string;
   slug: string;
@@ -360,12 +360,13 @@ async function main() {
     "scheduled booking",
   );
 
-  // Flat instant model (§18/§7.4): duration ∈ {30,60,90}; charge = duration/3 credits,
-  // upfront. billed_minutes is no longer a metered value — omitted. ended_at = started_at +
-  // the booked duration (server enforces length from started_at). Values derived from the
-  // constants so the fixture can't drift from the model again.
+  // Instant billing (§7.4, credits-are-money amendment): flat, upfront, priced by the
+  // SAME formula as scheduled — hourly_rate_credits × duration / 60, rounded up. No metering.
+  // ended_at = started_at + the booked duration (server enforces length from started_at).
+  // Priced via the shared helper off tutor2's rate so the fixture can't drift from the model.
   const INSTANT_DURATION = 30; // minutes
-  const instantPrice = INSTANT_DURATION / 3; // 10 credits, flat
+  const tutor2Rate = TUTORS.find((t) => t.key === "tutor2")!.rate; // 40 cr/hr
+  const instantPrice = sessionPriceCredits(tutor2Rate, INSTANT_DURATION); // 40×30/60 = 20
   const start = new Date(Date.now() - 864e5);
   const finish = new Date(start.getTime() + INSTANT_DURATION * 60000);
   const instant = check(
@@ -388,7 +389,7 @@ async function main() {
   ) as { id: string }[];
 
   // Earnings split via the authoritative helper (SPEC §7.11) so the fixture can't diverge
-  // from Phase 5: fee rounds DOWN, remainder to the tutor. gross 10 @ 25% → fee 2, net 8.
+  // from Phase 5: fee rounds DOWN, remainder to the tutor. gross 20 @ 25% → fee 5, net 15.
   const { grossCredits, platformFeeCredits, netCredits } = splitEarnings(instantPrice, 25);
   check(
     await admin.from("tutor_earnings").insert({

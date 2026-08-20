@@ -2,7 +2,11 @@ import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { subjects as subjectsTable } from "@/db/schema";
-import { parseTutorSearchParams } from "@/lib/tutors/filters";
+import {
+  parseTutorSearchParams,
+  SearchParamError,
+  type TutorQuery,
+} from "@/lib/tutors/filters";
 import { browseTutors } from "@/db/queries/tutors";
 import { getViewer } from "@/lib/auth/guards";
 import { TutorCard } from "@/components/features/tutor-card";
@@ -11,6 +15,7 @@ import {
   TutorFiltersBar,
 } from "@/components/features/tutor-filters";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SearchX } from "lucide-react";
 import type { FavouriteMode } from "@/components/features/favourite-heart";
@@ -39,7 +44,29 @@ export default async function BrowsePage({
 }) {
   const sp = await searchParams;
   const params = toParams(sp);
-  const query = parseTutorSearchParams(params);
+
+  // A present-but-invalid filter is rejected loudly, not silently dropped (§3.3).
+  // A shared URL with a bad param shows this error rather than wrong results.
+  let query: TutorQuery;
+  try {
+    query = parseTutorSearchParams(params);
+  } catch (e) {
+    if (e instanceof SearchParamError) {
+      return (
+        <div className="container-page py-8">
+          <Alert variant="danger" title="That link has an invalid filter">
+            <p>{e.message}</p>
+            <div className="mt-3">
+              <Button asChild variant="secondary">
+                <Link href="/">Clear filters</Link>
+              </Button>
+            </div>
+          </Alert>
+        </div>
+      );
+    }
+    throw e;
+  }
 
   const [viewer, subjectRows] = await Promise.all([
     getViewer(),

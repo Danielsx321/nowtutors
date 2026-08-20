@@ -47,32 +47,77 @@ export interface TutorQuery {
 const nonEmpty = (s: string) => s.trim().length > 0;
 const uniq = (xs: string[]) => Array.from(new Set(xs));
 
-const sortSchema = z.enum(SORTS).catch("relevance");
 const bandSchema = z.enum(PRICE_BAND_KEYS as [PriceBand, ...PriceBand[]]);
 const ratingSchema = z.coerce.number().min(0).max(5);
 
 /**
- * Parse URL search params into a normalized query. Invalid/blank values are
- * dropped (never applied as a broken filter); unset filters are simply absent.
- * Repeatable params: `subject`, `lang`.
+ * Thrown when a search param is **present but malformed** (an unknown sort, an
+ * unknown price band, an out-of-range rating). The browse page turns this into a
+ * loud error naming the valid options instead of silently dropping/coercing the
+ * filter — the opposite of Bubble's `ignore_empty_constraints` (SPEC §3.3).
+ */
+export class SearchParamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SearchParamError";
+  }
+}
+
+/**
+ * Parse URL search params into a normalized query. **Present-but-invalid values
+ * are rejected** (`SearchParamError`), never silently coerced or dropped (§3.3).
+ * Absent or empty values are simply unset — that is not an error. `subject`/`lang`
+ * are repeatable free-text slugs: blanks are dropped and the list deduped, but a
+ * non-empty value passes through (an unknown slug yields an empty result set,
+ * which is visible — never a silently broadened query).
  */
 export function parseTutorSearchParams(params: URLSearchParams): TutorQuery {
   const subjects = uniq(params.getAll("subject").filter(nonEmpty));
   const languages = uniq(params.getAll("lang").filter(nonEmpty));
 
+  const sortRaw = params.get("sort");
+  let sort: TutorSort = "relevance";
+  if (sortRaw) {
+    const parsed = z.enum(SORTS).safeParse(sortRaw);
+    if (!parsed.success) {
+      throw new SearchParamError(
+        `Invalid sort "${sortRaw}". Valid options: ${SORTS.join(", ")}.`,
+      );
+    }
+    sort = parsed.data;
+  }
+
   const bandRaw = params.get("price");
-  const band = bandRaw ? bandSchema.safeParse(bandRaw) : undefined;
+  let priceBand: PriceBand | undefined;
+  if (bandRaw) {
+    const parsed = bandSchema.safeParse(bandRaw);
+    if (!parsed.success) {
+      throw new SearchParamError(
+        `Invalid price band "${bandRaw}". Valid options: ${PRICE_BAND_KEYS.join(", ")}.`,
+      );
+    }
+    priceBand = parsed.data;
+  }
 
   const ratingRaw = params.get("minRating");
-  const rating = ratingRaw ? ratingSchema.safeParse(ratingRaw) : undefined;
+  let minRating: number | undefined;
+  if (ratingRaw) {
+    const parsed = ratingSchema.safeParse(ratingRaw);
+    if (!parsed.success) {
+      throw new SearchParamError(
+        `Invalid minRating "${ratingRaw}". Must be a number from 0 to 5.`,
+      );
+    }
+    minRating = parsed.data;
+  }
 
   return {
     subjects,
     languages,
-    priceBand: band?.success ? band.data : undefined,
-    minRating: rating?.success ? rating.data : undefined,
+    priceBand,
+    minRating,
     liveNow: params.get("live") === "1",
-    sort: sortSchema.parse(params.get("sort") ?? undefined),
+    sort,
     cursor: params.get("cursor") ?? undefined,
   };
 }

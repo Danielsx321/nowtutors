@@ -4,9 +4,12 @@ import {
   parseTutorSearchParams,
   composeTutorFilters,
   composeTutorWhere,
+  SearchParamError,
   PRICE_BANDS,
   type TutorQuery,
 } from "@/lib/tutors/filters";
+
+const parse = (qs: string) => parseTutorSearchParams(new URLSearchParams(qs));
 
 const dialect = new PgDialect();
 
@@ -43,25 +46,46 @@ describe("parseTutorSearchParams", () => {
     expect(q.languages).toEqual(["English", "French"]);
   });
 
-  it("keeps a valid price band and drops an invalid one", () => {
-    expect(parseTutorSearchParams(new URLSearchParams("price=100_200")).priceBand).toBe("100_200");
-    expect(parseTutorSearchParams(new URLSearchParams("price=cheap")).priceBand).toBeUndefined();
-  });
-
-  it("falls back to relevance for an unknown sort, and has no rating sort", () => {
-    expect(parseTutorSearchParams(new URLSearchParams("sort=rating")).sort).toBe("relevance");
-    expect(parseTutorSearchParams(new URLSearchParams("sort=price_asc")).sort).toBe("price_asc");
+  it("keeps a valid price band; defaults sort to relevance when absent", () => {
+    expect(parse("price=100_200").priceBand).toBe("100_200");
+    expect(parse("").sort).toBe("relevance");
+    expect(parse("sort=price_asc").sort).toBe("price_asc");
   });
 
   it("reads liveNow, minRating, cursor", () => {
-    const q = parseTutorSearchParams(new URLSearchParams("live=1&minRating=4&cursor=abc"));
+    const q = parse("live=1&minRating=4&cursor=abc");
     expect(q.liveNow).toBe(true);
     expect(q.minRating).toBe(4);
     expect(q.cursor).toBe("abc");
   });
+});
 
-  it("drops an out-of-range minRating", () => {
-    expect(parseTutorSearchParams(new URLSearchParams("minRating=9")).minRating).toBeUndefined();
+// ── parse: present-but-invalid values FAIL LOUDLY (§3.3), never silently drop ──
+describe("parseTutorSearchParams — rejection path", () => {
+  it("rejects an unknown sort and names the valid options", () => {
+    expect(() => parse("sort=bogus")).toThrow(SearchParamError);
+    expect(() => parse("sort=bogus")).toThrow(/price_asc/); // message lists valid sorts
+  });
+
+  it("rejects a rating sort specifically (reviews dropped for v1)", () => {
+    expect(() => parse("sort=rating")).toThrow(SearchParamError);
+  });
+
+  it("rejects an unknown price band and names the valid options", () => {
+    expect(() => parse("price=cheap")).toThrow(SearchParamError);
+    expect(() => parse("price=cheap")).toThrow(/100_200/);
+  });
+
+  it("rejects an out-of-range or non-numeric minRating", () => {
+    expect(() => parse("minRating=9")).toThrow(SearchParamError);
+    expect(() => parse("minRating=-1")).toThrow(SearchParamError);
+    expect(() => parse("minRating=abc")).toThrow(SearchParamError);
+  });
+
+  it("does NOT throw for absent/empty optional params", () => {
+    expect(() => parse("")).not.toThrow();
+    expect(() => parse("sort=&price=&minRating=")).not.toThrow();
+    expect(parse("sort=&price=&minRating=")).toEqual(baseQuery());
   });
 });
 
