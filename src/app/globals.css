@@ -1,15 +1,29 @@
 @import "tailwindcss";
 
-/* Brand tokens — SPEC §10.1. Tokens only; no component styles in Phase 0. */
+/* ─────────────────────────────────────────────────────────────────────────
+   Brand tokens — SPEC §10.1. This file is the ONLY place raw colour values,
+   font sizes, radii, and shadows are allowed to live. Everything else styles
+   through the Tailwind utilities these tokens generate.
+   ───────────────────────────────────────────────────────────────────────── */
 @theme {
   /* Brand */
-  --color-purple-500: #8434a8; /* primary — buttons, links, active states */
+  --color-purple-500: #8434a8; /* primary on LIGHT surfaces only — buttons, links, active states. FILL-ONLY on ink (1.34:1 as text/border — forbidden). */
   --color-purple-700: #6b2a8a; /* hover */
   --color-purple-100: #f3e8f8; /* tints, selected backgrounds */
-  --color-ink-900: #332042; /* app background, dark surfaces */
-  --color-ink-800: #3e2a50; /* elevated dark surface */
-  --color-gold-400: #fee401; /* CTA — high contrast on ink */
-  --color-live-500: #44c96f; /* live indicators only */
+
+  /* Ink — ONE surface, hue-210 ramp (sampled from the Bubble shell). There is a
+     single ink surface (#34495E); a card/dropdown/drawer on ink cannot separate
+     by being lighter — it separates by an ink-700 border or a shadow. ink-800 is
+     an INTERACTION state (hover/pressed), NEVER a surface. */
+  --color-ink-950: #263544; /* active nav item, modal scrim */
+  --color-ink-900: #34495e; /* THE surface: shell, topbar, cards */
+  --color-ink-800: #3e566e; /* hover / pressed on ink — NOT a surface */
+  --color-ink-700: #4a6076; /* borders, dividers on ink */
+  --color-ink-300: #acbac8; /* muted / secondary text on ink (4.69:1) */
+
+  --color-gold-400: #fee401; /* CTA + focus ring on ink — high contrast (7.22:1) */
+  --color-live-500: #44c96f; /* live indicators only — dots, pulses (non-text) */
+  --color-live-400: #4fd179; /* LIVE badge fill — carries ink-900 text (4.75:1) */
 
   /* Neutrals */
   --color-white: #ffffff;
@@ -27,13 +41,141 @@
   --font-sans: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui,
     sans-serif;
 
+  /* Type scale — SPEC §10.1. Paired size/leading so `text-h1` (etc.) carries
+     its own line-height (Phase 2 amendment #3). */
+  --text-display: 40px;
+  --text-display--line-height: 44px;
+  --text-h1: 32px;
+  --text-h1--line-height: 38px;
+  --text-h2: 24px;
+  --text-h2--line-height: 30px;
+  --text-h3: 20px;
+  --text-h3--line-height: 26px;
+  --text-body-lg: 17px;
+  --text-body-lg--line-height: 26px;
+  --text-body: 15px;
+  --text-body--line-height: 24px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+
   /* Radii */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-full: 9999px;
+
+  /* Elevation — subtle, brand-tinted rather than pure black */
+  --shadow-sm: 0 1px 2px 0 rgb(51 32 66 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(51 32 66 / 0.1);
+  --shadow-lg: 0 12px 32px -8px rgb(51 32 66 / 0.18);
+
+  /* Layout */
+  --container-page: 1200px;
+
+  /* Motion — shared easing for the hand-rolled Radix keyframes below */
+  --ease-out-brand: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Focus rings — SPEC §10.3. Two tokens, one per surface: purple is invisible
+     on ink (1.34:1, below the 3:1 non-text floor), so ink surfaces ring in gold. */
+  --focus-ring: var(--color-purple-500); /* light surfaces */
+  --focus-ring-on-ink: var(--color-gold-400); /* ink surfaces */
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────────────────── */
 body {
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+/* Focus rings — SPEC §10.3. Two surface-specific utilities, 2px / 2px offset.
+   `.focus-ring` (purple) is the default for light-surface primitives;
+   `.focus-ring-on-ink` (gold) is used by anything rendered on an ink surface,
+   where a purple ring would be invisible. */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+@utility focus-ring-on-ink {
+  outline: none;
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-on-ink);
+    outline-offset: 2px;
+  }
+}
+
+/* Page container — 1200px max, 20px gutter mobile / 24px desktop (§10.1).
+   Desktop gutter tightened 32→24 in the density pass (denser, Bubble-comparable). */
+@utility container-page {
+  width: 100%;
+  max-width: var(--container-page);
+  margin-inline: auto;
+  padding-inline: 20px;
+  @media (width >= 768px) {
+    padding-inline: 24px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Radix animation keyframes — hand-rolled, no animation dependency (Phase 2
+   amendment #4). Enter/exit are driven by Radix `data-state` attributes on the
+   primitives. All motion is gated behind `prefers-reduced-motion` at the
+   bottom of this file.
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes dialog-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes dialog-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+}
+@keyframes drawer-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes drawer-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes popover-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes popover-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+
+/* Overlays (Modal, Drawer scrim) */
+[data-slot="overlay"][data-state="open"] { animation: overlay-in 150ms var(--ease-out-brand); }
+[data-slot="overlay"][data-state="closed"] { animation: overlay-out 120ms var(--ease-out-brand); }
+
+/* Centred dialog (Modal) */
+[data-slot="modal-content"][data-state="open"] { animation: dialog-in 180ms var(--ease-out-brand); }
+[data-slot="modal-content"][data-state="closed"] { animation: dialog-out 140ms var(--ease-out-brand); }
+
+/* Side drawer */
+[data-slot="drawer-content"][data-state="open"] { animation: drawer-in-right 220ms var(--ease-out-brand); }
+[data-slot="drawer-content"][data-state="closed"] { animation: drawer-out-right 180ms var(--ease-out-brand); }
+
+/* Popovers (DropdownMenu, Select, Tooltip) */
+[data-slot="popover"][data-state="open"] { animation: popover-in 140ms var(--ease-out-brand); }
+[data-slot="popover"][data-state="closed"] { animation: popover-out 110ms var(--ease-out-brand); }
+
+.animate-spin-brand { animation: spin 0.7s linear infinite; }
+.animate-shimmer::after { animation: shimmer 1.4s infinite; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Reduced motion — SPEC §10.3. Kill every animation/transition, including the
+   Radix keyframes above.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

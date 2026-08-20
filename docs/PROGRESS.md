@@ -3,9 +3,11 @@
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
 ## Current state (2026-08-19)
-- **Phase 0** (foundation scaffold): committed on `phase-0-foundation`, **PR #1 OPEN — not merged**.
-- **Phase 1** (data layer): committed on `phase-1-data-layer` (`a31fb3f`), **PR #2 OPEN into `main` — not merged**.
-- `phase-1-data-layer` is **stacked on** `phase-0-foundation`, so PR #2 includes Phase 0's commits until PR #1 merges. `main` is still at the pre-Phase-0 tip.
+- **Phase 0** (foundation scaffold): merged to `main` via PR #1 (`56cc101`).
+- **Phase 1** (data layer): merged to `main` via PR #2 (`e9c33c4`). `main` now carries the full
+  scaffold + data layer.
+- **Phase 2** (design system): committed on `phase-2-design-system`, branched off the updated
+  `main`. **PR not yet opened** (ask before pushing/opening).
 
 ## What Phase 1 built
 21 tables + 16 enums (Drizzle, `src/db/schema/` 8 files) · 7 migrations (`drizzle/0000` generated core + `0001`–`0006` custom SQL: btree_gist overlap exclusion, auth.users FK + signup trigger, updated_at/presence/anti-escalation triggers, `live_tutors` + `public_profiles` views, RLS 45 policies, Realtime) · `db:seed` / `db:verify-rls` / `db:reset`.
@@ -27,5 +29,22 @@ The 8 schema decisions + Decision A (payout split table) + Decision B (`public_p
 - **`credit_transaction_type` value check** — confirm the ledger enum values match the current build.
 - **Noora's §18 settings** — credit_usd_rate, platform_fee_percent, earnings_hold_hours, cancellation/refund policy, etc. (all seeded as provisional placeholders in `platform_settings`).
 
+## What Phase 2 built
+Design system (SPEC §10). Tokens completed in `globals.css` (paired type scale, shadows,
+`container-page`/`focus-ring` utilities, hand-rolled Radix keyframes under reduced-motion). All
+**34 §10.2 primitives** in `src/components/ui/` (kebab-case + barrel), on shadcn stack
+(Radix + CVA + `cn`, sonner toasts, react-day-picker calendar — both mapped to tokens, no
+stylesheet/palette leak). `/dev/kitchen-sink` renders every primitive in every state with a
+**light/ink surface toggle** (dev-only via `dev/layout.tsx`). Layouts: public header/footer
+(`(public)/layout.tsx`) + authenticated `AppShell` (dark sidebar + topbar + mobile drawer) wired
+into `(student)`/`(tutor)`/`admin` layouts — **presentational, guards deferred to Phase 3**.
+`src/app/page.tsx` moved into `(public)/` (single `/` resolver).
+Verified: typecheck/lint/test/build green; grep proof clean (no hex/`rgb`/`rgba`/`hsl`/non-brand
+palette classes outside `globals.css`); kitchen sink checked at 360px & 1440px, light + ink.
+Composed components (11) deferred to feature phases — see DECISIONS.md.
+
 ## Next up
-**Phase 2 — Design system**: brand tokens (mostly wired in Phase 0), every primitive in SPEC §10.2, a `/dev/kitchen-sink` page in all states, public + authenticated layouts. Accept: kitchen sink renders at 360px & 1440px; no hardcoded hex outside the token file.
+**Phase 3 — Auth, onboarding, profiles, browse** (do not start until told). Adds the Phase 3 route
+guards (`requireRole`, tutor-approval gate) to the shells built here, plus signup/login/Google/
+reset, onboarding, tutor profile editor, `/tutors` filters + `/tutors/[slug]`, avatar upload +
+`next/image` `remotePatterns`, and the first composed component (`TutorCard`).
