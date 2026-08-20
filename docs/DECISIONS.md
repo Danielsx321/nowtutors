@@ -319,6 +319,17 @@ choices recorded here:
   `min_withdrawal_usd` (30). **Changed:** `platform_fee_percent` 20→25, `earnings_hold_hours` 72→48,
   `max_booking_days_ahead` 30→7. **Kept:** `min_booking_notice_minutes` (120, existing default),
   `instant_request_ttl_seconds` (60 — the instant-request accept window, unaffected by billing).
+- **Earnings fee rounds DOWN, remainder to the tutor — authoritative, not a fixture choice
+  (SPEC §7.11).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`;
+  `net_credits = gross_credits − platform_fee_credits`. *Why floor:* rounding against the payee
+  accumulates in the platform's favour across many small sessions; rounding the fee down costs the
+  platform fractions of a credit per session and is the defensible direction. *Why now, and why one
+  function:* a 10-credit charge at 25% is 2.5 credits — integer splits are unavoidable, and if the
+  seed and the Phase 5 pipeline each pick their own rounding they diverge silently. So the rule lives
+  in a single exported helper, **`src/lib/credits/fees.ts` → `splitEarnings(gross, feePercent)`**,
+  which the seed calls and Phase 5 must call too (the only application code in this otherwise
+  docs+seed change). Supersedes the earlier round-half-up comment on the seed fixture. Instant sample
+  earnings are now gross 10 / fee 2 / net 8 (was 3/7).
 - **§18 Q3 (broadcast chat) was NOT in the resolution batch.** The user's answer set covered every
   §18 item except broadcast chat. Recorded as **deferred**, grounded in the existing Phase 1 decision
   that broadcasts are **net-new** functionality beyond current parity — so broadcast chat is decided

@@ -2,6 +2,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
+import { splitEarnings } from "../lib/credits/fees";
 
 // DEV seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
@@ -274,12 +275,9 @@ async function main() {
     "instant booking",
   ) as { id: string }[];
 
-  // Earnings at platform_fee_percent = 25 (tutor keeps 75%). 25% of 10 = 2.5; 10 credits
-  // can't split exactly 25/75, so the fee rounds half-up to 3 (net 7). The authoritative
-  // rounding rule is Phase 5 code — this is a dev fixture, kept internally consistent.
-  const grossCredits = instantPrice; // 10
-  const platformFeeCredits = Math.round((grossCredits * 25) / 100); // 3
-  const netCredits = grossCredits - platformFeeCredits; // 7
+  // Earnings split via the authoritative helper (SPEC §7.11) so the fixture can't diverge
+  // from Phase 5: fee rounds DOWN, remainder to the tutor. gross 10 @ 25% → fee 2, net 8.
+  const { grossCredits, platformFeeCredits, netCredits } = splitEarnings(instantPrice, 25);
   check(
     await admin.from("tutor_earnings").insert({
       tutor_id: id.tutor2,

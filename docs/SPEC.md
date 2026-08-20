@@ -674,6 +674,7 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 ### 7.11 Earnings and withdrawals
 
 - Session completes → `tutor_earnings` row, `status = held`, `available_at = ended_at + earnings_hold_hours`.
+- **Fee split (authoritative).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`, `net_credits = gross_credits − platform_fee_credits`. The fee **rounds down; the remainder goes to the tutor.** Rounding against the payee would accumulate in the platform's favour across many small sessions, so the split rounds down instead. This is implemented once in `src/lib/credits/fees.ts` (`splitEarnings`) and called by both the seed and the earnings pipeline so they cannot diverge. (`platform_fee_percent = 25` → tutor keeps ≥75%.)
 - Cron flips `held` → `available` when due.
 - `/tutor/withdrawals`: available balance, minimum from settings, PayPal email shown with an edit link. Request creates `withdrawal_requests` (`requested`) and a `withdrawal_hold` ledger entry so the credits can't be double-spent.
 - `/admin/withdrawals`: queue with tutor, amount, USD equivalent, destination email, request date. Actions: **Approve** (`approved`), **Mark paid** (requires an `external_reference`; writes `withdrawal_paid` ledger entry, flips earnings to `withdrawn`, emails the tutor), **Reject** (requires a note; reverses the hold, emails the tutor).
