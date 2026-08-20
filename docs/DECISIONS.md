@@ -149,6 +149,21 @@ the §16 Phase 2 layouts. No data/auth work.
   chrome (`SidebarNav`) uses light-on-dark with purple only as an active **fill**. `Card`/
   `StatCard` carry an explicit `surface="ink"` variant; `LivePill` and fill-based `Badge`s are
   surface-agnostic.
+- **Ink chrome vs light surfaces — the dividing line (settled; do not re-litigate in Phase 3).**
+  Keep the ink surface area small: **ink chrome = the desktop sidebar and the mobile nav drawer
+  only.** The **topbar is a light surface** (`bg-white`) — `CreditBalance`, ghost icon `Button`s,
+  and (in Phase 3) `Breadcrumb` compose there as-is with no ink treatment. All content areas are
+  light. Pattern: **dark sidebar + white topbar + white content.**
+  - The one real dark-chrome gap fixed this phase was the **mobile drawer close button**: it now
+    reads light-on-dark (`text-gray-200`, ink-800 hover, white hover text) to match the dark
+    `DrawerContent` that wraps the `SidebarNav`. The sidebar/drawer nav itself was already
+    ink-treated (`SidebarNav`: light text, purple only as an active fill).
+  - `Breadcrumb`, `Pagination`, `PriceTag`, `RatingStars` labels stay light-surface with **no**
+    surface variant — they live in light content areas (and light topbars) and never render on
+    ink. Keeping the topbar light is what keeps that true.
+  - *(History: a topbar-ink treatment was briefly added and reverted — the premise that the
+    topbar was dark chrome was wrong; an ink topbar would have put `Breadcrumb` on ink in Phase 3
+    and contradicted the line above.)*
 - **No `setInterval` in the kitchen sink** (honours the CLAUDE.md polling rule). `ProgressRing`'s
   `live` prop wires `role="timer"` + `aria-live`; the real per-second tick is the Phase 6
   instant-request flow, not a demo loop.

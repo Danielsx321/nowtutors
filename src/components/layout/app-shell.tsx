@@ -43,7 +43,7 @@ export function AppShell({
       <Sidebar items={items} roleLabel={roleHome[role]} />
 
       <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
-        <DrawerContent className="bg-ink-900 [&_[aria-label=Close]]:text-white [&_[aria-label=Close]]:hover:bg-ink-800">
+        <DrawerContent className="bg-ink-900 [&_[aria-label=Close]]:text-gray-200 [&_[aria-label=Close]]:hover:bg-ink-800 [&_[aria-label=Close]]:hover:text-white">
           <DrawerHeader className="border-ink-800">
             <DrawerTitle className="text-white">
               Now<span className="text-gold-400">Tutors</span>

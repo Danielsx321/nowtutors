@@ -23,6 +23,9 @@ export interface TopbarProps {
   userName?: string;
 }
 
+// The topbar is a LIGHT surface (white). Only the sidebar and the mobile nav
+// drawer are dark chrome — keeping the ink surface area small means light-surface
+// primitives (Breadcrumb, CreditBalance, ghost Buttons) compose here as-is.
 export function Topbar({
   title,
   onOpenMenu,
@@ -42,9 +45,7 @@ export function Topbar({
         >
           <Menu />
         </Button>
-        {title && (
-          <h1 className="text-h3 font-bold text-gray-700">{title}</h1>
-        )}
+        {title && <h1 className="text-h3 font-bold text-gray-700">{title}</h1>}
       </div>
 
       <div className="flex items-center gap-2">
