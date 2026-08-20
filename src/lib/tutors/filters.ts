@@ -11,14 +11,16 @@ import { tutorProfiles } from "@/db/schema";
  * constraints. Neither function opens a DB connection.
  */
 
-// ── Price bands (USD labels; column is hourly_rate_credits) ──────────────────
-// Bounds are [minUsd, maxUsd); the top band is open-ended.
+// ── Price bands (credits per hour; column is hourly_rate_credits) ─────────────
+// Credits are money, not time (SPEC §18 credits-are-money amendment), so the
+// filter is in credits/hour directly — no USD conversion. Bounds are
+// [minCredits, maxCredits); the top band is open-ended.
 export const PRICE_BANDS = {
-  under_15: { label: "Under $15/hr", minUsd: 0, maxUsd: 15 },
-  "15_25": { label: "$15–25", minUsd: 15, maxUsd: 25 },
-  "25_50": { label: "$25–50", minUsd: 25, maxUsd: 50 },
-  "50_100": { label: "$50–100", minUsd: 50, maxUsd: 100 },
-  "100_plus": { label: "$100+", minUsd: 100, maxUsd: null },
+  under_50: { label: "Under 50 credits/hr", minCredits: 0, maxCredits: 50 },
+  "50_100": { label: "50–100 credits/hr", minCredits: 50, maxCredits: 100 },
+  "100_200": { label: "100–200 credits/hr", minCredits: 100, maxCredits: 200 },
+  "200_400": { label: "200–400 credits/hr", minCredits: 200, maxCredits: 400 },
+  "400_plus": { label: "400+ credits/hr", minCredits: 400, maxCredits: null },
 } as const;
 
 export type PriceBand = keyof typeof PRICE_BANDS;
@@ -76,17 +78,14 @@ export function parseTutorSearchParams(params: URLSearchParams): TutorQuery {
 }
 
 /**
- * Compose Drizzle WHERE conditions for the set filters only. `usdPerCredit` is
- * injected (read from platform_settings.credit_usd_rate via lib/settings.ts) so
- * the USD↔credits rate is never baked into filter logic.
+ * Compose Drizzle WHERE conditions for the set filters only. Fully pure — no
+ * injected values, no DB read: price bands are in credits/hour and compare
+ * directly against `hourly_rate_credits`.
  *
  * Not handled here (by design): `liveNow` (a live_tutors join in the query),
  * `sort` (ORDER BY), and `cursor` (keyset pagination).
  */
-export function composeTutorFilters(
-  query: TutorQuery,
-  opts: { usdPerCredit: number },
-): SQL[] {
+export function composeTutorFilters(query: TutorQuery): SQL[] {
   const conditions: SQL[] = [];
 
   // Subjects — tutor teaches ANY of the selected subject slugs.
@@ -104,18 +103,14 @@ export function composeTutorFilters(
     conditions.push(arrayOverlaps(tutorProfiles.languages, query.languages));
   }
 
-  // Price band — USD bounds → credit bounds via the injected rate.
+  // Price band — credit bounds compared directly against hourly_rate_credits.
   if (query.priceBand) {
-    const { minUsd, maxUsd } = PRICE_BANDS[query.priceBand];
-    if (minUsd > 0) {
-      conditions.push(
-        gte(tutorProfiles.hourlyRateCredits, minUsd / opts.usdPerCredit),
-      );
+    const { minCredits, maxCredits } = PRICE_BANDS[query.priceBand];
+    if (minCredits > 0) {
+      conditions.push(gte(tutorProfiles.hourlyRateCredits, minCredits));
     }
-    if (maxUsd !== null) {
-      conditions.push(
-        lt(tutorProfiles.hourlyRateCredits, maxUsd / opts.usdPerCredit),
-      );
+    if (maxCredits !== null) {
+      conditions.push(lt(tutorProfiles.hourlyRateCredits, maxCredits));
     }
   }
 
@@ -129,10 +124,7 @@ export function composeTutorFilters(
 }
 
 /** Convenience: AND the composed conditions, or undefined when none are set. */
-export function composeTutorWhere(
-  query: TutorQuery,
-  opts: { usdPerCredit: number },
-): SQL | undefined {
-  const conds = composeTutorFilters(query, opts);
+export function composeTutorWhere(query: TutorQuery): SQL | undefined {
+  const conds = composeTutorFilters(query);
   return conds.length ? and(...conds) : undefined;
 }

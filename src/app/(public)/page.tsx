@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { subjects as subjectsTable } from "@/db/schema";
 import { parseTutorSearchParams } from "@/lib/tutors/filters";
 import { browseTutors } from "@/db/queries/tutors";
-import { getCreditUsdRate } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/guards";
 import { TutorCard } from "@/components/features/tutor-card";
 import {
@@ -42,9 +41,8 @@ export default async function BrowsePage({
   const params = toParams(sp);
   const query = parseTutorSearchParams(params);
 
-  const [viewer, usdPerCredit, subjectRows] = await Promise.all([
+  const [viewer, subjectRows] = await Promise.all([
     getViewer(),
-    getCreditUsdRate(),
     db
       .select({ slug: subjectsTable.slug, name: subjectsTable.name })
       .from(subjectsTable)
@@ -53,7 +51,6 @@ export default async function BrowsePage({
   ]);
 
   const { cards, nextCursor } = await browseTutors(query, {
-    usdPerCredit,
     viewerId: viewer?.userId ?? null,
   });
 

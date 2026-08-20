@@ -147,16 +147,20 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <Badge variant="danger">Danger</Badge>
         <Badge variant="solid">Solid</Badge>
         <LivePill />
+        <LivePill surface="ink" />
       </Demo>
 
       <Demo label="Avatar (image, initials fallback, broken src)" surface={surface}>
         <Avatar size="sm" name="Ada Lovelace" />
         <Avatar size="md" name="Grace Hopper" />
         <Avatar size="lg" name="Alan Turing" />
+        {/* Local same-origin path that 404s: next/image fires onError → initials
+            fallback (§7.2). A remote host NOT in next.config remotePatterns would
+            instead throw at render (next/image is stricter than a plain <img>). */}
         <Avatar
           size="lg"
           name="Katherine Johnson"
-          src="https://invalid.example/none.jpg"
+          src="/broken-avatar-demo.png"
         />
         <Avatar size="xl" name="Marie Curie" />
       </Demo>

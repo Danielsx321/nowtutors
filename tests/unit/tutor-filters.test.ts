@@ -9,7 +9,6 @@ import {
 } from "@/lib/tutors/filters";
 
 const dialect = new PgDialect();
-const RATE = 0.5; // usdPerCredit; $15 → 30 credits
 
 function baseQuery(overrides: Partial<TutorQuery> = {}): TutorQuery {
   return {
@@ -25,7 +24,7 @@ function baseQuery(overrides: Partial<TutorQuery> = {}): TutorQuery {
 }
 
 function renderWhere(q: TutorQuery) {
-  const where = composeTutorWhere(q, { usdPerCredit: RATE });
+  const where = composeTutorWhere(q);
   return where ? dialect.sqlToQuery(where) : { sql: "", params: [] as unknown[] };
 }
 
@@ -45,7 +44,7 @@ describe("parseTutorSearchParams", () => {
   });
 
   it("keeps a valid price band and drops an invalid one", () => {
-    expect(parseTutorSearchParams(new URLSearchParams("price=25_50")).priceBand).toBe("25_50");
+    expect(parseTutorSearchParams(new URLSearchParams("price=100_200")).priceBand).toBe("100_200");
     expect(parseTutorSearchParams(new URLSearchParams("price=cheap")).priceBand).toBeUndefined();
   });
 
@@ -69,8 +68,8 @@ describe("parseTutorSearchParams", () => {
 // ── compose: only-set-filters guarantee, exhaustive over the 4 composables ────
 describe("composeTutorFilters — only set filters produce conditions", () => {
   it("emits nothing for an empty query", () => {
-    expect(composeTutorFilters(baseQuery(), { usdPerCredit: RATE })).toHaveLength(0);
-    expect(composeTutorWhere(baseQuery(), { usdPerCredit: RATE })).toBeUndefined();
+    expect(composeTutorFilters(baseQuery())).toHaveLength(0);
+    expect(composeTutorWhere(baseQuery())).toBeUndefined();
   });
 
   const flags = [false, true];
@@ -82,7 +81,7 @@ describe("composeTutorFilters — only set filters produce conditions", () => {
             const q = baseQuery({
               subjects: subj ? ["algebra"] : [],
               languages: lang ? ["English"] : [],
-              priceBand: price ? "25_50" : undefined, // both bounds → 2 conds
+              priceBand: price ? "100_200" : undefined, // both bounds → 2 conds
               minRating: rating ? 4 : undefined,
             });
             const { sql } = renderWhere(q);
@@ -97,35 +96,33 @@ describe("composeTutorFilters — only set filters produce conditions", () => {
         }
 });
 
-// ── compose: price band → credit conversion via the injected rate ─────────────
-describe("composeTutorFilters — price band conversion", () => {
-  it("under_15 → only an upper bound (< 30 credits)", () => {
-    const conds = composeTutorFilters(baseQuery({ priceBand: "under_15" }), { usdPerCredit: RATE });
+// ── compose: price band → credit bounds, compared directly (no conversion) ────
+describe("composeTutorFilters — price band credit bounds", () => {
+  it("under_50 → only an upper bound (< 50 credits)", () => {
+    const conds = composeTutorFilters(baseQuery({ priceBand: "under_50" }));
     expect(conds).toHaveLength(1);
-    const { sql, params } = renderWhere(baseQuery({ priceBand: "under_15" }));
+    const { sql, params } = renderWhere(baseQuery({ priceBand: "under_50" }));
     expect(sql).toContain("<");
-    expect(params).toContain(PRICE_BANDS.under_15.maxUsd! / RATE); // 30
+    expect(params).toContain(PRICE_BANDS.under_50.maxCredits!); // 50
   });
 
-  it("15_25 → lower 30 and upper 50", () => {
-    const { params } = renderWhere(baseQuery({ priceBand: "15_25" }));
-    expect(params).toContain(30);
+  it("50_100 → lower 50 and upper 100", () => {
+    const { params } = renderWhere(baseQuery({ priceBand: "50_100" }));
     expect(params).toContain(50);
+    expect(params).toContain(100);
   });
 
-  it("100_plus → only a lower bound (>= 200 credits)", () => {
-    const conds = composeTutorFilters(baseQuery({ priceBand: "100_plus" }), { usdPerCredit: RATE });
+  it("400_plus → only a lower bound (>= 400 credits)", () => {
+    const conds = composeTutorFilters(baseQuery({ priceBand: "400_plus" }));
     expect(conds).toHaveLength(1);
-    const { params } = renderWhere(baseQuery({ priceBand: "100_plus" }));
-    expect(params).toContain(200);
+    const { params } = renderWhere(baseQuery({ priceBand: "400_plus" }));
+    expect(params).toContain(400);
   });
 
-  it("respects a different injected rate", () => {
-    const { params } = renderWhere(baseQuery({ priceBand: "15_25" }));
-    const other = composeTutorWhere(baseQuery({ priceBand: "15_25" }), { usdPerCredit: 1 });
-    const otherParams = dialect.sqlToQuery(other!).params;
-    expect(params).toContain(30); // at 0.5 → $15 = 30 credits
-    expect(otherParams).toContain(15); // at 1.0 → $15 = 15 credits
+  it("bounds are the credit values verbatim — no USD conversion", () => {
+    const { params } = renderWhere(baseQuery({ priceBand: "200_400" }));
+    expect(params).toContain(200);
+    expect(params).toContain(400);
   });
 });
 

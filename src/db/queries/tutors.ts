@@ -73,7 +73,7 @@ function encodeCursor(k: number, id: string): string {
  */
 export async function browseTutors(
   query: TutorQuery,
-  opts: { usdPerCredit: number; viewerId: string | null },
+  opts: { viewerId: string | null },
 ): Promise<BrowseResult> {
   const spec = sortSpec(query.sort);
   const cursor = decodeCursor(query.cursor);
@@ -81,7 +81,7 @@ export async function browseTutors(
   const conditions: SQL[] = [
     eq(tutorProfiles.approvalStatus, "approved"),
     eq(profiles.isSuspended, false),
-    ...composeTutorFilters(query, { usdPerCredit: opts.usdPerCredit }),
+    ...composeTutorFilters(query),
   ];
 
   // live_now filter → require live_tutors membership (view-derived, §3.1).

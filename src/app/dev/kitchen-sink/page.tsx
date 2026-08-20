@@ -8,6 +8,7 @@ import { ButtonsSection } from "./_sections/buttons";
 import { FormsSection } from "./_sections/forms";
 import { FeedbackSection } from "./_sections/feedback";
 import { DataDisplaySection } from "./_sections/data-display";
+import { TutorCardSection } from "./_sections/tutor-card";
 import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
 
@@ -17,6 +18,7 @@ const sections = [
   { id: "forms", label: "Forms" },
   { id: "feedback", label: "Feedback" },
   { id: "data-display", label: "Data display" },
+  { id: "tutor-card", label: "TutorCard" },
   { id: "overlays", label: "Overlays" },
   { id: "layouts", label: "Layouts" },
 ];
@@ -114,6 +116,7 @@ export default function KitchenSink() {
         <FormsSection surface={surface} />
         <FeedbackSection surface={surface} />
         <DataDisplaySection surface={surface} />
+        <TutorCardSection surface={surface} />
         <OverlaysSection surface={surface} />
         <LayoutsPreviewSection surface={surface} />
       </main>
