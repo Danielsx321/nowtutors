@@ -399,6 +399,23 @@ credit_packages              # jsonb array of buyable packages: credits + USD pr
 
 **`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here.
 
+### 4.8 Favourites
+
+> **PARITY — added in Phase 3.** Backed by Bubble's `Favourite_Tutors` list; the original
+> spec omitted it (see `docs/DECISIONS.md`). Migration `drizzle/0008_favourites.sql`.
+
+**`favourites`** — a student's saved tutors.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| student_id | uuid FK → profiles.id (cascade) | the student who favourited |
+| tutor_id | uuid FK → profiles.id (cascade) | the tutor's profile id |
+| created_at | timestamptz not null default now() | |
+
+`unique (student_id, tutor_id)`. Indexes: `(student_id)`, `(tutor_id)`. RLS: a student reads and
+writes **only their own** rows (`student_id = auth.uid()` for select/insert/delete; no update).
+
 ---
 
 ## 5. Authorization
@@ -423,6 +440,7 @@ Policy summary:
 | broadcasts | anyone reads live/ended | owning tutor |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
 | audit_log | admin only | service role only |
+| favourites | owning student only | owning student inserts/deletes own (no update) |
 
 **Layer 2 — route handlers.** Every Server Action and API route independently re-checks the caller's identity and role. `requireUser()`, `requireRole('tutor')`, `requireBookingParticipant(bookingId)` helpers live in `lib/auth/guards.ts` and are the first line of every handler. Never trust a client-supplied `userId`.
 

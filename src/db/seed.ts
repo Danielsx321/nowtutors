@@ -2,14 +2,15 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
+import { sessionPoolerUrl } from "./session-url";
 import { splitEarnings } from "../lib/credits/fees";
 
 // DEV seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
-// wallets, subjects, settings, availability, and a couple of sample bookings.
-// platform_settings + credit_packages now carry the resolved SPEC §18 values. The SUBJECTS
-// list below is still the 8 dev placeholders — the canonical 26-subject list lives on
-// phase-3-auth-onboarding-browse (cf4e5b8) and is not ported here (see docs/DECISIONS.md).
+// wallets, subjects, settings, availability, favourites, and sample bookings.
+// Canonical 26-subject list + languages from the Bubble option sets (Phase 3).
+// platform_settings + credit_packages carry the resolved SPEC §18 values (see docs/DECISIONS.md).
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -21,16 +22,52 @@ const admin = createClient(url, serviceKey, {
 
 const PASSWORD = "Password123!";
 
-const SUBJECTS = [
-  { name: "Mathematics", slug: "mathematics", sort_order: 1 },
-  { name: "Physics", slug: "physics", sort_order: 2 },
-  { name: "Chemistry", slug: "chemistry", sort_order: 3 },
-  { name: "Biology", slug: "biology", sort_order: 4 },
-  { name: "English", slug: "english", sort_order: 5 },
-  { name: "Computer Science", slug: "computer-science", sort_order: 6 },
-  { name: "Economics", slug: "economics", sort_order: 7 },
-  { name: "History", slug: "history", sort_order: 8 },
+// Canonical 26 subjects (Bubble option set), in order → sort_order 1..26.
+// #3/#11 corrected per the §18 resolution; #6/#10 confirmed correct as seeded (see DECISIONS.md).
+const SUBJECT_NAMES = [
+  "Algebra",
+  "Advanced Calculus",
+  "English as a Second Language (ESL)",
+  "Python Programming",
+  "Physics",
+  "IELTS / TOEFL Essay Proofreading",
+  "Chemistry",
+  "SAT / ACT Test Prep",
+  "Statistics & Data Analysis",
+  "Data Science & Machine Learning",
+  "Live IELTS / TOEFL Speaking Prep",
+  "Java & C++ Programming",
+  "Financial Accounting",
+  "Academic Essay Writing",
+  "Spanish",
+  "French",
+  "Biology & Genetics",
+  "GRE / GMAT Test Prep",
+  "Web Development",
+  "Macro / Microeconomics",
+  "Arabic",
+  "MCAT / LSAT Test Prep",
+  "Geometry",
+  "Mandarin Chinese",
+  "Study Skills",
+  "ACT Maths",
 ];
+
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/\+/g, "plus")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+const SUBJECTS = SUBJECT_NAMES.map((name, i) => ({
+  name,
+  slug: slugify(name),
+  sort_order: i + 1,
+}));
+const slugOf = Object.fromEntries(SUBJECTS.map((s) => [s.name, s.slug]));
 
 // Resolved values from SPEC §18 (2026-08-20). All live in platform_settings so retuning is a
 // settings change, not a rebuild. Keys removed by §18 (credit_usd_rate, min_withdrawal_credits,
@@ -66,16 +103,58 @@ type SeedUser = {
   email: string;
   role: "admin" | "tutor" | "student";
   fullName: string;
+  isSuspended?: boolean;
+  country?: string;
 };
 
-const USERS: SeedUser[] = [
-  { key: "admin", email: "admin@nowtutors.dev", role: "admin", fullName: "Ada Admin" },
-  { key: "tutor1", email: "tutor1@nowtutors.dev", role: "tutor", fullName: "Tom Tutor" },
-  { key: "tutor2", email: "tutor2@nowtutors.dev", role: "tutor", fullName: "Tina Tutor" },
-  { key: "tutor3", email: "tutor3@nowtutors.dev", role: "tutor", fullName: "Theo Tutor" },
-  { key: "student1", email: "student1@nowtutors.dev", role: "student", fullName: "Sam Student" },
-  { key: "student2", email: "student2@nowtutors.dev", role: "student", fullName: "Sara Student" },
+// Rates chosen so tutors span every price band at credit_usd_rate=0.5
+// ($0.50/credit): <30cr=Under$15 · 30–50=$15–25 · 50–100=$25–50 · 100–200=$50–100 · 200+=$100+.
+type TutorDef = {
+  key: string;
+  slug: string;
+  rate: number;
+  subjects: string[];
+  languages: string[];
+  completed: number;
+  approval: "approved" | "pending";
+};
+
+const TUTORS: (SeedUser & TutorDef)[] = [
+  { key: "tutor1", email: "tutor1@nowtutors.dev", role: "tutor", fullName: "Tom Turner", country: "US",
+    slug: "tom-turner", rate: 20, subjects: ["Algebra", "Geometry", "ACT Maths"], languages: ["English"], completed: 45, approval: "approved" },
+  { key: "tutor2", email: "tutor2@nowtutors.dev", role: "tutor", fullName: "Tina Reyes", country: "ES",
+    slug: "tina-reyes", rate: 40, subjects: ["English as a Second Language (ESL)", "Academic Essay Writing", "Spanish"], languages: ["English", "Spanish"], completed: 30, approval: "approved" },
+  { key: "tutor3", email: "tutor3@nowtutors.dev", role: "tutor", fullName: "Theo Chen", country: "CN",
+    slug: "theo-chen", rate: 80, subjects: ["Python Programming", "Web Development", "Data Science & Machine Learning"], languages: ["English", "Mandarin"], completed: 120, approval: "approved" },
+  { key: "tutor4", email: "tutor4@nowtutors.dev", role: "tutor", fullName: "Nadia Hassan", country: "EG",
+    slug: "nadia-hassan", rate: 160, subjects: ["Physics", "Advanced Calculus", "Statistics & Data Analysis"], languages: ["English", "Arabic"], completed: 78, approval: "approved" },
+  { key: "tutor5", email: "tutor5@nowtutors.dev", role: "tutor", fullName: "Marco Silva", country: "BR",
+    slug: "marco-silva", rate: 240, subjects: ["Financial Accounting", "Macro / Microeconomics", "GRE / GMAT Test Prep"], languages: ["English", "French", "Portuguese"], completed: 205, approval: "approved" },
+  { key: "tutor6", email: "tutor6@nowtutors.dev", role: "tutor", fullName: "Priya Nair", country: "IN",
+    slug: "priya-nair", rate: 55, subjects: ["Chemistry", "Biology & Genetics", "MCAT / LSAT Test Prep"], languages: ["English", "Hindi"], completed: 64, approval: "approved" },
+  // Pending — shows in the admin approval queue, hidden from browse.
+  { key: "tutor7", email: "tutor7@nowtutors.dev", role: "tutor", fullName: "Fabien Roux", country: "FR",
+    slug: "fabien-roux", rate: 45, subjects: ["French", "IELTS / TOEFL Essay Proofreading"], languages: ["French", "English"], completed: 0, approval: "pending" },
+  // Approved profile but SUSPENDED owner — must be excluded from browse.
+  { key: "tutor8", email: "tutor8@nowtutors.dev", role: "tutor", fullName: "Sana Malik", country: "PK", isSuspended: true,
+    slug: "sana-malik", rate: 30, subjects: ["Study Skills"], languages: ["English", "Other"], completed: 5, approval: "approved" },
 ];
+
+const STUDENTS: SeedUser[] = [
+  { key: "student1", email: "student1@nowtutors.dev", role: "student", fullName: "Sam Stone", country: "US" },
+  { key: "student2", email: "student2@nowtutors.dev", role: "student", fullName: "Sara Diallo", country: "SN" },
+];
+
+const ADMIN: SeedUser = { key: "admin", email: "admin@nowtutors.dev", role: "admin", fullName: "Ada Admin" };
+
+const USERS: SeedUser[] = [ADMIN, ...TUTORS, ...STUDENTS];
+
+// 1x1 transparent PNG — a real object in Storage to prove the avatar pipeline
+// (next/image + remotePatterns) end to end; the visual is a plain circle.
+const SAMPLE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 function check<T>(res: { error: unknown; data?: T }, label: string): T {
   if (res.error) throw new Error(`${label}: ${JSON.stringify(res.error)}`);
@@ -105,7 +184,10 @@ async function ensureUsers(): Promise<Record<string, string>> {
 }
 
 async function main() {
-  // Subjects + settings (upsert by natural key).
+  // Ensure the avatars bucket exists (idempotent) even before the migration runs
+  // in some dev flows; migration 0007 is the source of truth for its policies.
+  await admin.storage.createBucket("avatars", { public: true }).catch(() => {});
+
   check(await admin.from("subjects").upsert(SUBJECTS, { onConflict: "slug" }), "subjects upsert");
   check(await admin.from("platform_settings").upsert(SETTINGS, { onConflict: "key" }), "settings upsert");
 
@@ -116,9 +198,18 @@ async function main() {
   const subjectId = Object.fromEntries(subjectRows.map((s) => [s.slug, s.id]));
 
   const id = await ensureUsers();
-  const tutorIds = [id.tutor1, id.tutor2, id.tutor3];
-  const studentIds = [id.student1, id.student2];
+  const tutorIds = TUTORS.map((t) => id[t.key]);
+  const studentIds = STUDENTS.map((s) => id[s.key]);
   const allIds = USERS.map((u) => id[u.key]);
+
+  // Upload a sample avatar for tutor3 (proves the Storage → next/image pipeline).
+  const avatarTutor = TUTORS[2];
+  const avatarPath = `${id[avatarTutor.key]}/avatar.png`;
+  await admin.storage.from("avatars").upload(avatarPath, SAMPLE_PNG, {
+    contentType: "image/png",
+    upsert: true,
+  });
+  const avatarUrl = `${url}/storage/v1/object/public/avatars/${avatarPath}`;
 
   // Profiles (upsert onto the trigger-created rows).
   const now = new Date().toISOString();
@@ -130,13 +221,31 @@ async function main() {
         role: u.role,
         full_name: u.fullName,
         display_name: u.fullName.split(" ")[0],
+        country: u.country ?? null,
         timezone: "Africa/Lagos",
+        avatar_url: u.key === avatarTutor.key ? avatarUrl : null,
         onboarding_completed_at: now,
       })),
       { onConflict: "id" },
     ),
     "profiles upsert",
   );
+
+  // Suspend the one suspended-owner fixture. profiles_guard (drizzle/0003) blocks
+  // is_suspended changes by anyone who isn't an admin — correct for user paths, but
+  // the seed's service role isn't an admin, so set it as the table owner with the
+  // guard briefly disabled. Seed-only; the trigger stays the backstop for the app.
+  const suspendedIds = TUTORS.filter((t) => t.isSuspended).map((t) => id[t.key]);
+  if (suspendedIds.length) {
+    const sql = postgres(sessionPoolerUrl(), { prepare: false, max: 1 });
+    try {
+      await sql`ALTER TABLE public.profiles DISABLE TRIGGER profiles_guard`;
+      await sql`UPDATE public.profiles SET is_suspended = true WHERE id IN ${sql(suspendedIds)}`;
+      await sql`ALTER TABLE public.profiles ENABLE TRIGGER profiles_guard`;
+    } finally {
+      await sql.end();
+    }
+  }
 
   // Wallets (students funded; others zero).
   check(
@@ -151,6 +260,7 @@ async function main() {
   );
 
   // Clear child seed data so re-runs stay clean (respect FK order).
+  await admin.from("favourites").delete().in("student_id", studentIds);
   await admin.from("tutor_earnings").delete().in("tutor_id", tutorIds);
   await admin.from("bookings").delete().in("student_id", studentIds);
   await admin.from("credit_transactions").delete().in("user_id", allIds);
@@ -158,23 +268,19 @@ async function main() {
   await admin.from("availability_rules").delete().in("tutor_id", tutorIds);
 
   // Tutor profiles + payout + subjects + availability.
-  const tutorDefs = [
-    { uid: id.tutor1, slug: "tom-tutor", rate: 60, subjects: ["mathematics", "physics"] },
-    { uid: id.tutor2, slug: "tina-tutor", rate: 45, subjects: ["english", "history"] },
-    { uid: id.tutor3, slug: "theo-tutor", rate: 90, subjects: ["computer-science", "economics"] },
-  ];
   check(
     await admin.from("tutor_profiles").upsert(
-      tutorDefs.map((t) => ({
-        user_id: t.uid,
+      TUTORS.map((t) => ({
+        user_id: id[t.key],
         slug: t.slug,
-        headline: "Experienced tutor",
+        headline: `${t.subjects[0]} tutor`,
         about: "Seeded tutor profile for development.",
-        languages: ["English"],
+        languages: t.languages,
         hourly_rate_credits: t.rate,
         accepts_instant: true,
-        approval_status: "approved",
-        approved_at: now,
+        completed_sessions: t.completed,
+        approval_status: t.approval,
+        approved_at: t.approval === "approved" ? now : null,
       })),
       { onConflict: "user_id" },
     ),
@@ -182,24 +288,24 @@ async function main() {
   );
   check(
     await admin.from("tutor_payout_details").upsert(
-      tutorDefs.map((t) => ({ tutor_id: t.uid, paypal_email: `${t.slug}@paypal.dev` })),
+      TUTORS.map((t) => ({ tutor_id: id[t.key], paypal_email: `${t.slug}@paypal.dev` })),
       { onConflict: "tutor_id" },
     ),
     "payout upsert",
   );
   check(
     await admin.from("tutor_subjects").insert(
-      tutorDefs.flatMap((t) =>
-        t.subjects.map((slug) => ({ tutor_id: t.uid, subject_id: subjectId[slug], level: "all" })),
+      TUTORS.flatMap((t) =>
+        t.subjects.map((name) => ({ tutor_id: id[t.key], subject_id: subjectId[slugOf[name]], level: "all" })),
       ),
     ),
     "tutor_subjects insert",
   );
   check(
     await admin.from("availability_rules").insert(
-      tutorDefs.flatMap((t) =>
+      tutorIds.flatMap((uid) =>
         [1, 2, 3, 4, 5].map((weekday) => ({
-          tutor_id: t.uid,
+          tutor_id: uid,
           weekday,
           start_time: "09:00",
           end_time: "17:00",
@@ -208,6 +314,15 @@ async function main() {
       ),
     ),
     "availability insert",
+  );
+
+  // Favourites: student1 hearts a couple of tutors.
+  check(
+    await admin.from("favourites").insert([
+      { student_id: id.student1, tutor_id: id.tutor1 },
+      { student_id: id.student1, tutor_id: id.tutor3 },
+    ]),
+    "favourites insert",
   );
 
   // Ledger funding for students (keeps wallet balance = sum(ledger)).
@@ -229,24 +344,21 @@ async function main() {
   // Sample bookings: one scheduled/confirmed, one instant/completed (+earning).
   const in2days = new Date(Date.now() + 2 * 864e5);
   const end2days = new Date(in2days.getTime() + 60 * 60000);
-  const scheduled = check(
-    await admin
-      .from("bookings")
-      .insert({
-        student_id: id.student1,
-        tutor_id: id.tutor1,
-        subject_id: subjectId["mathematics"],
-        type: "scheduled",
-        status: "confirmed",
-        scheduled_start_at: in2days.toISOString(),
-        scheduled_end_at: end2days.toISOString(),
-        duration_minutes: 60,
-        price_credits: 60,
-        payment_method: "credits",
-      })
-      .select("id"),
+  check(
+    await admin.from("bookings").insert({
+      student_id: id.student1,
+      tutor_id: id.tutor1,
+      subject_id: subjectId[slugOf["Algebra"]],
+      type: "scheduled",
+      status: "confirmed",
+      scheduled_start_at: in2days.toISOString(),
+      scheduled_end_at: end2days.toISOString(),
+      duration_minutes: 60,
+      price_credits: 60,
+      payment_method: "credits",
+    }),
     "scheduled booking",
-  ) as { id: string }[];
+  );
 
   // Flat instant model (§18/§7.4): duration ∈ {30,60,90}; charge = duration/3 credits,
   // upfront. billed_minutes is no longer a metered value — omitted. ended_at = started_at +
@@ -292,9 +404,11 @@ async function main() {
   );
 
   console.log("Seed complete:");
-  console.log(`  users: ${USERS.length} (1 admin, 3 tutors, 2 students)`);
-  console.log(`  subjects: ${SUBJECTS.length}, settings: ${SETTINGS.length}`);
-  console.log(`  bookings: scheduled=${scheduled[0].id.slice(0, 8)} instant=${instant[0].id.slice(0, 8)}`);
+  console.log(`  users: ${USERS.length} (1 admin, ${TUTORS.length} tutors, ${STUDENTS.length} students)`);
+  console.log(`  tutors: 6 approved, 1 pending (admin queue), 1 approved-but-suspended (browse-excluded)`);
+  console.log(`  subjects: ${SUBJECTS.length}, settings: ${SETTINGS.length}, favourites: 2 (student1)`);
+  console.log(`  sample avatar uploaded for ${avatarTutor.slug}`);
+  console.log(`  NOTE: live_now yields 0 rows until Phase 6 (no fresh presence) — expected`);
   console.log(`  login password for all seeded users: ${PASSWORD}`);
 }
 

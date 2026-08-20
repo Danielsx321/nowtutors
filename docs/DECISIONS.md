@@ -335,3 +335,67 @@ choices recorded here:
   that broadcasts are **net-new** functionality beyond current parity — so broadcast chat is decided
   at the broadcast phase, not a v1-parity question. Flagged to the user; revisit if that framing is
   wrong.
+
+## Phase 3 — Auth, onboarding, profiles, browse
+
+Decided with the user (plan approved). This commit is the **browse checkpoint** — see
+`docs/PROGRESS.md` for what is built vs still to build.
+
+- **Canonical option sets (Bubble).** Subjects seeded to the **26** canonical names, `sort_order`
+  1..26. Two were corrected during the Phase 2→3 rebase per the §18 resolution: **#3 →
+  "English as a Second Language (ESL)"** and **#11 → "Live IELTS / TOEFL Speaking Prep"**; **#6
+  "IELTS / TOEFL Essay Proofreading" and #10 "Data Science & Machine Learning" were confirmed
+  correct as seeded** (see the "Subject-name corrections" note in the Phase 2 ink-amendment section).
+  Languages: the 9-value set. Role enum stays `student | tutor | admin` (Bubble has only
+  Student/Tutor; admin is kept — §5 depends on it). Country stored ISO 3166-1 alpha-2, full list
+  offered in the UI (Bubble's 8-country set was a limitation).
+- **Favourites is a PARITY feature the spec missed.** New `favourites` table (SPEC §4.8, migration
+  `0008`), student-own RLS, a guarded `toggleFavourite` student-only action, browse left-joins the
+  viewer's favourites for per-card state. **Anon heart renders and routes to `/login`**;
+  tutor/admin viewers don't see it. Favourites list lives at **`/dashboard/favourites`**.
+- **`/` is the browse experience at parity, `/tutors` redirects to it** (search params forwarded).
+  No marketing landing page and no stub — that's a possible future addition, not this rebuild.
+- **Card live status derives from the `live_tutors` view, never `is_live`** (§3.1). The browse query
+  LEFT JOINs the view and passes a derived `liveStatus` to `TutorCard`: `offline` (not in view),
+  `online` (`live_mode='instant'`, badge only), `live` (`live_mode='broadcast'`, badge + video
+  preview). Phase 6's video tile keys off `live` only. `is_live` is never selected for card logic.
+- **Price bands (USD) → credits via an injected rate.** `composeTutorFilters(query, { usdPerCredit })`
+  converts band USD bounds to credit bounds; `usdPerCredit` is read from
+  `platform_settings.credit_usd_rate` through the cached `lib/settings.ts` accessor and injected —
+  never a constant in the filter module. The USD↔credits value stays a Noora settings question.
+  Bands: Under $15/hr · $15–25 · $25–50 · $50–100 · $100+.
+- **Filter composition is a standalone, DB-free pure function** (`src/lib/tutors/filters.ts`):
+  `parseTutorSearchParams` (URL → normalized query, invalid/blank dropped) + `composeTutorFilters`
+  (only-set-filters → Drizzle conditions). 30 unit tests, exhaustive over every set/unset
+  combination (`tests/unit/tutor-filters.test.ts`). This is the anti-`ignore_empty_constraints`
+  guarantee (§3.3, §15).
+- **Rating filter/sort supported but NOT surfaced in v1.** Reviews are deferred and `rating_avg`
+  is 0 for everyone, so a rating control/sort would return empty. `minRating` lives in the parser +
+  composer + tests; no UI control and no `rating` sort option. Lights up when reviews ship.
+- **Browse reads `public_profiles` + approved `tutor_profiles`; suspended owners excluded via base
+  `profiles`.** The two views are modelled with Drizzle `.existing()` in `src/db/schema/views.ts`
+  (queried, never generated). `public_profiles` doesn't expose `is_suspended`, so the exclusion
+  joins base `profiles.is_suspended = false` — a documented, intentional deviation from
+  "public_profiles only".
+- **Storage / avatars (the named Bubble bug).** Migration `0007_storage_avatars.sql` creates a
+  **public `avatars` bucket** + `storage.objects` policies (public read; write only inside
+  `{uid}/`). `next.config.ts` adds `images.remotePatterns` for the Supabase public storage path;
+  `Avatar` now renders via `next/image`.
+- **Migration numbering.** `0007` (storage) is a custom SQL migration whose meta snapshot copies
+  `0006` (it changes no Drizzle-tracked table) with a fresh id/prevId; `0008` (favourites) was
+  produced by `drizzle-kit generate --name favourites` against the extended chain, then the RLS
+  block appended. `0007` then `0008` apply clean from empty.
+- **Seed suspended-owner fixture.** `profiles_guard` (drizzle/0003) correctly blocks non-admins
+  (incl. the service role) from changing `is_suspended`. The seed sets the one suspended fixture as
+  the table owner with `ALTER TABLE ... DISABLE/ENABLE TRIGGER profiles_guard` around a single
+  UPDATE — seed-only; the trigger stays the backstop for the app.
+- **New dependencies** (SPEC §2): `@supabase/ssr`, `zod`, `react-hook-form`, `@hookform/resolvers`.
+  Country list is a static constant, not a package. Vitest gained an `@` path alias.
+- **Guards** (`src/lib/auth/guards.ts`): `getUser` / `getSessionProfile` / `getViewer` /
+  `requireUser` / `requireOnboarded` / `requireRole`. Built this checkpoint; **wiring into the
+  `(student)`/`(tutor)`/`admin` layouts and every action is part of the next batch** (§5: never
+  rely on the layout alone).
+- **Dev email (planned, not this commit).** Supabase's built-in auth email sender is rate-limited
+  (~a couple/hour) and unusable for real signups; for dev we disable "Confirm email", and Resend
+  wires in Phase 10. Google same-email account linking must be enabled in the dashboard so OAuth on
+  an existing email links rather than duplicates (§7.1). RUNBOOK items for the auth batch.
