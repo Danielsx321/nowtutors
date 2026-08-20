@@ -399,3 +399,27 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   (~a couple/hour) and unusable for real signups; for dev we disable "Confirm email", and Resend
   wires in Phase 10. Google same-email account linking must be enabled in the dashboard so OAuth on
   an existing email links rather than duplicates (§7.1). RUNBOOK items for the auth batch.
+
+## Phase-agnostic — credits are money, not time (2026-08-20, supersedes §18 item 7)
+
+- **A credit is a purchased currency, not a unit of time.** The §18 resolution "1 credit = 3
+  minutes" (`credit_minutes_ratio = 3`) is **withdrawn entirely**. *Why:* a credit cannot be both a
+  time unit and a money unit at once — the two readings conflict the moment tutors price
+  differently. Tutors set `hourly_rate_credits` **freely** and it is **authoritative for price**;
+  differentiated per-tutor rates (the seed already spans 20 → 240 cr/hr) are only meaningful if a
+  credit is money. A fixed minutes-per-credit ratio would make every tutor's effective hourly price
+  identical in time terms, which contradicts having a rate field at all.
+- **One pricing formula, scheduled and instant.** `price_credits = hourly_rate_credits ×
+  duration_minutes / 60`, **rounded up**. The old instant rule (`duration_minutes / 3`, a flat
+  10/20/30 for 30/60/90) is gone — instant now prices off the tutor's hourly rate exactly like a
+  scheduled booking. The upfront/no-hold/no-metering/no-refund shape of instant billing is
+  unchanged (§7.4); only the amount formula changed.
+- **Purchase page states no ratio.** Credit packages (Starter 5/$9.99 … Premium 100/$97.99) stand
+  on their own. No credit-to-minutes ratio and no credit-to-USD rate is shown — both are gone from
+  the model.
+- **`credit_minutes_ratio` removed from `platform_settings`.** SPEC §4.7/§7.3/§7.4/§15/§16/§18
+  amended in the same docs commit. *Not yet applied in code (flagged, not silently rewritten):* the
+  seed still sets `credit_minutes_ratio` and prices its instant sample at `duration/3`
+  (`src/db/seed.ts`), and `src/db/schema/identity.ts` carries a stale "instant derives from
+  hourly/60" comment. These are pricing implementations outside the files scoped to this batch's
+  code items — listed for a follow-up, left unchanged here.

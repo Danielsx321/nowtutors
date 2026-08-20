@@ -163,8 +163,9 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 > **Phase 1 amendments (reconciled with the Bubble export; see `docs/DECISIONS.md`):**
 > `profiles.phone` dropped; `profiles.notification_preferences jsonb` added; `profiles.role`
 > nullable. `tutor_profiles.paypal_email` moved to a new `tutor_payout_details` table;
-> `tutor_profiles.instant_rate_credits_per_minute` made nullable (and, since §18, unused — instant
-> price is flat: `duration_minutes / 3`, §7.4). `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
+> `tutor_profiles.instant_rate_credits_per_minute` made nullable (and unused — instant price uses
+> the same formula as scheduled: `hourly_rate_credits × duration_minutes / 60`, rounded up, §7.4).
+> `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
 > added. `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`
 > (now **unused** — §18 made instant billing a single flat `booking_debit`; enum values retained).
 > The `reviews` table is deferred (no Review type in the current build). `broadcasts` /
@@ -206,7 +207,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price is flat, derived from the booked duration (`duration_minutes / 3`), not a per-minute rate (§7.4, §18) |
+| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price uses the same formula as scheduled — `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.4) |
 | accepts_instant | boolean default true |  |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
@@ -375,7 +376,6 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 **`platform_settings`** — `key text PK, value jsonb, description text`. Editable in admin. Keys:
 
 ```
-credit_minutes_ratio         # 3 — 1 credit = 3 minutes (§18)
 platform_fee_percent         # 25 — tutor keeps 75%
 earnings_hold_hours          # 48
 instant_request_ttl_seconds  # default 60 (instant-request accept window)
@@ -391,7 +391,12 @@ credit_packages              # jsonb array of buyable packages: credits + USD pr
 > `credit_usd_rate` (pricing is per-package, not a flat rate), `min_withdrawal_credits`
 > (→ `min_withdrawal_usd`), `cancellation_window_hours` (→ `cancellation_enabled = false`),
 > and `max_instant_minutes` / `min_instant_credits` (the instant hold model is gone — §7.4).
-> Added: `credit_minutes_ratio`, `session_durations`, `cancellation_enabled`.
+> Added: `session_durations`, `cancellation_enabled`.
+>
+> **Credits-are-money amendment (2026-08-20, supersedes §18 item 7)** further removed
+> `credit_minutes_ratio`: a credit is a **purchased currency, not a unit of time**, so there is no
+> credit-to-minutes ratio at all. Session price is `hourly_rate_credits × duration_minutes / 60`,
+> rounded up (§7.3, §7.4), for both scheduled and instant. See DECISIONS.
 
 > `presence_stale_seconds` intentionally removed (Decision #8): the 2-minute staleness
 > threshold is baked into the `live_tutors` view so the view and the presence-cleanup cron
@@ -547,7 +552,7 @@ Pagination: cursor-based, 24 per page.
 
 1. On `/tutors/[slug]`, a calendar shows the next 30 days. Available slots computed server-side (Section 4.2) and rendered **in the student's timezone**, with the tutor's timezone shown as a secondary label.
 2. Student picks slot + duration (30/60/90 — **[verify offered durations]**) + subject + optional note.
-3. Price = `hourly_rate_credits × duration/60`, rounded up.
+3. Price = `hourly_rate_credits × duration_minutes / 60`, rounded up. This is the single pricing formula — the **same** formula prices instant sessions (§7.4). Credits are a purchased currency, not a unit of time; the tutor's `hourly_rate_credits` is authoritative for price.
 4. Payment choice:
    - **Credits** — if `wallet.credit_balance >= price`: create booking `confirmed`, debit ledger, done in one transaction.
    - **PayPal** — create booking `pending_payment` with a 20-minute expiry, then the PayPal flow (7.6). On successful capture → `confirmed`.
@@ -597,7 +602,7 @@ Rules:
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
 
-**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = duration_minutes / 3` (30 min = 10 credits, 60 = 20, 90 = 30). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price derives from the booked duration, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
+**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
 
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
@@ -925,7 +930,7 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 **Unit (Vitest), non-negotiable coverage:**
 - Availability slot computation — DST boundaries, cross-timezone, exception overrides, back-to-back bookings.
 - Ledger — insufficient balance, concurrent debit under lock, idempotent credit on duplicate reference.
-- Pricing — durations, rounding, instant per-minute billing, platform fee.
+- Pricing — the `hourly_rate_credits × duration_minutes / 60` formula (scheduled and instant), round-up behaviour, platform fee.
 - Presence staleness — the `live_tutors` boundary at exactly the threshold.
 - Filter composition — every combination of set/unset filters produces the intended SQL.
 
@@ -962,7 +967,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 **Phase 5 — Payments.** PayPal orders, capture, webhook, credit packages, wallet page and history, direct booking payment, `/admin/payments` reconciliation view.
 *Accept:* sandbox purchase credits correctly; replaying the webhook does not double-credit.
 
-**Phase 6 — Presence and instant sessions.** Heartbeat, go-live toggle, `session_requests` with Realtime both directions, `/session/[bookingId]` with Agora, `/api/agora/token` with authorization, per-minute billing, sweep-presence cron.
+**Phase 6 — Presence and instant sessions.** Heartbeat, go-live toggle, `session_requests` with Realtime both directions, `/session/[bookingId]` with Agora, `/api/agora/token` with authorization, instant billing (flat, upfront, at the `hourly_rate_credits × duration_minutes / 60` formula — §7.4), sweep-presence cron.
 *Accept:* E2E test 3 (ungraceful tutor exit) passes.
 
 **Phase 7 — LessonSpace.** Join route, room creation, role-based launch, `/classroom/[bookingId]`, join-window logic.
@@ -1013,18 +1018,22 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
    admin force-cancel is the only change mechanism.
 
 **Phase 5 (payments):**
-7. **Credit rate & packages** — **1 credit = 3 minutes** (`credit_minutes_ratio = 3`). Five package
-   tiers (§4.7 / seed): Starter 5cr/$9.99, Standard 15cr/$24.99, Popular 30cr/$39.99,
-   Pro 60cr/$67.99, Premium 100cr/$97.99. There is **no flat credit-to-USD rate** — price is per
-   package. (Bubble's per-package "minutes" labels are inconsistent marketing copy and are **not**
-   seeded; see DECISIONS.)
+7. **Credit rate & packages** — **⚠️ superseded (2026-08-20) by the credits-are-money amendment:**
+   a credit is a **purchased currency, not a unit of time**. The `credit_minutes_ratio = 3` /
+   "1 credit = 3 minutes" rule is **withdrawn entirely**; there is no credit-to-minutes ratio.
+   Session price is `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.3, §7.4). Five
+   package tiers (§4.7 / seed) stand on their own — Starter 5cr/$9.99, Standard 15cr/$24.99,
+   Popular 30cr/$39.99, Pro 60cr/$67.99, Premium 100cr/$97.99 — with **no** credit-to-USD rate and
+   **no** credit-to-minutes ratio stated on the purchase page. (Bubble's per-package "minutes"
+   labels are inconsistent marketing copy and are **not** seeded; see DECISIONS.)
 8. **Platform fee** — **25%** (`platform_fee_percent = 25`); tutor keeps 75%.
 
 **Phase 6 (instant sessions):**
-9. **Instant pricing** — **flat, charged upfront** at booking creation: `duration_minutes / 3`
-   credits (30→10, 60→20, 90→30), debited via the ledger in the same transaction. No metering, no
-   hold, no per-minute rate. Session length is enforced server-side from `bookings.started_at`.
-   See §7.4.
+9. **Instant pricing** — **flat, charged upfront** at booking creation, priced by the **same formula
+   as scheduled**: `hourly_rate_credits × duration_minutes / 60`, rounded up (**superseded** the old
+   `duration_minutes / 3` rule, 2026-08-20 credits-are-money amendment). Debited via the ledger in
+   the same transaction. No metering, no hold, no per-minute rate. Session length is enforced
+   server-side from `bookings.started_at`. See §7.4.
 
 **Phase 8 (withdrawals):**
 10. **Earnings hold & minimum withdrawal** — hold **48 hours** (`earnings_hold_hours = 48`);
