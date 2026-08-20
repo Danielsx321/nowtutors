@@ -42,10 +42,34 @@ async function main() {
     const { error } = await rows(anon.from("live_tutors").select("*"));
     assert(!error, "anon can query live_tutors view (no error)");
   }
+  let otherUserId: string | undefined;
   {
     const { data } = await rows(anon.from("tutor_profiles").select("*").limit(1));
     const row = (data[0] ?? {}) as Record<string, unknown>;
     assert(!("paypal_email" in row), "tutor_profiles exposes no paypal_email column");
+    otherUserId = row.user_id as string | undefined;
+  }
+
+  console.log("anon — writes must be DENIED (no session):");
+  {
+    const { error } = await anon
+      .from("profiles")
+      .insert({ id: crypto.randomUUID(), email: "x@example.com" });
+    assert(!!error, "anon cannot INSERT into profiles");
+  }
+  {
+    const { data, error } = await anon
+      .from("profiles")
+      .update({ full_name: "hacked" })
+      .not("id", "is", null)
+      .select("id");
+    assert(!!error || (data ?? []).length === 0, "anon cannot UPDATE profiles");
+  }
+  {
+    const { error } = await anon
+      .from("tutor_profiles")
+      .insert({ user_id: otherUserId ?? crypto.randomUUID(), slug: "x", hourly_rate_credits: 1 });
+    assert(!!error, "anon cannot INSERT into tutor_profiles");
   }
 
   console.log("authenticated student — scoped to own rows:");
@@ -83,7 +107,79 @@ async function main() {
     assert(data.length === 0, "student (non-tutor) sees 0 payout rows");
   }
 
+  console.log("wrong-user writes must be DENIED (student acting on others):");
+  if (otherUserId) {
+    const { data, error } = await student
+      .from("profiles")
+      .update({ full_name: "hacked" })
+      .eq("id", otherUserId)
+      .select("id");
+    assert(!error && (data ?? []).length === 0, "student cannot UPDATE another user's profile");
+  }
+  {
+    // WITH CHECK (user_id = auth.uid()) must reject a spoofed owner id.
+    const { error } = await student
+      .from("tutor_profiles")
+      .insert({ user_id: otherUserId ?? uid, slug: `x-${uid}`, hourly_rate_credits: 1 });
+    assert(!!error, "student cannot INSERT tutor_profiles for another user (WITH CHECK)");
+  }
+
+  console.log("student_subjects — owner only:");
+  {
+    // Interests seeded for student1 — the owner reads only their own rows.
+    const { data, error } = await rows(student.from("student_subjects").select("student_id"));
+    const onlyMine = data.every((r) => (r as { student_id: string }).student_id === uid);
+    assert(!error && onlyMine, `student sees only own interests (${data.length})`);
+  }
+  if (otherUserId) {
+    const { error } = await student
+      .from("student_subjects")
+      .insert({ student_id: otherUserId, subject_id: crypto.randomUUID() });
+    assert(!!error, "student cannot INSERT an interest for another user");
+  }
+
   await student.auth.signOut();
+
+  console.log("approved tutor — cannot self-approve or edit others:");
+  const tutor = createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: tSignIn, error: tErr } = await tutor.auth.signInWithPassword({
+    email: "tutor1@nowtutors.dev",
+    password: "Password123!",
+  });
+  if (tErr || !tSignIn.user) {
+    console.error("Could not sign in seeded tutor1 — run `pnpm db:seed` first.", tErr);
+    process.exit(1);
+  }
+  const tid = tSignIn.user.id;
+  {
+    // The tutor_approval_guard trigger (drizzle/0010) must reject a non-admin
+    // CHANGE to approval_status. tutor1 is 'approved', so attempt a real change
+    // ('rejected') — the trigger fires only on an actual change.
+    const { error } = await tutor
+      .from("tutor_profiles")
+      .update({ approval_status: "rejected" })
+      .eq("user_id", tid);
+    assert(!!error, "tutor cannot CHANGE own approval_status (approval guard)");
+  }
+  {
+    const { data, error } = await tutor
+      .from("tutor_profiles")
+      .update({ headline: "changed" })
+      .eq("user_id", tid)
+      .select("user_id");
+    assert(!error && (data ?? []).length === 1, "tutor CAN update own non-approval fields");
+  }
+  if (otherUserId && otherUserId !== tid) {
+    const { data } = await tutor
+      .from("tutor_profiles")
+      .update({ headline: "hacked" })
+      .eq("user_id", otherUserId)
+      .select("user_id");
+    assert((data ?? []).length === 0, "tutor cannot edit another tutor's profile");
+  }
+  await tutor.auth.signOut();
 
   console.log(failures === 0 ? "\nRLS verification PASSED" : `\nRLS verification FAILED (${failures})`);
   process.exit(failures === 0 ? 0 : 1);

@@ -450,6 +450,8 @@ Policy summary:
 | favourites | owning student only | owning student inserts/deletes own (no update) |
 | student_subjects | owning student only (no public read) | owning student inserts/deletes own (no update) |
 
+> **`tutor_profiles.approval_status` immutability is enforced by a trigger, not a column grant.** The column-level `REVOKE UPDATE (approval_status, approval_note, approved_at)` in `drizzle/0005` is **ineffective** — the same migration grants table-level `UPDATE` to `authenticated`, and in PostgreSQL a table-level privilege overrides a column REVOKE, so a tutor could self-approve via a direct REST call (found by `db:verify-rls`). The `tutor_approval_guard` trigger (`drizzle/0010`, mirroring `profiles_guard`) blocks any non-admin change to the approval columns. Admins change them through their authenticated session (`is_admin()`); system/service writes disable the trigger, as the seed does for `profiles_guard`.
+
 **Layer 2 — route handlers.** Every Server Action and API route independently re-checks the caller's identity and role. `requireUser()`, `requireRole('tutor')`, `requireBookingParticipant(bookingId)` helpers live in `lib/auth/guards.ts` and are the first line of every handler. Never trust a client-supplied `userId`.
 
 Admin access is by `profiles.role = 'admin'` only. There is no admin signup route; the first admin is set by SQL, subsequent ones promoted in the admin panel with an audit entry.

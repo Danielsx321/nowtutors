@@ -71,6 +71,13 @@
       "when": 1787257372846,
       "tag": "0009_student_subjects",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787257400000,
+      "tag": "0010_tutor_approval_guard",
+      "breakpoints": true
     }
   ]
 }

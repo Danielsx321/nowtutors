@@ -439,3 +439,24 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   stored interest pointing at the old slug. A real FK makes a rename a no-op for interests (the id is
   stable) and an `ON DELETE cascade` cleans up if a subject is ever removed. The extra join is a
   cheap price for referential integrity on admin-mutable data.
+
+## Phase 3 — approval self-approval hole (security fix)
+
+- **A tutor could self-approve; fixed with a trigger (`drizzle/0010`).** Extending `db:verify-rls`
+  for the auth batch surfaced a real, exploitable hole in the Phase 1 RLS: the column-level
+  `REVOKE UPDATE (approval_status, approval_note, approved_at) FROM authenticated` in `drizzle/0005`
+  does **nothing**, because 0005 also runs `GRANT INSERT, UPDATE, DELETE ON ALL TABLES … TO
+  authenticated`. **In PostgreSQL a table-level UPDATE privilege overrides a column-level REVOKE**,
+  so any authenticated tutor could `UPDATE tutor_profiles SET approval_status='approved'` on their
+  own row via a direct PostgREST call — bypassing admin review entirely. Verified: seeded pending
+  tutor went pending → approved with no error.
+- **Fix: `tutor_approval_guard` BEFORE UPDATE trigger, mirroring `profiles_guard`.** Raises if any
+  approval column changes and `NOT public.is_admin()`. Chosen over re-granting column-by-column
+  (brittle: every new column would need re-granting) — a trigger is robust and matches the existing
+  role-immutability pattern. Admins change approval through their authenticated session (is_admin
+  true); the future admin-approval action / any service write disables the trigger the way the seed
+  does for `profiles_guard`. SPEC §5 amended in the same commit; `db:verify-rls` now asserts a tutor
+  cannot change their own approval_status. *Why a trigger and not just fixing the app:* the app never
+  set approval_status (onboarding leaves the column at its `pending` default), so this was never an
+  app bug — it was reachable only by calling the database directly, which is exactly what RLS/DB
+  guards exist to stop.
