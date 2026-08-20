@@ -423,3 +423,19 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   (`src/db/seed.ts`), and `src/db/schema/identity.ts` carries a stale "instant derives from
   hourly/60" comment. These are pricing implementations outside the files scoped to this batch's
   code items — listed for a follow-up, left unchanged here.
+
+## Phase 3 — student_subjects (subjects of interest)
+
+- **New `student_subjects` join table for a student's subjects of interest (§7.1/§4.1).** SPEC §7.1
+  has always listed "subjects of interest" in student onboarding, but §4 had nowhere to store it —
+  a real gap surfaced when building onboarding. Resolved with the user: add a table mirroring
+  `tutor_subjects` — `(student_id FK → profiles.id, subject_id FK → subjects.id)`, PK
+  `(student_id, subject_id)`, index on `(student_id)`, **no `level`** (levels are tutor-only). RLS:
+  owner reads/writes own rows only, **no public read**. Migration `drizzle/0009_student_subjects.sql`
+  + SPEC §4.1/§5 amended in the **same commit** (CLAUDE.md).
+- **FK to `subjects.id`, NOT a slug array (option 3 rejected — recorded so it isn't revisited).**
+  Subject names are admin-editable and two were just renamed this build (#3 ESL, #11 Speaking Prep).
+  A `text[]` of slugs carries no foreign key, so a future rename would silently **orphan** every
+  stored interest pointing at the old slug. A real FK makes a rename a no-op for interests (the id is
+  stable) and an `ON DELETE cascade` cleans up if a subject is ever removed. The extra join is a
+  cheap price for referential integrity on admin-mutable data.

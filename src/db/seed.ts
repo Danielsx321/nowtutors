@@ -261,6 +261,7 @@ async function main() {
 
   // Clear child seed data so re-runs stay clean (respect FK order).
   await admin.from("favourites").delete().in("student_id", studentIds);
+  await admin.from("student_subjects").delete().in("student_id", studentIds);
   await admin.from("tutor_earnings").delete().in("tutor_id", tutorIds);
   await admin.from("bookings").delete().in("student_id", studentIds);
   await admin.from("credit_transactions").delete().in("user_id", allIds);
@@ -323,6 +324,19 @@ async function main() {
       { student_id: id.student1, tutor_id: id.tutor3 },
     ]),
     "favourites insert",
+  );
+
+  // Student subjects of interest (§7.1) — a couple of fixtures so the table
+  // isn't empty in dev. References subject IDs (FK), never slugs.
+  check(
+    await admin.from("student_subjects").insert([
+      { student_id: id.student1, subject_id: subjectId[slugOf["Algebra"]] },
+      { student_id: id.student1, subject_id: subjectId[slugOf["Physics"]] },
+      { student_id: id.student1, subject_id: subjectId[slugOf["Python Programming"]] },
+      { student_id: id.student2, subject_id: subjectId[slugOf["Chemistry"]] },
+      { student_id: id.student2, subject_id: subjectId[slugOf["Spanish"]] },
+    ]),
+    "student_subjects insert",
   );
 
   // Ledger funding for students (keeps wallet balance = sum(ledger)).
@@ -408,6 +422,7 @@ async function main() {
   console.log(`  users: ${USERS.length} (1 admin, ${TUTORS.length} tutors, ${STUDENTS.length} students)`);
   console.log(`  tutors: 6 approved, 1 pending (admin queue), 1 approved-but-suspended (browse-excluded)`);
   console.log(`  subjects: ${SUBJECTS.length}, settings: ${SETTINGS.length}, favourites: 2 (student1)`);
+  console.log(`  student interests: 5 (student1 ×3, student2 ×2)`);
   console.log(`  sample avatar uploaded for ${avatarTutor.slug}`);
   console.log(`  NOTE: live_now yields 0 rows until Phase 6 (no fresh presence) — expected`);
   console.log(`  login password for all seeded users: ${PASSWORD}`);

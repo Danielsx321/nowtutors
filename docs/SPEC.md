@@ -230,6 +230,8 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 
 **`tutor_subjects`** — `tutor_id, subject_id, level enum('beginner','intermediate','advanced','all')`. PK `(tutor_id, subject_id)`.
 
+**`student_subjects`** — a student's **subjects of interest**, collected at onboarding (§7.1). `student_id uuid FK → profiles.id, subject_id uuid FK → subjects.id`, PK `(student_id, subject_id)`, index on `(student_id)`. **No `level`** (levels are a tutor concept). References `subjects.id` by FK — deliberately not a slug array — so an admin subject rename can never orphan a stored interest (see DECISIONS). RLS: the owning student reads and writes only their own rows; **no public read** (unlike `tutor_subjects`). Migration `drizzle/0009_student_subjects.sql`.
+
 ### 4.2 Availability
 
 **`availability_rules`** — recurring weekly availability.
@@ -446,6 +448,7 @@ Policy summary:
 | platform_settings | anyone reads (needed for pricing display) | admin only |
 | audit_log | admin only | service role only |
 | favourites | owning student only | owning student inserts/deletes own (no update) |
+| student_subjects | owning student only (no public read) | owning student inserts/deletes own (no update) |
 
 **Layer 2 — route handlers.** Every Server Action and API route independently re-checks the caller's identity and role. `requireUser()`, `requireRole('tutor')`, `requireBookingParticipant(bookingId)` helpers live in `lib/auth/guards.ts` and are the first line of every handler. Never trust a client-supplied `userId`.
 

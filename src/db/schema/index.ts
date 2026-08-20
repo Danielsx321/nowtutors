@@ -7,3 +7,4 @@ export * from "./communication";
 export * from "./broadcast";
 export * from "./platform";
 export * from "./favourites";
+export * from "./student-subjects";
