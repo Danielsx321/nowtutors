@@ -177,3 +177,20 @@ the §16 Phase 2 layouts. No data/auth work.
   kitchen-sink gallery never ships to real users.
 - **Avatar** hand-built (no `@radix-ui/react-avatar`) with an initials fallback that also fires on
   image `onError`, so the "photos not rendering" failure never shows a broken image (§7.2).
+
+- **`cn()` knows the §10.1 type scale — app-wide `tailwind-merge` fix (`src/lib/utils.ts`).**
+  Default `tailwind-merge` does not recognise our custom size tokens (`text-display`, `text-h1`,
+  `text-h2`, `text-h3`, `text-body-lg`, `text-body`, `text-small`, `text-caption`) and mistakes
+  them for text-**colour** utilities. So any `cn(...)` that combined a size token with a colour
+  silently **dropped one of them**: `cn("text-white", "text-h2 font-bold")` collapsed to
+  `text-h2 font-bold` (colour lost), and a heading/label that paired a size with a colour lost its
+  **size** and rendered at an inherited size instead. Registered the type scale as a `font-size`
+  group via `extendTailwindMerge` so colour and size coexist; genuine colour↔colour and size↔size
+  conflicts still resolve last-wins (verified). **This changes rendered output everywhere `cn()`
+  merged a size token with a colour — it affects every component built before this commit,
+  including the Phase 3 checkpoint `cf4e5b8`** (e.g. `PriceTag` previously shipped with no colour
+  class at all, only *looking* right by inheriting from its container; section `h2`s and `StatCard`
+  labels were rendering at inherited sizes). Kept as its own commit + this log entry because a
+  behaviour change this broad must be findable outside a commit message. Surfaced while building the
+  Phase 2 ink `PriceTag`/`RatingStars` (the ink numerals fell back to black), but the fix stands on
+  its own and lands ahead of the ink amendment.
