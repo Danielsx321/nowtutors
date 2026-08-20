@@ -2,12 +2,26 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-19)
+## Current state (2026-08-20)
 - **Phase 0** (foundation scaffold): merged to `main` via PR #1 (`56cc101`).
-- **Phase 1** (data layer): merged to `main` via PR #2 (`e9c33c4`). `main` now carries the full
-  scaffold + data layer.
-- **Phase 2** (design system): committed on `phase-2-design-system`, branched off the updated
-  `main`. **PR not yet opened** (ask before pushing/opening).
+- **Phase 1** (data layer): merged to `main` via PR #2 (`e9c33c4`).
+- **Phase 2** (design system + ink amendment): **DONE — merged to `main` via PR #3.**
+  Merge SHA **`f433430`** (parents `e9c33c4` + `76c1d3a`). `main` now carries scaffold + data layer
+  + the full design system.
+  - **Record correction:** an earlier checkpoint described the Phase 2 PR as "held." It had in fact
+    **never been pushed** — no remote branch, no PR existed. This session pushed
+    `phase-2-design-system` and opened PR #3 for the first time, after folding in the ink amendment
+    below, then merged it (normal merge-commit; no admin override needed).
+- The two commits added this session, on top of the original Phase 2 work (`89f9a2d`, `0d66458`):
+  - **`b7c8ebf`** — `fix(ui)`: the `cn()` / tailwind-merge **type-scale fix**. tailwind-merge mistook
+    our custom size tokens (`text-h2`, `text-body`, …) for text *colours* and silently dropped one
+    whenever `cn()` combined a size with a colour. **App-wide behaviour change — affects everything
+    built before it, including the Phase 3 checkpoint `cf4e5b8`** (e.g. `PriceTag` had no colour
+    class; headings/labels rendered at inherited sizes). See DECISIONS.md.
+  - **`76c1d3a`** — Phase 2 **ink amendment** (Bubble parity): ink palette (**`#34495E` single
+    surface**, `ink-950/900/800/700/300` ramp; `ink-800` reclassified surface → interaction state),
+    `PriceTag` + `RatingStars` ink variants, **dual focus rings** (purple on light, gold on ink),
+    density pass, kitchen-sink Foundations section, SPEC §10.1/§10.2/§10.3 + DECISIONS entries.
 
 ## What Phase 1 built
 21 tables + 16 enums (Drizzle, `src/db/schema/` 8 files) · 7 migrations (`drizzle/0000` generated core + `0001`–`0006` custom SQL: btree_gist overlap exclusion, auth.users FK + signup trigger, updated_at/presence/anti-escalation triggers, `live_tutors` + `public_profiles` views, RLS 45 policies, Realtime) · `db:seed` / `db:verify-rls` / `db:reset`.
@@ -39,12 +53,38 @@ stylesheet/palette leak). `/dev/kitchen-sink` renders every primitive in every s
 (`(public)/layout.tsx`) + authenticated `AppShell` (dark sidebar + topbar + mobile drawer) wired
 into `(student)`/`(tutor)`/`admin` layouts — **presentational, guards deferred to Phase 3**.
 `src/app/page.tsx` moved into `(public)/` (single `/` resolver).
-Verified: typecheck/lint/test/build green; grep proof clean (no hex/`rgb`/`rgba`/`hsl`/non-brand
-palette classes outside `globals.css`); kitchen sink checked at 360px & 1440px, light + ink.
+**Ink amendment (this session):** the authenticated shell is now an **ink frame (sidebar + topbar)
+→ white content panel → ink cards** — superseding the earlier "dark sidebar + white topbar + light
+content" ruling (see DECISIONS.md). Topbar flipped light → ink; `Card`/`StatCard`/`PriceTag`/
+`RatingStars` gained ink treatments; scrims → `ink-950`.
+Verified: typecheck/lint/test/build green (exit 0); grep proof clean (no hex/`rgb`/`rgba`/`hsl`/
+non-brand palette outside `globals.css`); kitchen sink runtime-checked at 360px & 1440px, light + ink.
 Composed components (11) deferred to feature phases — see DECISIONS.md.
 
-## Next up
-**Phase 3 — Auth, onboarding, profiles, browse** (do not start until told). Adds the Phase 3 route
-guards (`requireRole`, tutor-approval gate) to the shells built here, plus signup/login/Google/
-reset, onboarding, tutor profile editor, `/tutors` filters + `/tutors/[slug]`, avatar upload +
-`next/image` `remotePatterns`, and the first composed component (`TutorCard`).
+## Next session picks up here
+1. **Rebase `phase-3-auth-onboarding-browse` (`cf4e5b8`) onto `main` at `f433430`.** It was stacked
+   on the pre-amendment Phase 2, so it carries the old tokens + the `cn()` bug; the rebase pulls in
+   both fixes. (This session deliberately did NOT rebase it.)
+2. **Clear the deferred amendment items** (documented in DECISIONS.md → "Phase 2 ink amendment"),
+   before resuming the batch:
+   - **`TutorCard` restyle** to the amendment's §3 spec: `ink-900` surface, `ink-700` border, white
+     name/price, `ink-300` secondary, `ink-800` subject chips, `live-400` LIVE fill with `ink-900`
+     text, `ink-800` hover, `focus-ring-on-ink`.
+   - **Ink `TutorCard` states** (offline/online/live) added to the kitchen sink.
+   - **Browse composition:** verify it renders ink shell → white panel → ink cards.
+   - **Re-evaluate the density pass against CORRECT type sizes** before assuming the tightening is
+     right. The "too sparse" read that motivated it came from a render taken while `cn()` was
+     suppressing font sizes — the calibration was against a broken render. **This is Daniels'
+     judgement call, not an automated check.**
+3. **Then resume the Phase 3 batch:** auth pages + actions (login/signup/Google/reset), onboarding
+   (both roles), guards wired into the layouts, `/tutors/[slug]` + tutor profile editor, admin
+   approval queue (`/admin/tutors`), `/dashboard/favourites`. (Browse path itself already built on
+   `cf4e5b8`.)
+
+## Known environment issue — CI is down (billing lock)
+**GitHub Actions is locked by an account-level billing flag.** Runs #10 and #11 failed at ~2s with
+**zero steps** — the runner never starts. This is **not a code failure**. Support ticket open.
+Consequence right now: **CI is advisory only, and required status checks are NOT configured on
+`main`** (PR #3 merged with a normal merge-commit, no override needed). **Both must be resolved
+before Phase 6**, where the ungraceful-exit (`live_tutors` staleness) regression test is meant to
+run in CI. Until then, local gates + runtime checks are the only signal — treat them as mandatory.
