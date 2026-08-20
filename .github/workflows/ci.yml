@@ -11,15 +11,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm must be installed BEFORE setup-node: `cache: pnpm` below runs
+      # `pnpm store path`, so pnpm has to be on PATH first. No `version` here —
+      # action-setup reads the pinned `packageManager` (pnpm@11.22.0) from
+      # package.json, so CI and local can't float to different pnpm releases.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
+      # Node comes from .nvmrc (single source of truth with local dev). pnpm 11
+      # needs Node >= 22.13 (it uses node:sqlite, absent in Node 20).
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: ".nvmrc"
           cache: pnpm
 
       - name: Install dependencies
