@@ -88,6 +88,15 @@ export const tutorProfiles = pgTable(
     ratingCount: integer("rating_count").notNull().default(0),
     completedSessions: integer("completed_sessions").notNull().default(0),
     totalMinutesTaught: integer("total_minutes_taught").notNull().default(0),
+    // Re-review tracking (SPEC §4.1/§7.1). Deliberately NOT an approval_status
+    // value: approval state and change state are separate concerns. An approved
+    // tutor's edit goes live immediately; a MATERIAL edit stamps
+    // profile_changed_at so admins can re-review without the tutor dropping out
+    // of search. Needs re-review = profile_changed_at is not null AND
+    // (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at).
+    // Both are trigger/admin managed — see drizzle/0011.
+    profileChangedAt: timestamp("profile_changed_at", { withTimezone: true }),
+    profileReviewedAt: timestamp("profile_reviewed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

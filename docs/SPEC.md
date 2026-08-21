@@ -219,8 +219,16 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | rating_count | integer default 0 |  |
 | completed_sessions | integer default 0 | denormalized |
 | total_minutes_taught | integer default 0 |  |
+| profile_changed_at | timestamptz null | stamped when an **approved** tutor changes a MATERIAL field (§7.1 re-review) |
+| profile_reviewed_at | timestamptz null | stamped by an admin's "Mark reviewed" action |
 
 Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(hourly_rate_credits)`, GIN on `languages`.
+
+> **Re-review on material change (added Phase 3, `drizzle/0011`).** When an already-approved tutor edits their profile the edit goes **live immediately** — they stay visible and bookable, and `approval_status` does **not** change. If the edit touches a **material** field the profile is flagged for admin re-review instead. **Material:** `headline`, `about`, subjects (`tutor_subjects`), `hourly_rate_credits`, `intro_video_url`. **Non-material:** avatar, `languages`, `education`, `years_experience`.
+>
+> **Needs re-review** = `profile_changed_at is not null AND (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at)`.
+>
+> This is deliberately **not** a new `approval_status` value: approval state and change state are orthogonal, and conflating them would make an approved-but-edited tutor indistinguishable from an unapproved one — which would drop them out of search and break earnings/withdrawal assumptions in Phase 8. Both columns are **trigger/admin managed**: `tutor_profile_change_flag` (plus `tutor_subjects_change_flag` for the child table) stamps `profile_changed_at` only when a material value actually *changed*, so a no-op save cannot flag and a tutor cannot clear the flag to dodge review; `profile_reviewed_at` is folded into the admin-only `tutor_approval_guard`.
 
 **`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
 

@@ -460,3 +460,32 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   set approval_status (onboarding leaves the column at its `pending` default), so this was never an
   app bug — it was reachable only by calling the database directly, which is exactly what RLS/DB
   guards exist to stop.
+
+## Phase 3 — re-review on material change (product decision)
+
+- **An approved tutor's edit goes live immediately; a MATERIAL edit flags for re-review.**
+  Approval must not become a one-time gate — a tutor approved once could otherwise rewrite their
+  headline, subjects and rate into something nobody vetted. But the opposite extreme is worse:
+  blocking edits behind re-approval, or flipping `approval_status` back to `pending`, would **drop a
+  working tutor out of search over a typo fix** and stop their bookings while an admin gets round to
+  it. So the edit is live at once and the review happens **after the fact**.
+- **Two timestamp columns, NOT a new `approval_status` value** (`drizzle/0011`):
+  `profile_changed_at` / `profile_reviewed_at`. Needs re-review =
+  `profile_changed_at is not null AND (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at)`.
+  *Why not an enum value:* approval state ("is this person allowed to teach here") and change state
+  ("has anyone looked at the current version") are **orthogonal**. Adding e.g. `approved_changed` to
+  the enum makes every `approval_status = 'approved'` check in browse, guards, earnings and
+  withdrawals silently wrong — Phase 8 pays out against approval state, and that is exactly where
+  conflating the two would bite.
+- **Material fields:** `headline`, `about`, subjects, `hourly_rate_credits`, `intro_video_url`.
+  **Non-material:** avatar, `languages`, `education`, `years_experience`. Rationale: material fields
+  are the ones a student's booking decision and the platform's pricing rest on.
+- **The flag is set by a TRIGGER, not by application code.** Two reasons. (1) "A no-op save must not
+  flag" becomes structurally true: the trigger compares `IS DISTINCT FROM` on old vs new, so
+  re-saving identical values cannot flag, without the action having to diff anything. (2) It cannot
+  be bypassed by writing to PostgREST directly. A non-admin also cannot **clear** the flag to dodge
+  re-review — their value for `profile_changed_at` is overwritten with the old one before the change
+  test runs. Subjects live in a child table, so `tutor_subjects_change_flag` stamps the parent.
+  `profile_reviewed_at` is admin-only, folded into the existing `tutor_approval_guard` (drizzle/0010).
+- **Pending tutors are never flagged** — they are already in the normal approval queue, so a material
+  edit before first approval is not a separate event.
