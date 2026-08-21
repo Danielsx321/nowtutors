@@ -28,6 +28,12 @@ environment.
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
+  - **Vercel "Framework Preset" must read "Next.js"**, not "Other" — with the wrong preset
+    Vercel runs the build but never applies Next's routing/output convention, so every route
+    returns a platform 404 despite a clean build. See DECISIONS, "Production 404".
+  - **Vercel env vars are per-project AND per-environment** (Production / Preview /
+    Development) — they are NOT inherited from the repo or from `.env.local`. Each must be
+    set explicitly in the Vercel dashboard for every environment that needs it.
 - [ ] Google OAuth consent screen and redirect URIs — Phase 3.
 - [ ] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
