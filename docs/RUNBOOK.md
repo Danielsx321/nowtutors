@@ -93,3 +93,20 @@ environment.
 - Password minimum length / leaked-password protection can be tightened in
   **Authentication → Policies**; our client+server zod schema already requires ≥8 chars
   with a letter and a number.
+
+### Same-email account linking — automated check
+
+`pnpm db:verify-rls` asserts this rather than trusting the dashboard: it creates a
+probe user, tries to create a **second** account with the same email, and requires
+that attempt to be **rejected** (then deletes both). That is the observable form of
+the SPEC §7.1 no-duplicate-accounts guarantee.
+
+The dashboard flag itself (**Authentication → Sign In / Providers → "Allow multiple
+accounts with the same email address"**, which must stay **OFF**) is only readable
+through the Supabase **Management API**, which needs a personal access token we
+deliberately do not ship in app env — hence asserting the consequence instead.
+
+If that check fails, the setting has been turned on: Google sign-in on an existing
+email will create a **second account** instead of linking to the existing one. Fix
+it in the dashboard, then re-run `pnpm db:verify-rls`. Run this against **each**
+environment (dev, and production before launch) — it is a per-project setting.

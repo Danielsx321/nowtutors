@@ -9,6 +9,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 if (!url || !anonKey) throw new Error("Missing Supabase env for RLS verify");
 
 let failures = 0;
@@ -180,6 +181,51 @@ async function main() {
     assert((data ?? []).length === 0, "tutor cannot edit another tutor's profile");
   }
   await tutor.auth.signOut();
+
+  // ── Same-email identity linking (SPEC §7.1) ────────────────────────────────
+  // The no-duplicate-accounts guarantee for "Google sign-in on an existing
+  // password account" rests on a Supabase dashboard setting ("Allow multiple
+  // accounts with the same email address" must stay OFF). The dashboard flag
+  // itself is only readable through the Management API, which needs a personal
+  // access token we deliberately do not ship. So assert the OBSERVABLE property
+  // instead — that the auth layer refuses a second account for an email that
+  // already exists. If someone flips the setting on, this fails loudly here
+  // instead of silently producing duplicate profiles months later.
+  console.log("same-email linking — duplicate accounts must be REJECTED:");
+  {
+    const admin = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const email = `linkcheck-${Date.now()}@nowtutors.dev`;
+    const first = await admin.auth.admin.createUser({
+      email,
+      password: "Password123!",
+      email_confirm: true,
+    });
+    if (first.error) {
+      assert(false, `could not create probe user: ${first.error.message}`);
+    } else {
+      const dup = await admin.auth.admin.createUser({
+        email,
+        password: "Password123!",
+        email_confirm: true,
+      });
+      assert(
+        !!dup.error,
+        "a second account with an existing email is rejected (same-email linking ON)",
+      );
+      if (!dup.error) {
+        console.log(
+          "      ^ Supabase is allowing duplicate emails. Turn OFF 'Allow multiple\n" +
+            "        accounts with the same email address' (Authentication -> Sign In /\n" +
+            "        Providers). Until then Google sign-in on an existing email creates a\n" +
+            "        SECOND account instead of linking (SPEC §7.1). See RUNBOOK.",
+        );
+        await admin.auth.admin.deleteUser(dup.data.user!.id);
+      }
+      await admin.auth.admin.deleteUser(first.data.user!.id);
+    }
+  }
 
   console.log(failures === 0 ? "\nRLS verification PASSED" : `\nRLS verification FAILED (${failures})`);
   process.exit(failures === 0 ? 0 : 1);
