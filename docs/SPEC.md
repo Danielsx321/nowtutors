@@ -531,7 +531,7 @@ Prefer Server Actions over API routes for mutations initiated by our own UI. API
 1. `/signup` — email/password or Google. Supabase creates the auth user; a Postgres trigger inserts a matching `profiles` row with `role` null.
 2. Redirect to `/onboarding`. Step 1: "I want to learn" / "I want to teach" → sets `role`. Role is not changeable afterwards by the user.
 3. **Student onboarding:** name, avatar (optional), timezone (prefilled from `Intl.DateTimeFormat().resolvedOptions().timeZone`), subjects of interest. → `/dashboard`.
-4. **Tutor onboarding:** name, avatar, headline, about, subjects + levels, hourly rate, instant rate, languages, education, experience, PayPal email. Sets `approval_status = 'pending'`, creates `tutor_profiles`. → `/tutor/pending-approval`.
+4. **Tutor onboarding:** name, avatar, headline, about, subjects + levels, hourly rate, languages, education, experience, PayPal email. **No separate instant rate** — instant and scheduled both price off `hourly_rate_credits` (credits-are-money amendment, §7.4). Sets `approval_status = 'pending'`, creates `tutor_profiles`. → `/tutor/pending-approval`.
 5. Email verification required before booking or going live. Unverified users may browse.
 6. Admin approves in `/admin/tutors` → email to tutor → tutor can now appear in search and go live.
 

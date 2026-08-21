@@ -28,6 +28,33 @@ export const getUser = cache(async () => {
   return data.user ?? null;
 });
 
+/** Thrown by requireVerifiedEmail so the calling action can 403 rather than
+ *  redirect. Email verification gates booking/going-live (§7.1), not browsing. */
+export class EmailNotVerifiedError extends Error {
+  constructor() {
+    super("Please verify your email address to continue.");
+    this.name = "EmailNotVerifiedError";
+  }
+}
+
+export function isEmailVerified(
+  user: { email_confirmed_at?: string | null; confirmed_at?: string | null } | null,
+): boolean {
+  return !!(user?.email_confirmed_at || user?.confirmed_at);
+}
+
+/**
+ * Server-side email-verification gate (SPEC §7.1: required before booking or
+ * going live; browsing/onboarding do not require it). The booking (Phase 4) and
+ * go-live (Phase 6) actions call this as an authorization check — never rely on
+ * hiding the button. Returns the verified user or throws EmailNotVerifiedError.
+ */
+export async function requireVerifiedEmail() {
+  const user = await requireUser();
+  if (!isEmailVerified(user)) throw new EmailNotVerifiedError();
+  return user;
+}
+
 export interface SessionProfile {
   id: string;
   role: Role | null;
@@ -63,6 +90,14 @@ export async function requireUser() {
   return user;
 }
 
+/** For public auth pages (login/signup/forgot): a signed-in user has no reason
+ *  to be here — send them to onboarding (role unset) or their home. NOT used on
+ *  /reset-password, which legitimately runs inside the recovery session. */
+export async function redirectIfSignedIn() {
+  const p = await getSessionProfile();
+  if (p) redirect(p.role ? homeFor[p.role] : "/onboarding");
+}
+
 export async function requireOnboarded() {
   const p = await getSessionProfile();
   if (!p) redirect("/login");
@@ -70,13 +105,23 @@ export async function requireOnboarded() {
   return p;
 }
 
-export async function requireRole(role: Role) {
+/**
+ * Require a specific role (SPEC §5 Layer 2). Used both in the area layouts AND
+ * as the first line of every action/route in that area. For tutors it also
+ * enforces approval by default (unapproved → /tutor/pending-approval); pass
+ * `{ requireApproval: false }` in the (tutor) LAYOUT so /tutor/pending-approval
+ * itself doesn't redirect-loop — that page checks approval on its own.
+ */
+export async function requireRole(
+  role: Role,
+  opts: { requireApproval?: boolean } = {},
+) {
   const user = await requireUser();
   const p = await getSessionProfile();
   if (!p || p.role == null) redirect("/onboarding");
   if (p.isSuspended) redirect("/suspended");
   if (p.role !== role) redirect(homeFor[p.role]);
-  if (role === "tutor") {
+  if (role === "tutor" && (opts.requireApproval ?? true)) {
     const [tp] = await db
       .select({ approval: tutorProfiles.approvalStatus })
       .from(tutorProfiles)
