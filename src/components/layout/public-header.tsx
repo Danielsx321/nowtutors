@@ -19,8 +19,8 @@ import { publicNav } from "@/components/layout/nav-config";
 
 function Wordmark() {
   return (
-    <Link href="/" className="focus-ring rounded-sm text-h3 font-bold text-gray-700">
-      Now<span className="text-purple-500">Tutors</span>
+    <Link href="/" className="focus-ring-on-ink rounded-sm text-h3 font-bold text-white">
+      Now<span className="text-gold-400">Tutors</span>
     </Link>
   );
 }
@@ -32,7 +32,7 @@ export function PublicHeader() {
     pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-ink-700 bg-ink-900/95 backdrop-blur">
       <div className="container-page flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-8">
           <Wordmark />
@@ -43,10 +43,10 @@ export function PublicHeader() {
                 href={item.href}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className={cn(
-                  "focus-ring rounded-md px-3 py-2 text-body font-medium transition-colors",
+                  "focus-ring-on-ink rounded-md px-3 py-2 text-body font-medium transition-colors",
                   isActive(item.href)
-                    ? "text-purple-700"
-                    : "text-gray-500 hover:text-gray-700",
+                    ? "text-gold-400"
+                    : "text-white hover:text-ink-300",
                 )}
               >
                 {item.label}
@@ -56,10 +56,10 @@ export function PublicHeader() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button asChild variant="ghost" size="sm">
+          <Button asChild variant="ink-ghost" size="sm">
             <Link href="/login">Log in</Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild variant="ink" size="sm">
             <Link href="/signup">Sign up</Link>
           </Button>
         </div>
@@ -67,7 +67,7 @@ export function PublicHeader() {
         {/* Mobile */}
         <Drawer open={open} onOpenChange={setOpen}>
           <DrawerTrigger asChild>
-            <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open menu">
+            <Button variant="ink-ghost" size="icon" className="md:hidden" aria-label="Open menu">
               <Menu />
             </Button>
           </DrawerTrigger>

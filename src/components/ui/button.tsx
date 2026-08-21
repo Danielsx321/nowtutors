@@ -15,6 +15,10 @@ const buttonVariants = cva(
           "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
         ghost: "text-purple-500 hover:bg-purple-100",
         danger: "bg-danger text-white hover:brightness-95",
+        // On-ink variants (SPEC §10.1): purple is fill-only-with-white-text and is
+        // avoided entirely on ink surfaces here — gold/white carry the contrast instead.
+        ink: "bg-gold-400 text-ink-900 hover:brightness-95",
+        "ink-ghost": "text-white hover:bg-ink-800",
       },
       size: {
         sm: "h-9 px-3 text-small [&_svg]:size-4",

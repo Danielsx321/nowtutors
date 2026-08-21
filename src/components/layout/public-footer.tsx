@@ -31,19 +31,19 @@ const columns: { heading: string; links: { label: string; href: string }[] }[] =
 
 export function PublicFooter() {
   return (
-    <footer className="border-t border-gray-200 bg-gray-50">
+    <footer className="border-t border-ink-700 bg-ink-1000">
       <div className="container-page grid gap-8 py-12 sm:grid-cols-2 md:grid-cols-4">
         <div className="space-y-3">
-          <p className="text-h3 font-bold text-gray-700">
-            Now<span className="text-purple-500">Tutors</span>
+          <p className="text-h3 font-bold text-white">
+            Now<span className="text-gold-400">Tutors</span>
           </p>
-          <p className="max-w-xs text-small text-gray-500">
+          <p className="max-w-xs text-small text-white">
             Live tutoring, on demand. Find a tutor and start learning now.
           </p>
         </div>
         {columns.map((col) => (
           <nav key={col.heading} aria-label={col.heading} className="space-y-3">
-            <p className="text-caption font-medium uppercase tracking-wide text-gray-500">
+            <p className="text-caption font-medium uppercase tracking-wide text-white">
               {col.heading}
             </p>
             <ul className="space-y-2">
@@ -51,7 +51,7 @@ export function PublicFooter() {
                 <li key={link.label}>
                   <Link
                     href={link.href}
-                    className="focus-ring rounded-sm text-small text-gray-700 hover:text-purple-500 hover:underline"
+                    className="focus-ring-on-ink rounded-sm text-small text-white hover:text-gold-400 hover:underline"
                   >
                     {link.label}
                   </Link>
@@ -61,8 +61,8 @@ export function PublicFooter() {
           </nav>
         ))}
       </div>
-      <div className="border-t border-gray-200">
-        <div className="container-page flex flex-col items-center justify-between gap-2 py-4 text-caption text-gray-500 sm:flex-row">
+      <div className="border-t border-ink-700">
+        <div className="container-page flex flex-col items-center justify-between gap-2 py-4 text-caption text-white sm:flex-row">
           <p>© {new Date().getFullYear()} NowTutors. All rights reserved.</p>
           <p>Made for learners everywhere.</p>
         </div>

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -39,9 +40,12 @@ export interface Subject {
 export function TutorFilters({
   subjects,
   onNavigate,
+  surface = "light",
 }: {
   subjects: Subject[];
   onNavigate?: () => void;
+  /** "ink" mirrors the Bubble dark sidebar (desktop rail); "light" is the default drawer surface. */
+  surface?: "light" | "ink";
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,13 +91,25 @@ export function TutorFilters({
     liveNow ||
     sort !== "relevance";
 
+  const ink = surface === "ink";
+  const headingText = ink ? "text-white" : "text-gray-700";
+  const labelText = ink ? "text-white" : "text-gray-700";
+  const rowText = ink ? "text-white" : "text-gray-700";
+  const checkboxInk = ink
+    ? "border-ink-300 data-[state=checked]:border-gold-400 data-[state=checked]:bg-gold-400 data-[state=checked]:text-ink-900 data-[state=indeterminate]:border-gold-400 data-[state=indeterminate]:bg-gold-400 data-[state=indeterminate]:text-ink-900"
+    : undefined;
+  const switchInk = ink ? "data-[state=checked]:bg-gold-400" : undefined;
+  const selectTriggerInk = ink
+    ? "border-ink-700 bg-ink-800 text-white data-[placeholder]:text-ink-300 hover:border-ink-300 [&_svg]:text-ink-300"
+    : undefined;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-h3 font-bold text-gray-700">Filters</h2>
+        <h2 className={cn("text-h3 font-bold", headingText)}>Filters</h2>
         {hasFilters && (
           <Button
-            variant="ghost"
+            variant={ink ? "ink-ghost" : "ghost"}
             size="sm"
             onClick={() => push(new URLSearchParams())}
           >
@@ -103,9 +119,11 @@ export function TutorFilters({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="sort">Sort</Label>
+        <Label htmlFor="sort" className={ink ? "text-white" : undefined}>
+          Sort
+        </Label>
         <Select value={sort} onValueChange={(v) => setSingle("sort", v)}>
-          <SelectTrigger id="sort">
+          <SelectTrigger id="sort" className={selectTriggerInk}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -119,25 +137,27 @@ export function TutorFilters({
       </div>
 
       <label className="flex items-center justify-between gap-3">
-        <span className="text-small font-medium text-gray-700">Live now</span>
+        <span className={cn("text-small font-medium", labelText)}>Live now</span>
         <Switch
           checked={liveNow}
           onCheckedChange={(c) => setSingle("live", c ? "1" : null)}
+          className={switchInk}
         />
       </label>
 
       <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-gray-700">Price</legend>
+        <legend className={cn("text-small font-medium", labelText)}>Price</legend>
         {PRICE_BAND_KEYS.map((key) => (
           <label
             key={key}
-            className="flex cursor-pointer items-center gap-2 text-body text-gray-700"
+            className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
           >
             <Checkbox
               checked={priceBand === key}
               onCheckedChange={() =>
                 setSingle("price", priceBand === key ? null : key)
               }
+              className={checkboxInk}
             />
             {PRICE_BANDS[key].label}
           </label>
@@ -145,16 +165,17 @@ export function TutorFilters({
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-gray-700">Subjects</legend>
+        <legend className={cn("text-small font-medium", labelText)}>Subjects</legend>
         <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
           {subjects.map((s) => (
             <label
               key={s.slug}
-              className="flex cursor-pointer items-center gap-2 text-body text-gray-700"
+              className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
             >
               <Checkbox
                 checked={selectedSubjects.includes(s.slug)}
                 onCheckedChange={() => toggleMulti("subject", s.slug)}
+                className={checkboxInk}
               />
               <span className="line-clamp-1">{s.name}</span>
             </label>
@@ -163,15 +184,16 @@ export function TutorFilters({
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-gray-700">Language</legend>
+        <legend className={cn("text-small font-medium", labelText)}>Language</legend>
         {LANGUAGES.map((lang) => (
           <label
             key={lang}
-            className="flex cursor-pointer items-center gap-2 text-body text-gray-700"
+            className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
           >
             <Checkbox
               checked={selectedLangs.includes(lang)}
               onCheckedChange={() => toggleMulti("lang", lang)}
+              className={checkboxInk}
             />
             {lang}
           </label>
