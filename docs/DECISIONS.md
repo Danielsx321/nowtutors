@@ -520,3 +520,53 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   earlier buggy run had already written the exact value they were trying to write — a no-op UPDATE
   does not fire an `IS DISTINCT FROM` trigger. The approval-note assertion now writes a unique value
   per run. A guard test that passes or fails depending on leftover rows is worse than no test.
+
+## Standing rule — `current_user` is meaningless inside `SECURITY DEFINER`
+
+**Never write a trust or identity check against `current_user` in a `SECURITY DEFINER` function.
+Use `session_user`, plus the `service_role` JWT claim when the service key must be recognised.**
+
+This is a standing rule, not just an incident report. It cost us a silently disabled security guard
+once already and the failure mode is invisible: the check does not error, it simply returns `true`
+for everybody.
+
+**Why.** `SECURITY DEFINER` makes a function execute with the privileges *of its owner*. Inside such
+a function `current_user` is therefore the **function owner** — for us `postgres` — no matter who
+actually called it. An end user hitting PostgREST with an anon key runs the guard as `postgres` from
+`current_user`'s point of view. So:
+
+```sql
+-- WRONG. Returns true for every caller, including an anonymous one.
+SELECT current_user IN ('postgres', 'service_role');
+```
+
+**What happened.** `is_trusted_server()` (drizzle/0012) was written that way and called from
+`tutor_approval_guard`, itself `SECURITY DEFINER`. The guard became `... AND NOT is_trusted_server()`
+= `... AND false`, i.e. it never fired — **re-opening the exact tutor self-approval hole that
+`drizzle/0010` had been written days earlier to close**. Nothing errored. It was caught only because
+`db:verify-rls` asserts the negative case ("a tutor cannot change their own `approval_status`") and
+that assertion flipped from pass to fail.
+
+**The correct form:**
+
+```sql
+-- RIGHT. session_user survives the definer switch; the JWT claim distinguishes
+-- service_role, because PostgREST connects as `authenticator` for anon,
+-- authenticated AND service_role alike.
+SELECT session_user IN ('postgres', 'supabase_admin')
+    OR coalesce(
+         nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role',
+         ''
+       ) = 'service_role';
+```
+
+**Corollaries worth keeping:**
+
+- `auth.uid()` / `auth.role()` are safe inside `SECURITY DEFINER` — they read the request JWT, not
+  the executing role. `public.is_admin()` is fine for the same reason.
+- A guard is only as good as its **negative** test. Every DB-level guard we add gets a
+  `db:verify-rls` assertion that the forbidden thing is actually refused; a guard with only positive
+  tests will pass forever after it stops guarding.
+- Those assertions must be **state-independent** (write a unique value per run). Two of ours
+  "passed" spuriously because a previous run had already written the value being tested and a no-op
+  `UPDATE` never fires an `IS DISTINCT FROM` trigger.
