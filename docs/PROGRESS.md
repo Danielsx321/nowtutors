@@ -15,6 +15,14 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   time, flat instant pricing, no cancellation, 25% fee, five credit packages.
 - **Phase 3** — auth, onboarding, browse/filter, profiles, editor, approval queue with re-review,
   favourites, storage/avatars. **Merged via PR #4.**
+- **Production is live and serving** ✅ — https://nowtutors-brown.vercel.app (the project
+  alias). The earlier all-routes 404 was the Vercel **Framework Preset** set to "Other"
+  instead of "Next.js"; behind it sat a middleware 500 and a project with zero env vars.
+  All three fixed — see DECISIONS, "Production 404". **Production still runs against the
+  DEV Supabase project** — fine with no real users, must be swapped before launch
+  (RUNBOOK Phase 10).
+  - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT
+    point nowtutors.com at it.**
 - **Branch protection is ACTIVE on `main`** ✅ — ruleset targeting `main` only, with **`verify`
   required**, PR required before merging, branches must be up to date, force pushes blocked and
   deletions restricted. CI is no longer advisory: the Phase 6 ungraceful-exit E2E now has something
@@ -72,16 +80,6 @@ Do **not** start until told. Scope (SPEC §7.3, §4.2, §4.3):
 
 ## Still open — carry forward
 
-- **⚠️ Production deploy returns a Vercel edge 404 on all routes.** Deployment `be218c5` is
-  **Ready / Production / Current** with all three domains attached (`nowtutors-brown.vercel.app` is
-  the project alias), the build log is clean with all **16 routes compiled**, and Deployment
-  Protection has been disabled. Vercel's own preview thumbnail also shows the 404. Since the build
-  succeeds and the alias is correct, requests are likely **not reaching the app** — middleware
-  (91.4 kB, runs on every route) or routing config is the first suspect. **Next step:** Runtime Logs
-  on that deployment, to see whether requests arrive at all and what they return. Local dev works;
-  **does not block Phase 4.**
-  - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
-    nowtutors.com at it.**
 - **Bump the GitHub action versions to `@v5`** (`actions/checkout`, `actions/setup-node`,
   `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes).
 - **Obsolete pricing remnants — one cleanup migration when Phase 6 opens.**

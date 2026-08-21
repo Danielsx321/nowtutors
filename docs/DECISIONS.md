@@ -570,3 +570,32 @@ SELECT session_user IN ('postgres', 'supabase_admin')
 - Those assertions must be **state-independent** (write a unique value per run). Two of ours
   "passed" spuriously because a previous run had already written the value being tested and a no-op
   `UPDATE` never fires an `IS DISTINCT FROM` trigger.
+
+## Production 404 — cause was Vercel Framework Preset, not code (21 Aug 2026)
+
+Deployment `be218c5` built cleanly (all 16 routes compiled) but every path returned a
+platform-level 404 with no `x-matched-path`, including `/_next/static/*`. Repo was clean: no
+`vercel.json`, no `next.config` overrides (no `output`, `basePath`, `assetPrefix`, `distDir`,
+`experimental`).
+
+**Root cause: the Vercel project setting "Framework Preset" was "Other" instead of "Next.js".**
+Vercel ran the build but never applied Next's routing/output convention, so nothing was served.
+Set to Next.js and redeployed without build cache.
+
+Two further layers surfaced behind it:
+
+- **`MIDDLEWARE_INVOCATION_FAILED` (500)** — middleware constructs a Supabase client and threw
+  because env vars were absent.
+- **The Vercel project had zero environment variables configured.** Added the eight in use; the
+  later-phase keys stay unset.
+
+**Diagnostic note — middleware was wrongly named as first suspect in the earlier handoff.**
+Middleware runs *inside* the deployment, so a platform 404 with no `x-matched-path` exonerates it
+by definition: if middleware were the cause you would see `x-matched-path` and an HTML response,
+and `/_next/static/*` would still serve. Corrected. The general rule: **`x-vercel-error` with no
+`x-matched-path` means the request never reached the app**, so nothing inside the app can be the
+cause — look at project settings, not code.
+
+**Standing note: production currently uses the DEV Supabase project.** Acceptable while there are
+no real users. **Must move to a dedicated production Supabase project before launch** — added to
+the RUNBOOK Phase 10 checklist.
