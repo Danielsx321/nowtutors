@@ -335,3 +335,238 @@ choices recorded here:
   that broadcasts are **net-new** functionality beyond current parity — so broadcast chat is decided
   at the broadcast phase, not a v1-parity question. Flagged to the user; revisit if that framing is
   wrong.
+
+## Phase 3 — Auth, onboarding, profiles, browse
+
+Decided with the user (plan approved). This commit is the **browse checkpoint** — see
+`docs/PROGRESS.md` for what is built vs still to build.
+
+- **Canonical option sets (Bubble).** Subjects seeded to the **26** canonical names, `sort_order`
+  1..26. Two were corrected during the Phase 2→3 rebase per the §18 resolution: **#3 →
+  "English as a Second Language (ESL)"** and **#11 → "Live IELTS / TOEFL Speaking Prep"**; **#6
+  "IELTS / TOEFL Essay Proofreading" and #10 "Data Science & Machine Learning" were confirmed
+  correct as seeded** (see the "Subject-name corrections" note in the Phase 2 ink-amendment section).
+  Languages: the 9-value set. Role enum stays `student | tutor | admin` (Bubble has only
+  Student/Tutor; admin is kept — §5 depends on it). Country stored ISO 3166-1 alpha-2, full list
+  offered in the UI (Bubble's 8-country set was a limitation).
+- **Favourites is a PARITY feature the spec missed.** New `favourites` table (SPEC §4.8, migration
+  `0008`), student-own RLS, a guarded `toggleFavourite` student-only action, browse left-joins the
+  viewer's favourites for per-card state. **Anon heart renders and routes to `/login`**;
+  tutor/admin viewers don't see it. Favourites list lives at **`/dashboard/favourites`**.
+- **`/` is the browse experience at parity, `/tutors` redirects to it** (search params forwarded).
+  No marketing landing page and no stub — that's a possible future addition, not this rebuild.
+- **Card live status derives from the `live_tutors` view, never `is_live`** (§3.1). The browse query
+  LEFT JOINs the view and passes a derived `liveStatus` to `TutorCard`: `offline` (not in view),
+  `online` (`live_mode='instant'`, badge only), `live` (`live_mode='broadcast'`, badge + video
+  preview). Phase 6's video tile keys off `live` only. `is_live` is never selected for card logic.
+- **Price bands (USD) → credits via an injected rate.** `composeTutorFilters(query, { usdPerCredit })`
+  converts band USD bounds to credit bounds; `usdPerCredit` is read from
+  `platform_settings.credit_usd_rate` through the cached `lib/settings.ts` accessor and injected —
+  never a constant in the filter module. The USD↔credits value stays a Noora settings question.
+  Bands: Under $15/hr · $15–25 · $25–50 · $50–100 · $100+.
+- **Filter composition is a standalone, DB-free pure function** (`src/lib/tutors/filters.ts`):
+  `parseTutorSearchParams` (URL → normalized query, invalid/blank dropped) + `composeTutorFilters`
+  (only-set-filters → Drizzle conditions). 30 unit tests, exhaustive over every set/unset
+  combination (`tests/unit/tutor-filters.test.ts`). This is the anti-`ignore_empty_constraints`
+  guarantee (§3.3, §15).
+- **Rating filter/sort supported but NOT surfaced in v1.** Reviews are deferred and `rating_avg`
+  is 0 for everyone, so a rating control/sort would return empty. `minRating` lives in the parser +
+  composer + tests; no UI control and no `rating` sort option. Lights up when reviews ship.
+- **Browse reads `public_profiles` + approved `tutor_profiles`; suspended owners excluded via base
+  `profiles`.** The two views are modelled with Drizzle `.existing()` in `src/db/schema/views.ts`
+  (queried, never generated). `public_profiles` doesn't expose `is_suspended`, so the exclusion
+  joins base `profiles.is_suspended = false` — a documented, intentional deviation from
+  "public_profiles only".
+- **Storage / avatars (the named Bubble bug).** Migration `0007_storage_avatars.sql` creates a
+  **public `avatars` bucket** + `storage.objects` policies (public read; write only inside
+  `{uid}/`). `next.config.ts` adds `images.remotePatterns` for the Supabase public storage path;
+  `Avatar` now renders via `next/image`.
+- **Migration numbering.** `0007` (storage) is a custom SQL migration whose meta snapshot copies
+  `0006` (it changes no Drizzle-tracked table) with a fresh id/prevId; `0008` (favourites) was
+  produced by `drizzle-kit generate --name favourites` against the extended chain, then the RLS
+  block appended. `0007` then `0008` apply clean from empty.
+- **Seed suspended-owner fixture.** `profiles_guard` (drizzle/0003) correctly blocks non-admins
+  (incl. the service role) from changing `is_suspended`. The seed sets the one suspended fixture as
+  the table owner with `ALTER TABLE ... DISABLE/ENABLE TRIGGER profiles_guard` around a single
+  UPDATE — seed-only; the trigger stays the backstop for the app.
+- **New dependencies** (SPEC §2): `@supabase/ssr`, `zod`, `react-hook-form`, `@hookform/resolvers`.
+  Country list is a static constant, not a package. Vitest gained an `@` path alias.
+- **Guards** (`src/lib/auth/guards.ts`): `getUser` / `getSessionProfile` / `getViewer` /
+  `requireUser` / `requireOnboarded` / `requireRole`. Built this checkpoint; **wiring into the
+  `(student)`/`(tutor)`/`admin` layouts and every action is part of the next batch** (§5: never
+  rely on the layout alone).
+- **Dev email (planned, not this commit).** Supabase's built-in auth email sender is rate-limited
+  (~a couple/hour) and unusable for real signups; for dev we disable "Confirm email", and Resend
+  wires in Phase 10. Google same-email account linking must be enabled in the dashboard so OAuth on
+  an existing email links rather than duplicates (§7.1). RUNBOOK items for the auth batch.
+
+## Phase-agnostic — credits are money, not time (2026-08-20, supersedes §18 item 7)
+
+- **A credit is a purchased currency, not a unit of time.** The §18 resolution "1 credit = 3
+  minutes" (`credit_minutes_ratio = 3`) is **withdrawn entirely**. *Why:* a credit cannot be both a
+  time unit and a money unit at once — the two readings conflict the moment tutors price
+  differently. Tutors set `hourly_rate_credits` **freely** and it is **authoritative for price**;
+  differentiated per-tutor rates (the seed already spans 20 → 240 cr/hr) are only meaningful if a
+  credit is money. A fixed minutes-per-credit ratio would make every tutor's effective hourly price
+  identical in time terms, which contradicts having a rate field at all.
+- **One pricing formula, scheduled and instant.** `price_credits = hourly_rate_credits ×
+  duration_minutes / 60`, **rounded up**. The old instant rule (`duration_minutes / 3`, a flat
+  10/20/30 for 30/60/90) is gone — instant now prices off the tutor's hourly rate exactly like a
+  scheduled booking. The upfront/no-hold/no-metering/no-refund shape of instant billing is
+  unchanged (§7.4); only the amount formula changed.
+- **Purchase page states no ratio.** Credit packages (Starter 5/$9.99 … Premium 100/$97.99) stand
+  on their own. No credit-to-minutes ratio and no credit-to-USD rate is shown — both are gone from
+  the model.
+- **`credit_minutes_ratio` removed from `platform_settings`.** SPEC §4.7/§7.3/§7.4/§15/§16/§18
+  amended in the same docs commit. *Not yet applied in code (flagged, not silently rewritten):* the
+  seed still sets `credit_minutes_ratio` and prices its instant sample at `duration/3`
+  (`src/db/seed.ts`), and `src/db/schema/identity.ts` carries a stale "instant derives from
+  hourly/60" comment. These are pricing implementations outside the files scoped to this batch's
+  code items — listed for a follow-up, left unchanged here.
+
+## Phase 3 — student_subjects (subjects of interest)
+
+- **New `student_subjects` join table for a student's subjects of interest (§7.1/§4.1).** SPEC §7.1
+  has always listed "subjects of interest" in student onboarding, but §4 had nowhere to store it —
+  a real gap surfaced when building onboarding. Resolved with the user: add a table mirroring
+  `tutor_subjects` — `(student_id FK → profiles.id, subject_id FK → subjects.id)`, PK
+  `(student_id, subject_id)`, index on `(student_id)`, **no `level`** (levels are tutor-only). RLS:
+  owner reads/writes own rows only, **no public read**. Migration `drizzle/0009_student_subjects.sql`
+  + SPEC §4.1/§5 amended in the **same commit** (CLAUDE.md).
+- **FK to `subjects.id`, NOT a slug array (option 3 rejected — recorded so it isn't revisited).**
+  Subject names are admin-editable and two were just renamed this build (#3 ESL, #11 Speaking Prep).
+  A `text[]` of slugs carries no foreign key, so a future rename would silently **orphan** every
+  stored interest pointing at the old slug. A real FK makes a rename a no-op for interests (the id is
+  stable) and an `ON DELETE cascade` cleans up if a subject is ever removed. The extra join is a
+  cheap price for referential integrity on admin-mutable data.
+
+## Phase 3 — approval self-approval hole (security fix)
+
+- **A tutor could self-approve; fixed with a trigger (`drizzle/0010`).** Extending `db:verify-rls`
+  for the auth batch surfaced a real, exploitable hole in the Phase 1 RLS: the column-level
+  `REVOKE UPDATE (approval_status, approval_note, approved_at) FROM authenticated` in `drizzle/0005`
+  does **nothing**, because 0005 also runs `GRANT INSERT, UPDATE, DELETE ON ALL TABLES … TO
+  authenticated`. **In PostgreSQL a table-level UPDATE privilege overrides a column-level REVOKE**,
+  so any authenticated tutor could `UPDATE tutor_profiles SET approval_status='approved'` on their
+  own row via a direct PostgREST call — bypassing admin review entirely. Verified: seeded pending
+  tutor went pending → approved with no error.
+- **Fix: `tutor_approval_guard` BEFORE UPDATE trigger, mirroring `profiles_guard`.** Raises if any
+  approval column changes and `NOT public.is_admin()`. Chosen over re-granting column-by-column
+  (brittle: every new column would need re-granting) — a trigger is robust and matches the existing
+  role-immutability pattern. Admins change approval through their authenticated session (is_admin
+  true); the future admin-approval action / any service write disables the trigger the way the seed
+  does for `profiles_guard`. SPEC §5 amended in the same commit; `db:verify-rls` now asserts a tutor
+  cannot change their own approval_status. *Why a trigger and not just fixing the app:* the app never
+  set approval_status (onboarding leaves the column at its `pending` default), so this was never an
+  app bug — it was reachable only by calling the database directly, which is exactly what RLS/DB
+  guards exist to stop.
+
+## Phase 3 — re-review on material change (product decision)
+
+- **An approved tutor's edit goes live immediately; a MATERIAL edit flags for re-review.**
+  Approval must not become a one-time gate — a tutor approved once could otherwise rewrite their
+  headline, subjects and rate into something nobody vetted. But the opposite extreme is worse:
+  blocking edits behind re-approval, or flipping `approval_status` back to `pending`, would **drop a
+  working tutor out of search over a typo fix** and stop their bookings while an admin gets round to
+  it. So the edit is live at once and the review happens **after the fact**.
+- **Two timestamp columns, NOT a new `approval_status` value** (`drizzle/0011`):
+  `profile_changed_at` / `profile_reviewed_at`. Needs re-review =
+  `profile_changed_at is not null AND (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at)`.
+  *Why not an enum value:* approval state ("is this person allowed to teach here") and change state
+  ("has anyone looked at the current version") are **orthogonal**. Adding e.g. `approved_changed` to
+  the enum makes every `approval_status = 'approved'` check in browse, guards, earnings and
+  withdrawals silently wrong — Phase 8 pays out against approval state, and that is exactly where
+  conflating the two would bite.
+- **Material fields:** `headline`, `about`, subjects, `hourly_rate_credits`, `intro_video_url`.
+  **Non-material:** avatar, `languages`, `education`, `years_experience`. Rationale: material fields
+  are the ones a student's booking decision and the platform's pricing rest on.
+- **The flag is set by a TRIGGER, not by application code.** Two reasons. (1) "A no-op save must not
+  flag" becomes structurally true: the trigger compares `IS DISTINCT FROM` on old vs new, so
+  re-saving identical values cannot flag, without the action having to diff anything. (2) It cannot
+  be bypassed by writing to PostgREST directly. A non-admin also cannot **clear** the flag to dodge
+  re-review — their value for `profile_changed_at` is overwritten with the old one before the change
+  test runs. Subjects live in a child table, so `tutor_subjects_change_flag` stamps the parent.
+  `profile_reviewed_at` is admin-only, folded into the existing `tutor_approval_guard` (drizzle/0010).
+- **Pending tutors are never flagged** — they are already in the normal approval queue, so a material
+  edit before first approval is not a separate event.
+
+## Phase 3 — the admin write path, and two guard bugs it surfaced
+
+- **Admin approval writes go through the trusted server-side connection, not the admin's session
+  (`drizzle/0012`).** RLS on `tutor_profiles` is owner-only (`user_id = auth.uid()`), so an admin's
+  own PostgREST session cannot touch another tutor's row; `audit_log` is service-role write. Meanwhile
+  the `tutor_approval_guard` from `drizzle/0010` required `is_admin()` (an `auth.uid()` that is an
+  admin). Net effect: the approval queue had **no legal write path at all**. Rather than widening RLS
+  so admins can update arbitrary tutor rows over PostgREST, the guards now also accept the trusted
+  server-side connection — which already owns the tables and bypasses RLS, and which the seed already
+  worked around by disabling the triggers. Authorization for that path is SPEC §5 Layer 2: every
+  admin action calls `requireRole('admin')` as its first statement and writes `audit_log`.
+- **`is_trusted_server()` must not use `current_user` — a guard-disabling bug caught by
+  `db:verify-rls`.** The first version compared `current_user`. The guards are **`SECURITY DEFINER`**,
+  so inside them `current_user` is the function OWNER (`postgres`) for *every* caller, including an
+  end user over PostgREST. That made the function return true universally and silently disabled the
+  approval guard — re-opening the exact self-approval hole `drizzle/0010` had just closed. The fix
+  uses **`session_user`** (which survives the definer switch; `authenticator` for PostgREST,
+  `postgres` for our server connection) plus the `service_role` JWT claim, since PostgREST connects
+  as `authenticator` for anon, authenticated **and** service_role alike. *Lesson worth keeping:*
+  inside `SECURITY DEFINER`, `current_user` is the definer — never use it for authorization.
+- **A student could create their own `tutor_profiles` row.** The original INSERT/UPDATE policies only
+  checked ownership (`user_id = auth.uid()`) with no role test, so any authenticated student could
+  insert a tutor profile for themselves. Not exploitable for visibility (it lands `pending`, and the
+  route guards read `profiles.role`, not `tutor_profiles`), but "students cannot write
+  `tutor_profiles`" should be true at the RLS layer rather than merely unreachable. Both policies now
+  require `profiles.role = 'tutor'`. Found by writing the §2f assertion, not by reading the policy.
+- **`db:verify-rls` assertions must be state-independent.** Two assertions "failed" only because an
+  earlier buggy run had already written the exact value they were trying to write — a no-op UPDATE
+  does not fire an `IS DISTINCT FROM` trigger. The approval-note assertion now writes a unique value
+  per run. A guard test that passes or fails depending on leftover rows is worse than no test.
+
+## Standing rule — `current_user` is meaningless inside `SECURITY DEFINER`
+
+**Never write a trust or identity check against `current_user` in a `SECURITY DEFINER` function.
+Use `session_user`, plus the `service_role` JWT claim when the service key must be recognised.**
+
+This is a standing rule, not just an incident report. It cost us a silently disabled security guard
+once already and the failure mode is invisible: the check does not error, it simply returns `true`
+for everybody.
+
+**Why.** `SECURITY DEFINER` makes a function execute with the privileges *of its owner*. Inside such
+a function `current_user` is therefore the **function owner** — for us `postgres` — no matter who
+actually called it. An end user hitting PostgREST with an anon key runs the guard as `postgres` from
+`current_user`'s point of view. So:
+
+```sql
+-- WRONG. Returns true for every caller, including an anonymous one.
+SELECT current_user IN ('postgres', 'service_role');
+```
+
+**What happened.** `is_trusted_server()` (drizzle/0012) was written that way and called from
+`tutor_approval_guard`, itself `SECURITY DEFINER`. The guard became `... AND NOT is_trusted_server()`
+= `... AND false`, i.e. it never fired — **re-opening the exact tutor self-approval hole that
+`drizzle/0010` had been written days earlier to close**. Nothing errored. It was caught only because
+`db:verify-rls` asserts the negative case ("a tutor cannot change their own `approval_status`") and
+that assertion flipped from pass to fail.
+
+**The correct form:**
+
+```sql
+-- RIGHT. session_user survives the definer switch; the JWT claim distinguishes
+-- service_role, because PostgREST connects as `authenticator` for anon,
+-- authenticated AND service_role alike.
+SELECT session_user IN ('postgres', 'supabase_admin')
+    OR coalesce(
+         nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role',
+         ''
+       ) = 'service_role';
+```
+
+**Corollaries worth keeping:**
+
+- `auth.uid()` / `auth.role()` are safe inside `SECURITY DEFINER` — they read the request JWT, not
+  the executing role. `public.is_admin()` is fine for the same reason.
+- A guard is only as good as its **negative** test. Every DB-level guard we add gets a
+  `db:verify-rls` assertion that the forbidden thing is actually refused; a guard with only positive
+  tests will pass forever after it stops guarding.
+- Those assertions must be **state-independent** (write a unique value per run). Two of ours
+  "passed" spuriously because a previous run had already written the value being tested and a no-op
+  `UPDATE` never fires an `IS DISTINCT FROM` trigger.

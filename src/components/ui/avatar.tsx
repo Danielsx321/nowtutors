@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const sizes = {
@@ -50,11 +51,12 @@ export function Avatar({
       {...props}
     >
       {showImg ? (
-        // eslint-disable-next-line @next/next/no-img-element -- next/image host allowlist lands in Phase 3
-        <img
+        <Image
           src={src}
           alt={name ? `${name}’s avatar` : "Avatar"}
-          className="size-full object-cover"
+          fill
+          sizes="80px"
+          className="object-cover"
           onError={() => setFailed(true)}
         />
       ) : (

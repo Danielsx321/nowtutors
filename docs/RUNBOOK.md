@@ -45,3 +45,68 @@ environment.
 - If Node rejects TLS chains on this machine (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`
   during `pnpm`/`npm`), export `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem`. This is a
   local-machine quirk only; CI and Vercel are unaffected.
+
+## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
+
+**Supabase dashboard → Authentication → URL Configuration**
+- **Site URL:** the canonical app origin per environment — `http://localhost:3000`
+  (dev), the Vercel preview/prod URLs otherwise.
+- **Redirect URLs (allow-list):** add every origin that completes an auth flow, each
+  with the `/auth/callback` path. Supabase only redirects back to allow-listed URLs.
+  - `http://localhost:3000/auth/callback`
+  - `https://<vercel-preview>.vercel.app/auth/callback` (or `https://*.vercel.app/auth/callback`)
+  - `https://<production-domain>/auth/callback`
+  Our code always sends `redirectTo`/`emailRedirectTo` = `${origin}/auth/callback` (OAuth,
+  email confirmation → `?next=/onboarding`, password reset → `?next=/reset-password`).
+
+**Google OAuth (Google Cloud Console → APIs & Services)**
+- **OAuth consent screen:** External; app name, support email, logo; scopes `email`,
+  `profile`, `openid`; add test users while unverified.
+- **Credentials → OAuth 2.0 Client ID (Web application):**
+  - **Authorized JavaScript origins:** the app origins (localhost + preview + prod).
+  - **Authorized redirect URI:** the **Supabase** callback, not ours —
+    `https://<project-ref>.supabase.co/auth/v1/callback` (Google returns to Supabase,
+    which then returns to our `/auth/callback`).
+- Put the Client ID + secret into **Supabase → Authentication → Providers → Google**
+  and enable it.
+
+**Account linking (the Google-on-existing-email case — SPEC §7.1)**
+- Enable **Authentication → Providers → "Allow linking accounts with the same email"**
+  (automatic same-email identity linking). Then a Google sign-in whose email matches an
+  existing **confirmed** password account resolves to the **same** auth user — no
+  duplicate. Our `profiles` row is keyed by the auth user id and created once by the
+  `on_auth_user_created` trigger (`ON CONFLICT DO NOTHING`), so linking never duplicates a
+  profile, and `/auth/callback` adds no profile row.
+- **Security note:** automatic linking only fires when the pre-existing email is
+  **verified**. If the password account is unverified, Supabase creates a **separate**
+  identity rather than linking (prevents account takeover of an unconfirmed address).
+  This is intended.
+
+**Email templates & confirmation (Authentication → Email Templates / Providers)**
+- **Confirm signup, Reset password, Magic link:** ensure the action link points at
+  `{{ .SiteURL }}/auth/callback` (append `?next=/onboarding` for confirm, `?next=/reset-password`
+  for recovery) so the code lands on our handler.
+- The built-in Supabase SMTP sender is **rate-limited (~a few/hour)** — fine for dev
+  only. For real signups configure a custom SMTP / Resend (Phase 10). For dev you may
+  turn **"Confirm email" OFF** so `signUp` returns a session immediately and routes
+  straight to `/onboarding`; with it ON, signup shows a "check your email" state.
+- Password minimum length / leaked-password protection can be tightened in
+  **Authentication → Policies**; our client+server zod schema already requires ≥8 chars
+  with a letter and a number.
+
+### Same-email account linking — automated check
+
+`pnpm db:verify-rls` asserts this rather than trusting the dashboard: it creates a
+probe user, tries to create a **second** account with the same email, and requires
+that attempt to be **rejected** (then deletes both). That is the observable form of
+the SPEC §7.1 no-duplicate-accounts guarantee.
+
+The dashboard flag itself (**Authentication → Sign In / Providers → "Allow multiple
+accounts with the same email address"**, which must stay **OFF**) is only readable
+through the Supabase **Management API**, which needs a personal access token we
+deliberately do not ship in app env — hence asserting the consequence instead.
+
+If that check fails, the setting has been turned on: Google sign-in on an existing
+email will create a **second account** instead of linking to the existing one. Fix
+it in the dashboard, then re-run `pnpm db:verify-rls`. Run this against **each**
+environment (dev, and production before launch) — it is a per-project setting.

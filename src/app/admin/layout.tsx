@@ -1,13 +1,15 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { requireRole } from "@/lib/auth/guards";
 
 /**
- * Admin area shell. Presentational only — SPEC §5/§6 restrict this to
- * role = admin; that guard (requireRole('admin')) is added in Phase 3 (auth).
+ * Admin area shell. SPEC §5/§6: guards role = admin (Layer 2). Layout guard is a
+ * redirect; every admin action/route re-checks requireRole('admin') itself.
  */
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  await requireRole("admin");
   return <AppShell role="admin">{children}</AppShell>;
 }

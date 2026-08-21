@@ -163,8 +163,9 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 > **Phase 1 amendments (reconciled with the Bubble export; see `docs/DECISIONS.md`):**
 > `profiles.phone` dropped; `profiles.notification_preferences jsonb` added; `profiles.role`
 > nullable. `tutor_profiles.paypal_email` moved to a new `tutor_payout_details` table;
-> `tutor_profiles.instant_rate_credits_per_minute` made nullable (and, since §18, unused — instant
-> price is flat: `duration_minutes / 3`, §7.4). `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
+> `tutor_profiles.instant_rate_credits_per_minute` made nullable (and unused — instant price uses
+> the same formula as scheduled: `hourly_rate_credits × duration_minutes / 60`, rounded up, §7.4).
+> `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
 > added. `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`
 > (now **unused** — §18 made instant billing a single flat `booking_debit`; enum values retained).
 > The `reviews` table is deferred (no Review type in the current build). `broadcasts` /
@@ -206,7 +207,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price is flat, derived from the booked duration (`duration_minutes / 3`), not a per-minute rate (§7.4, §18) |
+| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price uses the same formula as scheduled — `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.4) |
 | accepts_instant | boolean default true |  |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
@@ -218,8 +219,16 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | rating_count | integer default 0 |  |
 | completed_sessions | integer default 0 | denormalized |
 | total_minutes_taught | integer default 0 |  |
+| profile_changed_at | timestamptz null | stamped when an **approved** tutor changes a MATERIAL field (§7.1 re-review) |
+| profile_reviewed_at | timestamptz null | stamped by an admin's "Mark reviewed" action |
 
 Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(hourly_rate_credits)`, GIN on `languages`.
+
+> **Re-review on material change (added Phase 3, `drizzle/0011`).** When an already-approved tutor edits their profile the edit goes **live immediately** — they stay visible and bookable, and `approval_status` does **not** change. If the edit touches a **material** field the profile is flagged for admin re-review instead. **Material:** `headline`, `about`, subjects (`tutor_subjects`), `hourly_rate_credits`, `intro_video_url`. **Non-material:** avatar, `languages`, `education`, `years_experience`.
+>
+> **Needs re-review** = `profile_changed_at is not null AND (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at)`.
+>
+> This is deliberately **not** a new `approval_status` value: approval state and change state are orthogonal, and conflating them would make an approved-but-edited tutor indistinguishable from an unapproved one — which would drop them out of search and break earnings/withdrawal assumptions in Phase 8. Both columns are **trigger/admin managed**: `tutor_profile_change_flag` (plus `tutor_subjects_change_flag` for the child table) stamps `profile_changed_at` only when a material value actually *changed*, so a no-op save cannot flag and a tutor cannot clear the flag to dodge review; `profile_reviewed_at` is folded into the admin-only `tutor_approval_guard`.
 
 **`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
 
@@ -228,6 +237,8 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 **`subjects`** — `id, name, slug unique, icon, sort_order, is_active`. Seeded (Section 18 open question: the canonical list).
 
 **`tutor_subjects`** — `tutor_id, subject_id, level enum('beginner','intermediate','advanced','all')`. PK `(tutor_id, subject_id)`.
+
+**`student_subjects`** — a student's **subjects of interest**, collected at onboarding (§7.1). `student_id uuid FK → profiles.id, subject_id uuid FK → subjects.id`, PK `(student_id, subject_id)`, index on `(student_id)`. **No `level`** (levels are a tutor concept). References `subjects.id` by FK — deliberately not a slug array — so an admin subject rename can never orphan a stored interest (see DECISIONS). RLS: the owning student reads and writes only their own rows; **no public read** (unlike `tutor_subjects`). Migration `drizzle/0009_student_subjects.sql`.
 
 ### 4.2 Availability
 
@@ -375,7 +386,6 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 **`platform_settings`** — `key text PK, value jsonb, description text`. Editable in admin. Keys:
 
 ```
-credit_minutes_ratio         # 3 — 1 credit = 3 minutes (§18)
 platform_fee_percent         # 25 — tutor keeps 75%
 earnings_hold_hours          # 48
 instant_request_ttl_seconds  # default 60 (instant-request accept window)
@@ -391,13 +401,35 @@ credit_packages              # jsonb array of buyable packages: credits + USD pr
 > `credit_usd_rate` (pricing is per-package, not a flat rate), `min_withdrawal_credits`
 > (→ `min_withdrawal_usd`), `cancellation_window_hours` (→ `cancellation_enabled = false`),
 > and `max_instant_minutes` / `min_instant_credits` (the instant hold model is gone — §7.4).
-> Added: `credit_minutes_ratio`, `session_durations`, `cancellation_enabled`.
+> Added: `session_durations`, `cancellation_enabled`.
+>
+> **Credits-are-money amendment (2026-08-20, supersedes §18 item 7)** further removed
+> `credit_minutes_ratio`: a credit is a **purchased currency, not a unit of time**, so there is no
+> credit-to-minutes ratio at all. Session price is `hourly_rate_credits × duration_minutes / 60`,
+> rounded up (§7.3, §7.4), for both scheduled and instant. See DECISIONS.
 
 > `presence_stale_seconds` intentionally removed (Decision #8): the 2-minute staleness
 > threshold is baked into the `live_tutors` view so the view and the presence-cleanup cron
 > share one source of truth.
 
 **`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here.
+
+### 4.8 Favourites
+
+> **PARITY — added in Phase 3.** Backed by Bubble's `Favourite_Tutors` list; the original
+> spec omitted it (see `docs/DECISIONS.md`). Migration `drizzle/0008_favourites.sql`.
+
+**`favourites`** — a student's saved tutors.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| student_id | uuid FK → profiles.id (cascade) | the student who favourited |
+| tutor_id | uuid FK → profiles.id (cascade) | the tutor's profile id |
+| created_at | timestamptz not null default now() | |
+
+`unique (student_id, tutor_id)`. Indexes: `(student_id)`, `(tutor_id)`. RLS: a student reads and
+writes **only their own** rows (`student_id = auth.uid()` for select/insert/delete; no update).
 
 ---
 
@@ -423,6 +455,16 @@ Policy summary:
 | broadcasts | anyone reads live/ended | owning tutor |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
 | audit_log | admin only | service role only |
+| favourites | owning student only | owning student inserts/deletes own (no update) |
+| student_subjects | owning student only (no public read) | owning student inserts/deletes own (no update) |
+
+> **`tutor_profiles.approval_status` immutability is enforced by a trigger, not a column grant.** The column-level `REVOKE UPDATE (approval_status, approval_note, approved_at)` in `drizzle/0005` is **ineffective** — the same migration grants table-level `UPDATE` to `authenticated`, and in PostgreSQL a table-level privilege overrides a column REVOKE, so a tutor could self-approve via a direct REST call (found by `db:verify-rls`). The `tutor_approval_guard` trigger (`drizzle/0010`, mirroring `profiles_guard`) blocks any non-admin change to the approval columns. Admins change them through their authenticated session (`is_admin()`); system/service writes disable the trigger, as the seed does for `profiles_guard`.
+
+> **The admin write path (`drizzle/0012`).** RLS on `tutor_profiles` is owner-only, so an admin's *own* session cannot update another tutor's row, and `audit_log` is service-role write — meaning the approval queue had no legal path: the session is blocked by RLS, the server-side connection was blocked by the approval trigger. The guards now block `authenticated` (the real attack — a tutor self-approving via PostgREST) while recognising the **trusted server-side connection** via `public.is_trusted_server()`. Authorization for that path is Layer 2: every admin action calls `requireRole('admin')` first and writes `audit_log`.
+>
+> `is_trusted_server()` deliberately checks **`session_user`** (plus the `service_role` JWT claim), **never `current_user`** — the guards are `SECURITY DEFINER`, so inside them `current_user` is the function owner for *every* caller, and using it would silently disable the guard for end users. This was caught by `db:verify-rls`.
+>
+> The same migration tightens `tutor_profiles` INSERT/UPDATE to require `profiles.role = 'tutor'`. Previously the policies only checked ownership, so a **student** could create a `tutor_profiles` row for themselves. It would land as `approval_status = 'pending'` and never reach browse, but "students cannot write `tutor_profiles`" should hold at the RLS layer, not merely be unexploitable.
 
 **Layer 2 — route handlers.** Every Server Action and API route independently re-checks the caller's identity and role. `requireUser()`, `requireRole('tutor')`, `requireBookingParticipant(bookingId)` helpers live in `lib/auth/guards.ts` and are the first line of every handler. Never trust a client-supplied `userId`.
 
@@ -503,7 +545,7 @@ Prefer Server Actions over API routes for mutations initiated by our own UI. API
 1. `/signup` — email/password or Google. Supabase creates the auth user; a Postgres trigger inserts a matching `profiles` row with `role` null.
 2. Redirect to `/onboarding`. Step 1: "I want to learn" / "I want to teach" → sets `role`. Role is not changeable afterwards by the user.
 3. **Student onboarding:** name, avatar (optional), timezone (prefilled from `Intl.DateTimeFormat().resolvedOptions().timeZone`), subjects of interest. → `/dashboard`.
-4. **Tutor onboarding:** name, avatar, headline, about, subjects + levels, hourly rate, instant rate, languages, education, experience, PayPal email. Sets `approval_status = 'pending'`, creates `tutor_profiles`. → `/tutor/pending-approval`.
+4. **Tutor onboarding:** name, avatar, headline, about, subjects + levels, hourly rate, languages, education, experience, PayPal email. **No separate instant rate** — instant and scheduled both price off `hourly_rate_credits` (credits-are-money amendment, §7.4). Sets `approval_status = 'pending'`, creates `tutor_profiles`. → `/tutor/pending-approval`.
 5. Email verification required before booking or going live. Unverified users may browse.
 6. Admin approves in `/admin/tutors` → email to tutor → tutor can now appear in search and go live.
 
@@ -513,7 +555,11 @@ Google OAuth users skip password but still complete onboarding. Handle the case 
 
 `/tutors` server-renders results from search params so filters are shareable and back-button-safe.
 
-Filters: subject (multi), price range (credits/hour), language, minimum rating, availability window, `live_now` toggle, sort (`relevance | rating | price_asc | price_desc | most_sessions`).
+Filters: subject (multi), price range (**credit bands in credits/hour**, compared directly against `hourly_rate_credits` — no USD conversion: Under 50 · 50–100 · 100–200 · 200–400 · 400+), language, minimum rating, availability window, `live_now` toggle, sort (`relevance | price_asc | price_desc | most_sessions`).
+
+> **Unknown `subject` / `lang` slugs return an empty result set; they do NOT throw.** This is deliberate, and the asymmetry with `sort` / `price` / `minRating` (which reject — §3.3) is a decision, not an inconsistency. Those three are **closed enumerations**: an unrecognised value can only be a typo or a stale link, and silently coercing or dropping it would show results that do not match the URL. Subject and language slugs are **open, admin-editable data** — a subject can be renamed or deactivated, so a previously valid slug in a shared link becomes unknown through no fault of the user. Both behaviours fail safe: the enums fail loudly, and an unknown slug yields a visibly empty grid ("no tutors match your filters") rather than silently widening the query — never Bubble's `ignore_empty_constraints` failure, where the filter disappears and unrelated results look correct.
+
+> **No `rating` sort** — reviews are dropped for v1 (§18), so there is no rating data to sort by; the code has never had one. The **`minRating` filter stays** in both spec and code (parsed, composed, and unit-tested) but is dormant and unsurfaced until reviews exist. An unrecognised `sort` value is rejected, not silently coerced (§3.3).
 
 Base query: `tutor_profiles` where `approval_status = 'approved'` and owning profile not suspended. When `live_now` is on, query the `live_tutors` view instead (Section 3.1) — **this is the fix for the stale LIVE badge, and it must be a view join, not a boolean check.**
 
@@ -529,7 +575,7 @@ Pagination: cursor-based, 24 per page.
 
 1. On `/tutors/[slug]`, a calendar shows the next 30 days. Available slots computed server-side (Section 4.2) and rendered **in the student's timezone**, with the tutor's timezone shown as a secondary label.
 2. Student picks slot + duration (30/60/90 — **[verify offered durations]**) + subject + optional note.
-3. Price = `hourly_rate_credits × duration/60`, rounded up.
+3. Price = `hourly_rate_credits × duration_minutes / 60`, rounded up. This is the single pricing formula — the **same** formula prices instant sessions (§7.4). Credits are a purchased currency, not a unit of time; the tutor's `hourly_rate_credits` is authoritative for price.
 4. Payment choice:
    - **Credits** — if `wallet.credit_balance >= price`: create booking `confirmed`, debit ledger, done in one transaction.
    - **PayPal** — create booking `pending_payment` with a 20-minute expiry, then the PayPal flow (7.6). On successful capture → `confirmed`.
@@ -579,7 +625,7 @@ Rules:
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
 
-**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = duration_minutes / 3` (30 min = 10 credits, 60 = 20, 90 = 30). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price derives from the booked duration, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
+**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
 
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
@@ -776,7 +822,7 @@ Type scale (DM Sans throughout, weights 400/500/700): display 40/44, h1 32/38, h
 
 Spacing on a 4px grid. Container max-width 1200px, page gutter 20px mobile / 24px desktop (desktop gutter tightened from 32px in the density pass).
 
-**The ink surface (parity with the Bubble build).** The authenticated app is an **ink shell** (sidebar + topbar) wrapping a **white content panel**, with **ink cards** inside that panel — ink shell → white panel → ink cards. There is exactly **one** ink surface (`ink-900`, `#34495E`, sampled from the live build; sidebar and cards are the same value). Elevation-by-lightness is unavailable: an ink card, a dropdown over the ink topbar, or the drawer contents cannot separate from their background by being lighter — they separate by an `ink-700` border or a shadow. `ink-800` is an **interaction state** (hover/pressed), never a surface; `ink-950` is the darker recess (active nav item, modal scrim).
+**The ink surface (parity with the Bubble build).** The authenticated app is an **ink shell** (sidebar + topbar) wrapping a **white content panel**, with **ink cards** inside that panel — ink shell → white panel → ink cards. There is exactly **one** ink surface (`ink-900`, `#34495E`, sampled from the live build; sidebar and cards are the same value). Elevation-by-lightness is unavailable: an ink card, a dropdown over the ink topbar, or the drawer contents cannot separate from their background by being lighter — they separate by an `ink-700` border or a shadow. `ink-800` is an **interaction state** (hover/pressed), never a surface; `ink-950` is the darker recess (active nav item, modal scrim) — **not** a card sub-panel. **A card is one `ink-900` fill throughout:** the `TutorCard` media/avatar band is the *same* `ink-900` as its content and separates only by an `ink-700` bottom border (an earlier build tinted that band `ink-950`; corrected — a card must not carry two tones). Verified contrast on `ink-900`: white body 9.29:1, `ink-300` secondary 4.69:1, `live-400` badge fill 4.75:1 (its `ink-900` text 4.75:1), gold focus ring 7.22:1 — all pass.
 
 **Rules:** gold is for primary CTAs only, never for body text or borders. Live green appears only on live status — never as a generic success colour in the same view as a LIVE badge. **Purple on ink is fill-only, carrying white text** (white on `purple-500` = 6.91:1): at **1.34:1** purple fails not just the 4.5:1 text floor but the 3:1 non-text UI floor, so it is never text, a border, a focus ring, or an active-indicator bar on ink — gold does that job. On ink, body/headings/names use white freely, secondary text uses `ink-300` (4.69:1). Purple remains the primary on light surfaces, unchanged.
 
@@ -907,7 +953,7 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 **Unit (Vitest), non-negotiable coverage:**
 - Availability slot computation — DST boundaries, cross-timezone, exception overrides, back-to-back bookings.
 - Ledger — insufficient balance, concurrent debit under lock, idempotent credit on duplicate reference.
-- Pricing — durations, rounding, instant per-minute billing, platform fee.
+- Pricing — the `hourly_rate_credits × duration_minutes / 60` formula (scheduled and instant), round-up behaviour, platform fee.
 - Presence staleness — the `live_tutors` boundary at exactly the threshold.
 - Filter composition — every combination of set/unset filters produces the intended SQL.
 
@@ -944,7 +990,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 **Phase 5 — Payments.** PayPal orders, capture, webhook, credit packages, wallet page and history, direct booking payment, `/admin/payments` reconciliation view.
 *Accept:* sandbox purchase credits correctly; replaying the webhook does not double-credit.
 
-**Phase 6 — Presence and instant sessions.** Heartbeat, go-live toggle, `session_requests` with Realtime both directions, `/session/[bookingId]` with Agora, `/api/agora/token` with authorization, per-minute billing, sweep-presence cron.
+**Phase 6 — Presence and instant sessions.** Heartbeat, go-live toggle, `session_requests` with Realtime both directions, `/session/[bookingId]` with Agora, `/api/agora/token` with authorization, instant billing (flat, upfront, at the `hourly_rate_credits × duration_minutes / 60` formula — §7.4), sweep-presence cron.
 *Accept:* E2E test 3 (ungraceful tutor exit) passes.
 
 **Phase 7 — LessonSpace.** Join route, room creation, role-based launch, `/classroom/[bookingId]`, join-window logic.
@@ -995,18 +1041,22 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
    admin force-cancel is the only change mechanism.
 
 **Phase 5 (payments):**
-7. **Credit rate & packages** — **1 credit = 3 minutes** (`credit_minutes_ratio = 3`). Five package
-   tiers (§4.7 / seed): Starter 5cr/$9.99, Standard 15cr/$24.99, Popular 30cr/$39.99,
-   Pro 60cr/$67.99, Premium 100cr/$97.99. There is **no flat credit-to-USD rate** — price is per
-   package. (Bubble's per-package "minutes" labels are inconsistent marketing copy and are **not**
-   seeded; see DECISIONS.)
+7. **Credit rate & packages** — **⚠️ superseded (2026-08-20) by the credits-are-money amendment:**
+   a credit is a **purchased currency, not a unit of time**. The `credit_minutes_ratio = 3` /
+   "1 credit = 3 minutes" rule is **withdrawn entirely**; there is no credit-to-minutes ratio.
+   Session price is `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.3, §7.4). Five
+   package tiers (§4.7 / seed) stand on their own — Starter 5cr/$9.99, Standard 15cr/$24.99,
+   Popular 30cr/$39.99, Pro 60cr/$67.99, Premium 100cr/$97.99 — with **no** credit-to-USD rate and
+   **no** credit-to-minutes ratio stated on the purchase page. (Bubble's per-package "minutes"
+   labels are inconsistent marketing copy and are **not** seeded; see DECISIONS.)
 8. **Platform fee** — **25%** (`platform_fee_percent = 25`); tutor keeps 75%.
 
 **Phase 6 (instant sessions):**
-9. **Instant pricing** — **flat, charged upfront** at booking creation: `duration_minutes / 3`
-   credits (30→10, 60→20, 90→30), debited via the ledger in the same transaction. No metering, no
-   hold, no per-minute rate. Session length is enforced server-side from `bookings.started_at`.
-   See §7.4.
+9. **Instant pricing** — **flat, charged upfront** at booking creation, priced by the **same formula
+   as scheduled**: `hourly_rate_credits × duration_minutes / 60`, rounded up (**superseded** the old
+   `duration_minutes / 3` rule, 2026-08-20 credits-are-money amendment). Debited via the ledger in
+   the same transaction. No metering, no hold, no per-minute rate. Session length is enforced
+   server-side from `bookings.started_at`. See §7.4.
 
 **Phase 8 (withdrawals):**
 10. **Earnings hold & minimum withdrawal** — hold **48 hours** (`earnings_hold_hours = 48`);
