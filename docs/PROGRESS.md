@@ -15,6 +15,10 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   time, flat instant pricing, no cancellation, 25% fee, five credit packages.
 - **Phase 3** — auth, onboarding, browse/filter, profiles, editor, approval queue with re-review,
   favourites, storage/avatars. **Merged via PR #4.**
+- **Branch protection is ACTIVE on `main`** ✅ — ruleset targeting `main` only, with **`verify`
+  required**, PR required before merging, branches must be up to date, force pushes blocked and
+  deletions restricted. CI is no longer advisory: the Phase 6 ungraceful-exit E2E now has something
+  enforcing it. Changes to `main` go through a PR.
 
 ## What Phase 3 built
 
@@ -68,19 +72,18 @@ Do **not** start until told. Scope (SPEC §7.3, §4.2, §4.3):
 
 ## Still open — carry forward
 
-- **Required status checks are NOT configured on `main`; CI is advisory.** CI itself is healthy
-  again (the earlier account-level billing lock is resolved — runs now execute and pass), but
-  nothing *enforces* green before merge. The Phase 6 E2E ungraceful-exit test is the guard against
-  the original stale-LIVE bug, and **a guard that can be merged past is not a guard.** Configure
-  branch protection with required checks **before Phase 6**.
+- **⚠️ Production deploy returns a Vercel edge 404 on all routes.** Deployment `be218c5` is
+  **Ready / Production / Current** with all three domains attached (`nowtutors-brown.vercel.app` is
+  the project alias), the build log is clean with all **16 routes compiled**, and Deployment
+  Protection has been disabled. Vercel's own preview thumbnail also shows the 404. Since the build
+  succeeds and the alias is correct, requests are likely **not reaching the app** — middleware
+  (91.4 kB, runs on every route) or routing config is the first suspect. **Next step:** Runtime Logs
+  on that deployment, to see whether requests arrive at all and what they return. Local dev works;
+  **does not block Phase 4.**
+  - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
+    nowtutors.com at it.**
 - **Bump the GitHub action versions to `@v5`** (`actions/checkout`, `actions/setup-node`,
-  `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes). Do it alongside the
-  branch-protection change — same visit to the repo settings/workflow.
-- **Live Bubble app — unconfirmed instant-billing defect.** The maintenance build may decrement
-  `credits_remaining` on a **180 ms interval** rather than per minute, which would drain a
-  60-minute session in seconds. This affects **live users on the build that is still running**. Two
-  minutes on the live app settles it — worth doing, since our rebuild deliberately does not port
-  that behaviour (§7.4, "bug not ported, intended behaviour built").
+  `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes).
 - **Obsolete pricing remnants — one cleanup migration when Phase 6 opens.**
   `tutor_profiles.instant_rate_credits_per_minute` is retained-but-unused, and the
   `instant_hold` / `instant_release` / `instant_capture` `credit_transaction_type` values are
@@ -96,6 +99,9 @@ Do **not** start until told. Scope (SPEC §7.3, §4.2, §4.3):
 
 ## Notes / non-bugs (do NOT re-investigate)
 
+- **Bubble drives session length from a client-side countdown** (status = `Completed` when
+  `credits_remaining <= 0`, then `endSession()`). The rebuild computes elapsed time **server-side
+  from `started_at`**. Not ported.
 - **Theo's blank avatar circle** is expected: the seed uploads a **1×1 transparent PNG** for
   `theo-chen` purely to prove the Storage → `next/image` pipeline. Not a rendering bug.
 - All other tutors show **initials** (no uploaded avatar) — also expected.
@@ -116,5 +122,6 @@ Do **not** start until told. Scope (SPEC §7.3, §4.2, §4.3):
   (ref `mipnoxlhurdbaahmvhhx`, eu-west-3); no prod project yet.
 - Seed login password for all seeded users: `Password123!` (`student1@nowtutors.dev`,
   `tutor1@nowtutors.dev`, `admin@nowtutors.dev`).
-- **Local gates are mandatory** while CI is advisory: `pnpm typecheck && pnpm lint && pnpm test &&
-  pnpm build && pnpm db:verify-rls`.
+- **Run the local gates before pushing**: `pnpm typecheck && pnpm lint && pnpm test && pnpm build &&
+  pnpm db:verify-rls`. CI (`verify`) is now a required check on `main`, so a red gate blocks the
+  merge rather than merely warning — but `db:verify-rls` needs dev credentials and runs locally only.
