@@ -5,6 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { FieldError } from "@/components/ui/field-error";
 import { RoleCard } from "@/components/features/onboarding/onboarding-flow";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { HeartOff } from "lucide-react";
 
 /**
  * Auth & onboarding building blocks (Phase 3). The full flows live at /login,
@@ -47,6 +50,25 @@ export function AuthSection({ surface }: { surface: Surface }) {
             <Input id="ks-email-err" type="email" defaultValue="not-an-email" invalid />
             <FieldError>Enter a valid email address.</FieldError>
           </div>
+        </div>
+      </Demo>
+      <Demo label="Admin queue — re-review flag" surface={surface} className="!block">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="warning">Edited since review</Badge>
+          <Badge variant="purple">3</Badge>
+          <span className="text-caption text-gray-500">
+            approved tutors stay live and bookable while flagged (§4.1)
+          </span>
+        </div>
+      </Demo>
+
+      <Demo label="Favourites — empty state" surface={surface} className="!block">
+        <div className="max-w-xl">
+          <EmptyState
+            icon={<HeartOff className="size-6" />}
+            title="No saved tutors yet"
+            description="Tap the heart on any tutor to save them here for later."
+          />
         </div>
       </Demo>
     </Section>

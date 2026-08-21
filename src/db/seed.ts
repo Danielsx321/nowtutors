@@ -418,11 +418,36 @@ async function main() {
     "tutor_earnings insert",
   );
 
+  // Re-review fixture (SPEC §4.1): one approved tutor who has edited a MATERIAL
+  // field since their last review, so /admin/tutors "Edited since review" is not
+  // empty in dev. The others get profile_reviewed_at with no profile_changed_at,
+  // i.e. reviewed and unchanged. Written through the service role, which the
+  // change-flag trigger treats as a trusted server (drizzle/0012).
+  const reviewedAt = new Date(Date.now() - 7 * 864e5).toISOString(); // a week ago
+  check(
+    await admin
+      .from("tutor_profiles")
+      .update({ profile_reviewed_at: reviewedAt, profile_changed_at: null })
+      .in("user_id", tutorIds),
+    "tutor_profiles reviewed stamp",
+  );
+  check(
+    await admin
+      .from("tutor_profiles")
+      .update({
+        headline: "Now also covering exam technique and past papers",
+        profile_changed_at: new Date(Date.now() - 3600e3).toISOString(), // an hour ago
+      })
+      .eq("user_id", id.tutor3),
+    "tutor_profiles changed-since-review fixture",
+  );
+
   console.log("Seed complete:");
   console.log(`  users: ${USERS.length} (1 admin, ${TUTORS.length} tutors, ${STUDENTS.length} students)`);
   console.log(`  tutors: 6 approved, 1 pending (admin queue), 1 approved-but-suspended (browse-excluded)`);
   console.log(`  subjects: ${SUBJECTS.length}, settings: ${SETTINGS.length}, favourites: 2 (student1)`);
   console.log(`  student interests: 5 (student1 ×3, student2 ×2)`);
+  console.log(`  re-review queue: 1 approved-and-edited tutor (theo-chen)`);
   console.log(`  sample avatar uploaded for ${avatarTutor.slug}`);
   console.log(`  NOTE: live_now yields 0 rows until Phase 6 (no fresh presence) — expected`);
   console.log(`  login password for all seeded users: ${PASSWORD}`);

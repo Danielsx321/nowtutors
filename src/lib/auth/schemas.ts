@@ -105,3 +105,22 @@ export const tutorOnboardingSchema = z.object({
   paypalEmail: email, // payout destination (tutor_payout_details)
 });
 export type TutorOnboardingValues = z.infer<typeof tutorOnboardingSchema>;
+
+/**
+ * Tutor profile editor (/tutor/profile) — DERIVED from the onboarding schema so
+ * the two can never drift: same field rules, one definition. Payout email is not
+ * edited here (it lives in /tutor/settings), and the intro video is added
+ * because it is offered after onboarding. Deliberately absent, and rejected
+ * server-side if sent: approval_status, approval_note, slug, role.
+ */
+export const tutorProfileEditSchema = tutorOnboardingSchema
+  .omit({ paypalEmail: true })
+  .extend({
+    introVideoUrl: z
+      .string()
+      .trim()
+      .url("Enter a valid video URL.")
+      .optional()
+      .or(z.literal("").transform(() => undefined)),
+  });
+export type TutorProfileEditValues = z.infer<typeof tutorProfileEditSchema>;
