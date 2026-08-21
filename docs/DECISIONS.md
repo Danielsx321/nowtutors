@@ -489,3 +489,34 @@ Decided with the user (plan approved). This commit is the **browse checkpoint** 
   `profile_reviewed_at` is admin-only, folded into the existing `tutor_approval_guard` (drizzle/0010).
 - **Pending tutors are never flagged** — they are already in the normal approval queue, so a material
   edit before first approval is not a separate event.
+
+## Phase 3 — the admin write path, and two guard bugs it surfaced
+
+- **Admin approval writes go through the trusted server-side connection, not the admin's session
+  (`drizzle/0012`).** RLS on `tutor_profiles` is owner-only (`user_id = auth.uid()`), so an admin's
+  own PostgREST session cannot touch another tutor's row; `audit_log` is service-role write. Meanwhile
+  the `tutor_approval_guard` from `drizzle/0010` required `is_admin()` (an `auth.uid()` that is an
+  admin). Net effect: the approval queue had **no legal write path at all**. Rather than widening RLS
+  so admins can update arbitrary tutor rows over PostgREST, the guards now also accept the trusted
+  server-side connection — which already owns the tables and bypasses RLS, and which the seed already
+  worked around by disabling the triggers. Authorization for that path is SPEC §5 Layer 2: every
+  admin action calls `requireRole('admin')` as its first statement and writes `audit_log`.
+- **`is_trusted_server()` must not use `current_user` — a guard-disabling bug caught by
+  `db:verify-rls`.** The first version compared `current_user`. The guards are **`SECURITY DEFINER`**,
+  so inside them `current_user` is the function OWNER (`postgres`) for *every* caller, including an
+  end user over PostgREST. That made the function return true universally and silently disabled the
+  approval guard — re-opening the exact self-approval hole `drizzle/0010` had just closed. The fix
+  uses **`session_user`** (which survives the definer switch; `authenticator` for PostgREST,
+  `postgres` for our server connection) plus the `service_role` JWT claim, since PostgREST connects
+  as `authenticator` for anon, authenticated **and** service_role alike. *Lesson worth keeping:*
+  inside `SECURITY DEFINER`, `current_user` is the definer — never use it for authorization.
+- **A student could create their own `tutor_profiles` row.** The original INSERT/UPDATE policies only
+  checked ownership (`user_id = auth.uid()`) with no role test, so any authenticated student could
+  insert a tutor profile for themselves. Not exploitable for visibility (it lands `pending`, and the
+  route guards read `profiles.role`, not `tutor_profiles`), but "students cannot write
+  `tutor_profiles`" should be true at the RLS layer rather than merely unreachable. Both policies now
+  require `profiles.role = 'tutor'`. Found by writing the §2f assertion, not by reading the policy.
+- **`db:verify-rls` assertions must be state-independent.** Two assertions "failed" only because an
+  earlier buggy run had already written the exact value they were trying to write — a no-op UPDATE
+  does not fire an `IS DISTINCT FROM` trigger. The approval-note assertion now writes a unique value
+  per run. A guard test that passes or fails depending on leftover rows is worse than no test.

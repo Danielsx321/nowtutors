@@ -180,7 +180,91 @@ async function main() {
       .select("user_id");
     assert((data ?? []).length === 0, "tutor cannot edit another tutor's profile");
   }
+  {
+    // profile_reviewed_at is the admin side of the re-review pair (drizzle/0011):
+    // a tutor marking their own profile reviewed would defeat the queue.
+    const { error } = await tutor
+      .from("tutor_profiles")
+      .update({ profile_reviewed_at: new Date().toISOString() })
+      .eq("user_id", tid);
+    assert(!!error, "tutor cannot set own profile_reviewed_at (approval guard)");
+  }
+  {
+    const { error } = await tutor
+      .from("tutor_profiles")
+      // A UNIQUE value each run, so the assertion tests the guard rather than
+      // accidentally writing the value the column already holds (a no-op update
+      // does not fire the trigger and would look like a pass/fail at random).
+      .update({ approval_note: `self-written note ${Date.now()}` })
+      .eq("user_id", tid);
+    assert(!!error, "tutor cannot set own approval_note (approval guard)");
+  }
+  {
+    // A tutor must not be able to clear their own re-review flag to dodge review.
+    // The change-flag trigger overwrites the submitted value with the old one,
+    // so the update "succeeds" but the flag must survive.
+    await tutor
+      .from("tutor_profiles")
+      .update({ headline: "material edit for the flag test" })
+      .eq("user_id", tid);
+    await tutor
+      .from("tutor_profiles")
+      .update({ profile_changed_at: null })
+      .eq("user_id", tid);
+    const { data } = await rows(
+      tutor.from("tutor_profiles").select("profile_changed_at").eq("user_id", tid),
+    );
+    const stillFlagged =
+      (data[0] as { profile_changed_at: string | null } | undefined)
+        ?.profile_changed_at != null;
+    assert(stillFlagged, "tutor cannot clear own profile_changed_at (re-review flag survives)");
+  }
+  {
+    const { data } = await rows(tutor.from("favourites").select("id"));
+    assert(data.length === 0, "tutor (non-student) sees 0 favourites");
+  }
   await tutor.auth.signOut();
+
+  console.log("student cannot write tutor_profiles at all:");
+  const student2 = createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  await student2.auth.signInWithPassword({
+    email: "student1@nowtutors.dev",
+    password: "Password123!",
+  });
+  {
+    const { data } = await rows(
+      student2.from("tutor_profiles").update({ headline: "hacked" }).not("user_id", "is", null).select("user_id"),
+    );
+    assert(data.length === 0, "student cannot UPDATE any tutor_profiles row");
+  }
+  {
+    const { error } = await student2
+      .from("tutor_profiles")
+      .insert({ user_id: uid, slug: `student-made-${uid}`, hourly_rate_credits: 10 });
+    assert(!!error, "student cannot INSERT a tutor_profiles row for themselves");
+  }
+
+  console.log("favourites — owner only:");
+  {
+    const { data, error } = await rows(student2.from("favourites").select("student_id"));
+    const onlyMine = data.every((r) => (r as { student_id: string }).student_id === uid);
+    assert(!error && data.length > 0 && onlyMine, `student reads only own favourites (${data.length})`);
+  }
+  if (otherUserId) {
+    const { error } = await student2
+      .from("favourites")
+      .insert({ student_id: otherUserId, tutor_id: otherUserId });
+    assert(!!error, "student cannot INSERT a favourite for another student");
+  }
+  {
+    const { data } = await rows(
+      student2.from("favourites").delete().neq("student_id", uid).select("id"),
+    );
+    assert(data.length === 0, "student cannot DELETE another student's favourites");
+  }
+  await student2.auth.signOut();
 
   // ── Same-email identity linking (SPEC §7.1) ────────────────────────────────
   // The no-duplicate-accounts guarantee for "Google sign-in on an existing
