@@ -37,3 +37,25 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      # The gap this closes: lint + typecheck + unit tests all passed for a
+      # deployment that compiled but could not serve a single route in
+      # production. A green required check that never builds is not a gate.
+      # `next build` is what catches a broken build, a bad next.config, a
+      # server/client boundary violation or a prerender failure.
+      #
+      # NO SECRETS ARE NEEDED. Verified: the build completes and emits all 16
+      # routes with a completely empty environment. The one value below is a
+      # PLACEHOLDER, not a credential — nothing is contacted at build time. It
+      # exists so next.config.ts takes its real branch: `images.remotePatterns`
+      # is derived via `new URL(NEXT_PUBLIC_SUPABASE_URL)`, so with the var
+      # unset CI would compile the empty-array path that production never uses
+      # and a malformed-URL regression there would sail straight through.
+      #
+      # SENTRY_DSN is deliberately left unset: the config only wraps with
+      # withSentryConfig when it is present, and wrapping would attempt
+      # source-map upload behaviour that needs a real auth token.
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co

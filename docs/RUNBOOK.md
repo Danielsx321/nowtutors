@@ -28,12 +28,27 @@ environment.
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
+  - **Vercel "Framework Preset" must read "Next.js"**, not "Other" — with the wrong preset
+    Vercel runs the build but never applies Next's routing/output convention, so every route
+    returns a platform 404 despite a clean build. See DECISIONS, "Production 404".
+  - **Vercel env vars are per-project AND per-environment** (Production / Preview /
+    Development) — they are NOT inherited from the repo or from `.env.local`. Each must be
+    set explicitly in the Vercel dashboard for every environment that needs it.
 - [ ] Google OAuth consent screen and redirect URIs — Phase 3.
 - [ ] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
 - [ ] Agora project settings and token-service health check — Phase 6.
 - [ ] Resend domain verification and DNS records — Phase 10.
 - [ ] DNS cutover for nowtutors.com — Phase 10.
+- [ ] **Move production off the DEV Supabase project — Phase 10, BEFORE launch.** Production
+      currently points at the dev project (`mipnoxlhurdbaahmvhhx`, eu-west-3), which is
+      acceptable only while there are no real users. Create a dedicated production project,
+      run the migrations against it, seed `platform_settings` + subjects (NOT the dev
+      fixtures), promote the first admin by SQL, repoint the Vercel production env vars
+      (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+      `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `DIRECT_URL`), redo the Google OAuth
+      redirect URIs and the same-email linking setting for the new project, and re-run
+      `pnpm db:verify-rls` against it. See DECISIONS, "Production 404".
 - [ ] First-admin promotion SQL — Phase 1/8.
 - [ ] Rollback procedure.
 
