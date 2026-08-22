@@ -8,10 +8,11 @@ describe("sessionPriceCredits — hourly_rate × duration / 60, rounded up", () 
     expect(sessionPriceCredits(240, 60)).toBe(240);
   });
 
-  it("the 30 / 60 / 90 fixed menu at rate 40", () => {
+  it("the 30 / 60 / 90 / 120 fixed menu at rate 40", () => {
     expect(sessionPriceCredits(40, 30)).toBe(20);
     expect(sessionPriceCredits(40, 60)).toBe(40);
     expect(sessionPriceCredits(40, 90)).toBe(60);
+    expect(sessionPriceCredits(40, 120)).toBe(80);
   });
 
   it("rounds UP on a fractional credit", () => {
