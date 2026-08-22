@@ -1,7 +1,9 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
-// SPEC §4 enums. credit_transaction_type includes the instant_* values added by
-// the Phase 1 ledger decision (instant-session hold; see docs/DECISIONS.md).
+// SPEC §4 enums. The instant_* credit_transaction_type values from the Phase 1
+// ledger decision (instant-session hold) were DROPPED in drizzle/0014 — §18 made
+// instant billing a single flat booking_debit and the live app has no hold model
+// (docs/DECISIONS.md, Phase 6 pre-build).
 export const userRole = pgEnum("user_role", ["student", "tutor", "admin"]);
 
 export const tutorApprovalStatus = pgEnum("tutor_approval_status", [
@@ -39,6 +41,11 @@ export const sessionRequestStatus = pgEnum("session_request_status", [
   "declined",
   "expired",
   "cancelled",
+  // Terminal state for an accept whose credit debit failed (the student's
+  // balance moved between request and accept). Distinct from `declined` and
+  // `expired` so an operator can tell a refusal from a payment failure
+  // (SPEC §4.3, drizzle/0014).
+  "failed_payment",
 ]);
 
 export const paymentMethod = pgEnum("payment_method", ["credits", "paypal"]);
@@ -52,9 +59,6 @@ export const creditTransactionType = pgEnum("credit_transaction_type", [
   "withdrawal_paid",
   "withdrawal_reversed",
   "admin_adjustment",
-  "instant_hold",
-  "instant_release",
-  "instant_capture",
 ]);
 
 export const paymentProvider = pgEnum("payment_provider", ["paypal"]);

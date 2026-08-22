@@ -11,6 +11,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { navByRole, roleHome, type Role } from "@/components/layout/nav-config";
+import { usePresence } from "@/hooks/use-presence";
 
 export interface AppShellProps {
   role: Role;
@@ -27,6 +28,11 @@ export interface AppShellProps {
  * panel, with a mobile nav drawer. Supersedes the earlier "dark sidebar + white
  * topbar + light content" model (DECISIONS.md). Presentational only — role
  * guards land in Phase 3. Nav comes from the static §6 config keyed by role.
+ *
+ * This is also where the presence heartbeat is mounted (SPEC §7.5). It is the
+ * one client component every authenticated area shares — the (student), (tutor)
+ * and admin layouts all render it — so mounting `usePresence()` here covers each
+ * of them exactly once, and no public page ever heartbeats.
  */
 export function AppShell({
   role,
@@ -38,6 +44,8 @@ export function AppShell({
 }: AppShellProps) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const items = navByRole[role];
+
+  usePresence();
 
   return (
     <div className="flex min-h-screen bg-ink-900">

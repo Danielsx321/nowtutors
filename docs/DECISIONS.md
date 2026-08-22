@@ -1150,3 +1150,102 @@ rule).
   before cutover, and every existing student will see prices change from the one flat platform rate
   they're used to. Recorded in PROGRESS.md "Still open" rather than actioned here — it's a Phase 10
   concern, not a Phase 6 blocker.
+
+---
+
+## Phase 6 Part 1 — presence + migration 0014 (2026-08-22)
+
+Scope was presence and the schema cleanup only. Session requests, Realtime, billing and the session
+room are Parts 2 and 3 and are deliberately absent — where a Part 1 file would otherwise have had a
+half-implemented hook into them, it carries a `TODO(Phase 6 Part 2 / Part 3)` instead.
+
+- **The sweep derives its work set from the `live_tutors` view, not from a threshold of its own.**
+  `sweepStalePresence()` clears `is_live` where `is_live = true AND NOT EXISTS (SELECT 1 FROM
+  live_tutors WHERE user_id = …)`. *Why:* §3.1 says the view is the single definition of stale, and
+  SPEC §7.5 previously described the sweep as `last_seen_at < now() - presence_stale_seconds` — a
+  setting that has not existed since Phase 1 (Decision #8 deleted it). Had that line been
+  implemented literally, the 2-minute interval would have existed in two places that could be
+  retuned independently, which is exactly the drift §3.1 forecloses. Deriving from the view means
+  there is **no copy of the threshold anywhere in the write path**. SPEC §7.5 and §12 amended to
+  match what was built. *Consequence accepted:* the view also requires `approval_status =
+  'approved'`, so a tutor whose approval is revoked while live is swept offline as well. That is the
+  right outcome — an unapproved tutor must not be advertised as live — and the go-live action
+  refuses unapproved tutors anyway, so it is a backstop rather than a routine path.
+
+- **Scheduling is Supabase `pg_cron` + `pg_net`, and there is no `vercel.json`.** *Why:* the deploy
+  target is Vercel **Hobby**, whose cron jobs run **at most once a day**. A once-daily presence
+  sweep is worthless against a 2-minute staleness window — it would leave `is_live` wrong on the
+  base table for hours. `pg_cron` runs inside the same Postgres project as the data and honours
+  `*/5`, and calls the route over `pg_net` with the bearer header, so the handler stays an ordinary
+  HTTP route with nothing Vercel-specific in it. The setup SQL is a **documented snippet**
+  (`drizzle/snippets/pg_cron_sweep_presence.sql`), not a numbered migration: `CREATE EXTENSION
+  pg_cron` needs privileges the migration connection does not reliably have — a failure there would
+  block every later migration — and the job embeds a per-environment secret that must not be
+  committed. Secrets go in Supabase Vault rather than inline in `cron.job.command`, which is
+  readable by anyone who can read the catalog. SPEC §3.5 and §12 amended. RUNBOOK carries the steps.
+
+- **The `pagehide` beacon is a DEPARTURE signal, not a final heartbeat.** `POST
+  /api/presence/heartbeat` takes `{ event: 'heartbeat' | 'exit' }`; `exit` clears a live tutor's
+  `is_live` and pointedly does **not** touch `last_seen_at`. *Why:* a "last heartbeat" on the way
+  out would extend the departing tutor's liveness by the full staleness window at the exact moment
+  they left — backwards from the purpose of §7.5's third defence, which is to remove them *sooner*
+  than the view would. *Trade-off accepted:* `pagehide` fires on a full-page reload too, so an
+  approved tutor who hits F5 while live comes back offline and must re-toggle. Next.js client-side
+  navigation does **not** fire it, so moving around the app is safe. SPEC §7.5 is explicit that
+  navigating away cleanly sets `is_live = false`; treating reload as an exception would mean
+  guessing at intent from an event that cannot distinguish the two, and the recovery is one click.
+
+- **The heartbeat route accepts a body precisely because `sendBeacon` cannot set headers — and the
+  body carries no identity.** `requireApiUser()` is the first statement and the user id comes from
+  the session; the payload's only field is the event kind. A malformed or absent body is treated as
+  a plain heartbeat rather than 400ing: beacons are fire-and-forget, and rejecting one would lose
+  presence for no benefit.
+
+- **Going live is unrestricted by the tutor's calendar, but not by their approval.** The action
+  refuses unapproved, suspended, wrong-role and unverified-email callers (`requireRole('tutor')` +
+  `requireVerifiedEmail()`, re-checked independently of the layout), and does **not** consult
+  `bookings` at all. *Why:* the scheduled/instant collision is enforced at **accept** (Part 2, §7.4)
+  where the conflict actually exists; blocking here would drop a tutor off the live list for a
+  booking that may never collide, and Bubble has no such check anywhere.
+
+- **`/tutor` got a real page.** It had none — `homeFor.tutor` pointed at a route that 404'd in
+  production (PROGRESS.md). The go-live toggle has to live somewhere, so Part 1 gives `/tutor` a
+  deliberately thin overview: the toggle and nothing else. Earnings, upcoming sessions and the
+  request inbox belong to later phases; a placeholder dashboard would be scope this phase was not
+  asked for.
+
+- **`PRESENCE_STALE_SECONDS` is a mirror of the view, and a test proves it.** `lib/presence/staleness.ts`
+  exists only so the boundary can be unit-tested DB-free (§15) and so a "last seen" treatment can be
+  rendered without a round trip — the write path never reads it. Because a constant that merely
+  *claims* to mirror the view becomes a second definition the moment someone retunes the view,
+  `tests/unit/presence-staleness.test.ts` parses the `interval '2 minutes'` literal straight out of
+  `drizzle/0014` and asserts it equals the constant. The boundary itself is strict: the view's
+  predicate is `>`, so a heartbeat **exactly** 2 minutes old is already stale.
+
+- **The cron route answers to GET and POST.** SPEC §12 and the Vercel-cron convention make it a GET;
+  `pg_net`'s documented call is `net.http_post`. Rather than pick one and leave the other silently
+  405ing, both verbs run the identical guarded, idempotent sweep. It also **fails closed with 503
+  when `CRON_SECRET` is unset** — an unset secret must never degrade into "no auth required" on an
+  environment that is missing the variable.
+
+### What had to be hand-written in migration `0014`
+
+`drizzle-kit generate` produced four usable ALTERs. Three things it could not express:
+
+- **The `credit_transaction_type` value removal.** Postgres has no `ALTER TYPE ... DROP VALUE`.
+  drizzle-kit's generated form casts the column to `text`, `DROP TYPE`s, and casts back — which
+  leaves the column unconstrained mid-migration and fails opaquely if any other object still depends
+  on the type. Replaced with the rename-create-alter-drop dance, under which the column is never
+  without an enum constraint and the final `DROP TYPE` fails loudly on any dependency we did not
+  know about.
+- **The `live_tutors` dependency.** The view (drizzle/0004) enumerates
+  `instant_rate_credits_per_minute` by name, so the generated bare `DROP COLUMN` errors with "cannot
+  drop column … other objects depend on it". The view is dropped and recreated around the drop —
+  verbatim apart from the removed column, same explicit column list, same `security_invoker`, same
+  predicate, same grants.
+- **Two pre-flight guards.** `DO` blocks that abort with a readable message if `session_requests`
+  is non-empty (the new columns are `NOT NULL` with **no default** — both are server-authored, and a
+  default would paper over a caller that forgot to compute them) or if any `credit_transactions` row
+  still uses one of the three values being removed. Both were verified empty against the live
+  project before the migration was written; the guards make that a permanent property of the file
+  rather than a fact about one afternoon.

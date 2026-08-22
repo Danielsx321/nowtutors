@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-22)
 
-**Phases 0–5 are complete and merged to `main`.**
+**Phases 0–5 are complete and merged to `main`. Phase 6 Part 1 is on a branch, PR open.**
 
 - **Phase 0** — foundation scaffold (PR #1, `56cc101`).
 - **Phase 1** — data layer: 21 tables + 16 enums, 7 migrations, RLS, `live_tutors` /
@@ -70,6 +70,58 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   consumed by `db/queries/wallet.ts`; `credit_transactions` reverted to INSERT-only, with the
   in-memory ledger fake now freezing rows and throwing on any attempted rewrite so the invariant
   fails loudly in tests if ever reintroduced. **Merged via PR #13 (`003b992`).**
+- **Phase 6 Part 1 — presence + migration `0014`** — branch `phase-6-part-1-presence`, **PR open,
+  not merged**. See "What Phase 6 Part 1 built" below.
+
+## What Phase 6 Part 1 built
+
+**Presence and the schema cleanup only.** Session requests, Realtime, billing and the session room
+are Parts 2 and 3, and are absent rather than stubbed — where Part 1 code would otherwise reach into
+them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
+
+- **Migration `0014`** (`drizzle/0014_phase6_presence_cleanup.sql`, partly hand-written):
+  `session_requests` gains `duration_minutes` + `price_credits` (both `integer NOT NULL`, **no
+  default** — server-authored at insert); `session_request_status` gains `failed_payment`;
+  `tutor_profiles.instant_rate_credits_per_minute` dropped; the `instant_hold` / `instant_release` /
+  `instant_capture` `credit_transaction_type` values removed via the rename-create-alter-drop dance.
+  `live_tutors` is dropped and recreated around the column drop (it enumerated that column) —
+  identical otherwise, threshold and grants included. Two `DO`-block guards abort the migration with
+  a readable message if either table turns out to hold rows the plan assumed absent. **Pre-flight
+  counts against the live project were 0 and 0.**
+- **Heartbeat** — `POST /api/presence/heartbeat` (`requireApiUser()` first, identity from the
+  session, never the body) and `usePresence()` mounted once in `AppShell`, so every authenticated
+  area heartbeats and no public page does. Fires on mount, every 30s while visible, pauses on
+  `document.hidden`, fires immediately on visible. The `pagehide` `sendBeacon` sends
+  `{ event: 'exit' }`, which **clears a live tutor's `is_live` and does not touch `last_seen_at`**.
+- **Go live** — `/tutor` now exists (it 404'd before) and hosts the "Available for instant sessions"
+  toggle. The action re-checks role, approval, suspension and verified email server-side, and is
+  **unrestricted by the tutor's calendar** — the scheduled collision is a Part 2 accept-time check.
+- **Sweep** — `GET`/`POST /api/cron/sweep-presence`, bearer-guarded (**503 when `CRON_SECRET` is
+  unset**, never open), idempotent, returns structured counts. Work set derived from the
+  `live_tutors` view, not from any threshold of its own. Scheduled by **Supabase pg_cron + pg_net**
+  (`drizzle/snippets/pg_cron_sweep_presence.sql`, RUNBOOK) because Vercel Hobby crons are daily.
+  **No `vercel.json`.**
+- **Tests** — `tests/unit/presence-staleness.test.ts` (7 cases: the boundary at exactly 2 minutes
+  and either side, plus an anti-drift check that parses the interval literal out of `0014`) and
+  `tests/e2e/presence-ungraceful-exit.spec.ts` (§15 path 3, presence half; the request-expiry half
+  is `test.fixme` for Part 2). Playwright added as a devDependency — it was already in SPEC §2.
+- **Docs in the same commit** — SPEC §3.5, §4.1, §4.3, §4.4, §7.4, §7.5, §12, §15; DECISIONS gained
+  a Part 1 section; RUNBOOK gained `CRON_SECRET` and the pg_cron setup step.
+
+### Phase 6 Part 1 — open items
+
+- **Migration `0014` is NOT YET APPLIED to the database** at the time of writing — see the warning
+  under "Env / toolchain gotchas". Applying it breaks the currently-deployed build until this PR
+  merges and redeploys.
+- **The E2E is not in CI.** It needs a running app and a seeded database, and the only Supabase
+  project that exists is shared with production, so running it in CI would mutate live rows. Wiring
+  it up waits on a disposable test project. SPEC §15 amended to say so rather than implying it runs.
+- **A tutor who reloads `/tutor` while live comes back offline** and must re-toggle. `pagehide`
+  cannot distinguish a reload from leaving, and SPEC §7.5 says clean navigate-away goes offline.
+  Client-side navigation inside the app is unaffected. See DECISIONS.
+- **`tests/unit/pending-payment-slots.test.ts` is slow (~10s) and times out under load** on the
+  5-second default when the whole suite runs in one process. Pre-existing, unrelated to Part 1; it
+  passes on its own. Worth a `testTimeout` bump on that file.
 
 ## What Phase 3 built
 
@@ -120,18 +172,18 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   direct-pay refund also cancels the booking it paid for. Design it before coding it.
 - **Bump the GitHub action versions to `@v5`** (`actions/checkout`, `actions/setup-node`,
   `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes).
-- **Obsolete pricing remnants — one cleanup migration when Phase 6 opens.**
-  `tutor_profiles.instant_rate_credits_per_minute` is retained-but-unused, and the
-  `instant_hold` / `instant_release` / `instant_capture` `credit_transaction_type` values are
-  obsolete now that instant billing is a single flat `booking_debit`. Dropping a column and pruning
-  an enum is a migration, so it was not folded into a docs-only change.
+- **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
+  `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
+  `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
 - **Approval and rejection emails are `TODO(Phase 10)` hooks — nothing is sent.** The hooks are
   marked in `src/actions/admin-tutors.ts`; Resend wires in Phase 10.
 - **Tutor profile diff view not built.** The admin "Edited since review" tab flags the profile and
   timestamps it (changed at / last reviewed) but does not show *what* changed — that needs a history
   table or a stored snapshot, which is a design decision rather than a cheap add. Deferred.
 - **User Role option-set values** — confirm against Bubble (we assume student/tutor/admin).
-- **`credit_transaction_type` value check** — confirm the ledger enum values match the current build.
+- **`credit_transaction_type` value check** — the enum now reads `purchase`, `booking_debit`,
+  `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`,
+  `admin_adjustment` after `0014`. Still worth confirming those eight against the live build at cutover.
 - **Bubble→rebuild pricing model change needs a Phase 10 data migration and cutover comms.** Bubble
   prices every session at duration ÷ 3 credits — one flat platform rate for all tutors. The rebuild
   prices off each tutor's `hourly_rate_credits`. At cutover, every existing tutor needs a rate set and
@@ -150,8 +202,9 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 - **Theo's blank avatar circle** is expected: the seed uploads a **1×1 transparent PNG** for
   `theo-chen` purely to prove the Storage → `next/image` pipeline. Not a rendering bug.
 - All other tutors show **initials** (no uploaded avatar) — also expected.
-- Every seeded tutor reads **"Offline"** because presence does not exist until Phase 6 — correct,
-  the status derives from the `live_tutors` view.
+- Seeded tutors read **"Offline"** until someone actually goes live. Presence exists as of Phase 6
+  Part 1, but the seed does not set `is_live` — status derives from the `live_tutors` view, so a
+  tutor shows live only after toggling on `/tutor`, and only while their heartbeat stays fresh.
 - **`db:verify-rls` mutates seeded rows** (it makes a material edit to `tutor1` to prove the
   re-review flag survives). Re-run `pnpm db:seed` afterwards to restore a tidy dev dataset.
 
@@ -169,6 +222,13 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   separate prod database — every deploy reads/writes the same project the local seed and
   `db:verify-rls` run against. Provisioning a real prod project is unstarted; until then, treat
   anything in that project as live data, not disposable fixtures.
+- ⚠️ **Applying migration `0014` breaks the currently-deployed build until this PR merges.** Because
+  prod and dev share one database, dropping `tutor_profiles.instant_rate_credits_per_minute` breaks
+  any deployed code whose Drizzle schema still lists it — specifically `getOwnTutorProfile()`
+  (`db/queries/tutor-profile.ts`), which uses a bare `.select()` and so names every column in the
+  schema. `/tutor/profile` will 500 for the window between `pnpm db:migrate` and the redeploy.
+  **Order the cutover: merge the PR, let Vercel deploy, then run `pnpm db:migrate`** — or accept a
+  short outage on that one page. This is a property of the shared-project setup, not of `0014`.
 - Seed login password for all seeded users: `Password123!` (`student1@nowtutors.dev`,
   `tutor1@nowtutors.dev`, `admin@nowtutors.dev`).
 - **Run the local gates before pushing**: `pnpm typecheck && pnpm lint && pnpm test && pnpm build &&

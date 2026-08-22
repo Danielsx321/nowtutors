@@ -19,3 +19,9 @@ coverage
 # misc
 *.pem
 .DS_Store
+
+# playwright
+test-results
+playwright-report
+blob-report
+.playwright

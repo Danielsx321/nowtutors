@@ -99,6 +99,13 @@
       "when": 1787300000000,
       "tag": "0013_pending_payment_holds_slot",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787430884694,
+      "tag": "0014_phase6_presence_cleanup",
+      "breakpoints": true
     }
   ]
 }

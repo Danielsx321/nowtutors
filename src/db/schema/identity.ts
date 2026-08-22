@@ -51,9 +51,10 @@ export const profiles = pgTable(
 );
 
 // Public tutor profile. Payout data lives in tutor_payout_details (Decision A).
-// instant_rate_credits_per_minute is nullable and unused — instant and scheduled
-// both price off hourly_rate_credits via the single formula
+// There is no per-minute instant rate: instant and scheduled both price off
+// hourly_rate_credits via the single formula
 // ceil(hourly_rate_credits × duration_minutes / 60) (src/lib/credits/pricing.ts).
+// instant_rate_credits_per_minute was dropped in drizzle/0014.
 // headline/languages/education/years_experience are
 // NET-NEW additive fields (nullable; nothing gates on them).
 export const tutorProfiles = pgTable(
@@ -72,7 +73,6 @@ export const tutorProfiles = pgTable(
     yearsExperience: integer("years_experience"),
     languages: text("languages").array(),
     hourlyRateCredits: integer("hourly_rate_credits").notNull(),
-    instantRateCreditsPerMinute: integer("instant_rate_credits_per_minute"),
     acceptsInstant: boolean("accepts_instant").notNull().default(true),
     approvalStatus: tutorApprovalStatus("approval_status")
       .notNull()
