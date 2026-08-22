@@ -100,3 +100,27 @@ export function markPaymentStatus(
 ): Promise<MarkResult> {
   return db.transaction((tx) => markStatus(paymentStore(tx), ref));
 }
+
+/**
+ * Record a still-PENDING capture WITHOUT moving `payments.status`. Persists the
+ * capture id and raw payload only, so the row stays recoverable by either the
+ * `PAYMENT.CAPTURE.COMPLETED` webhook or a retried capture. Deliberately does
+ * NOT write `failed` — a PENDING capture is not a decline (SPEC §7.6; see the
+ * three-way branch in `lib/paypal/capture.ts`). Uses the same locking store as
+ * settlement, but issues no status patch (the store skips an undefined status).
+ */
+export function recordPendingCapture(
+  ref: PaymentRef & { rawPayload?: unknown },
+): Promise<MarkResult> {
+  return db.transaction(async (tx) => {
+    const store = paymentStore(tx);
+    const payment = await store.lock(ref);
+    if (!payment) return { status: "unknown_order" };
+    await store.update(payment.id, {
+      providerCaptureId:
+        ref.providerCaptureId?.trim() || payment.providerCaptureId,
+      ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
+    });
+    return { status: "updated", paymentId: payment.id };
+  });
+}
