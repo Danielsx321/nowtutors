@@ -70,6 +70,20 @@ export interface AdminPaymentRecord {
   /** Ledger rows referencing this payment, and the booking it paid for. */
   ledger: AdminPaymentLedgerRow[];
   booking: AdminPaymentBooking | null;
+  /**
+   * The §7.6 **capture honoured, booking lost** state: a captured direct-pay
+   * whose `purchase` mint stands with **no** `booking_debit` beside it. The
+   * student keeps the credits and holds no booking — a real, expected outcome,
+   * but one an admin must be able to *see*, not infer from mismatched
+   * timestamps.
+   *
+   * Derived from the ledger rather than from the booking's current status,
+   * for the same reason settlement's replay guard is: the spend is written iff
+   * the confirm succeeded in that same transaction, so the missing
+   * `booking_debit` **is** the record that the booking was never confirmed —
+   * and it stays true however the booking row is edited afterwards.
+   */
+  creditsRetained: boolean;
 }
 
 /**
@@ -189,6 +203,16 @@ export async function findPaymentForAdmin(
     }
   }
 
+  // See `creditsRetained` above: minted but never debited, on a captured
+  // booking payment. Read off the ledger rows already loaded — no extra query.
+  const creditsRetained =
+    row.purpose === "booking" &&
+    row.status === "captured" &&
+    ledger.some((t) => t.type === "purchase" && t.referenceId === row.id) &&
+    !ledger.some(
+      (t) => t.type === "booking_debit" && t.referenceId === row.bookingId,
+    );
+
   return {
     id: row.id,
     userId: row.userId,
@@ -209,5 +233,6 @@ export async function findPaymentForAdmin(
     updatedAt: row.updatedAt,
     ledger,
     booking,
+    creditsRetained,
   };
 }

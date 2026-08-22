@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { creditTransactions, wallets } from "@/db/schema";
 import type { DbTransaction } from "@/db";
 import type { creditTransactionType } from "@/db/schema/enums";
@@ -75,6 +75,16 @@ export interface LedgerExecutor {
   insertTransaction(row: LedgerRow): Promise<void>;
   /** Overwrite the cached balance for an existing wallet row. */
   setBalance(userId: string, balance: number): Promise<void>;
+  /**
+   * Rewrite the `description` of an already-appended row, keyed on the same
+   * `(type, reference_id)` pair the unique index uses. See
+   * {@link describeTransaction} for why this does not break append-only.
+   */
+  setDescription(
+    type: CreditTransactionType,
+    referenceId: string,
+    description: string,
+  ): Promise<void>;
 }
 
 interface CreditParams {
@@ -166,6 +176,29 @@ export function debitWallet(
   return applyDelta(ex, { ...rest, delta: -amount });
 }
 
+/**
+ * Amend the human-readable `description` of a row already in the ledger.
+ *
+ * **This does not break append-only.** Append-only is about the money: no
+ * delta, no `balance_after`, and no row is ever created, changed or removed
+ * here — only the sentence the student reads on `/dashboard/wallet`. It exists
+ * for exactly one caller: PayPal direct-pay settlement, which mints credits
+ * *before* it learns whether the booking can still be confirmed (SPEC §7.6), so
+ * the mint's description can only be made truthful after the fact. Keyed on
+ * `(type, reference_id)` — the same pair the unique index keys on — so it
+ * addresses precisely one row.
+ */
+export function describeTransaction(
+  ex: LedgerExecutor,
+  p: {
+    type: CreditTransactionType;
+    referenceId: string;
+    description: string;
+  },
+): Promise<void> {
+  return ex.setDescription(p.type, p.referenceId, p.description);
+}
+
 /** Postgres unique-violation SQLSTATE (the idempotency-guard conflict). */
 const UNIQUE_VIOLATION = "23505";
 
@@ -236,6 +269,17 @@ export function walletExecutor(t: DbTransaction): LedgerExecutor {
         .update(wallets)
         .set({ creditBalance: balance, updatedAt: sql`now()` })
         .where(eq(wallets.userId, userId));
+    },
+    async setDescription(type, referenceId, description) {
+      await t
+        .update(creditTransactions)
+        .set({ description })
+        .where(
+          and(
+            eq(creditTransactions.type, type),
+            eq(creditTransactions.referenceId, referenceId),
+          ),
+        );
     },
   };
 }

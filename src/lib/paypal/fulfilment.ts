@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
-import { bookings, payments } from "@/db/schema";
+import { bookings, creditTransactions, payments } from "@/db/schema";
 import { walletExecutor } from "@/lib/credits/ledger";
 import {
   markStatus,
@@ -101,6 +101,33 @@ function paymentStore(tx: DbTransaction): PaymentStore {
         )
         .returning({ id: bookings.id });
       return moved.length > 0;
+    },
+
+    // The direct-pay replay guard, read straight out of the ledger. One query
+    // for both legs — the `purchase` mint keyed on payments.id and the
+    // `booking_debit` spend keyed on bookings.id. Inside the same transaction
+    // (and behind the same `FOR UPDATE` on `payments`) as everything else here,
+    // so what it reads is what the writes below will collide with.
+    async settledLegs(paymentId: string, bookingId: string) {
+      const rows = await tx
+        .select({ type: creditTransactions.type })
+        .from(creditTransactions)
+        .where(
+          or(
+            and(
+              eq(creditTransactions.type, "purchase"),
+              eq(creditTransactions.referenceId, paymentId),
+            ),
+            and(
+              eq(creditTransactions.type, "booking_debit"),
+              eq(creditTransactions.referenceId, bookingId),
+            ),
+          ),
+        );
+      return {
+        minted: rows.some((r) => r.type === "purchase"),
+        debited: rows.some((r) => r.type === "booking_debit"),
+      };
     },
   };
 }

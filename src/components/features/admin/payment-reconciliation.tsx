@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -75,12 +76,40 @@ export function PaymentReconciliation({
 
   return (
     <div className="space-y-6">
+      {/*
+        The §7.6 "capture honoured, booking lost" state, stated outright rather
+        than left to be inferred from a captured payment sitting beside an
+        unconfirmed booking. Not an error and not a pending refund — the money
+        became credits the student holds, and the only follow-up is that they
+        may want help rebooking.
+      */}
+      {payment.creditsRetained && (
+        <Alert
+          variant="warning"
+          title="Capture honoured, booking not confirmed — credits retained"
+        >
+          This direct-pay was captured and minted{" "}
+          <strong>{payment.creditsGranted ?? "?"} credits</strong>, but the
+          booking was never confirmed — the slot was already gone when the
+          capture landed. There is no <code>booking_debit</code>, so the credits
+          stayed in the student&apos;s wallet and are spendable on a new booking.
+          <span className="mt-2 block">
+            <strong>No refund is owed and none is due.</strong> The student lost
+            the slot, not the money. If they are asking about it, point them at{" "}
+            <code>/dashboard/wallet</code> — the balance is there.
+          </span>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>Payment</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(payment.status)}>{payment.status}</Badge>
             <Badge variant="purple">{payment.purpose}</Badge>
+            {payment.creditsRetained && (
+              <Badge variant="warning">credits retained</Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -198,6 +227,14 @@ export function PaymentReconciliation({
               student never held these credits (§7.6).
             </p>
           )}
+          {payment.creditsRetained && (
+            <p className="text-small text-gray-500">
+              One row, not two: the <code>purchase</code> mint with no{" "}
+              <code>booking_debit</code> beside it. The spend is written only
+              when the booking confirms, so its absence is the record that this
+              one did not (§7.6).
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -211,7 +248,14 @@ export function PaymentReconciliation({
               </Badge>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {payment.creditsRetained && payment.booking && (
+              <p className="text-small text-gray-500">
+                This booking is <code>{payment.booking.status}</code> and will
+                stay that way — settlement does not retry a confirm, and a
+                replayed capture will not debit for it.
+              </p>
+            )}
             {payment.booking ? (
               <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Field label="Student">{payment.booking.studentName}</Field>

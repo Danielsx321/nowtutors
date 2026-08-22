@@ -12,6 +12,9 @@ import {
  *  - `lockWallet` is a per-user async mutex (Postgres `SELECT ... FOR UPDATE`),
  *    released when the operation writes its balance;
  *  - `insertTransaction` enforces the `(type, reference_id)` unique index;
+ *  - `setDescription` rewrites the text of an existing row in place, and the
+ *    snapshot below copies row objects (not just the array) so a rollback
+ *    restores the old text as Postgres would;
  *  - `transaction()` snapshots and restores on throw (atomic rollback), so a
  *    failed debit leaves no orphan wallet OR booking change;
  *  - a failed statement **aborts the transaction**: every later statement raises
@@ -92,6 +95,19 @@ export class InMemoryLedger implements LedgerExecutor {
     this.release.delete(userId);
   }
 
+  async setDescription(
+    type: LedgerRow["type"],
+    referenceId: string,
+    description: string,
+  ): Promise<void> {
+    this.assertUsable();
+    for (const row of this.rows) {
+      if (row.type === type && row.referenceId === referenceId) {
+        row.description = description;
+      }
+    }
+  }
+
   /** Drop every held wallet lock (a rollback releases them). */
   private releaseAll(): void {
     for (const release of this.release.values()) release();
@@ -105,7 +121,7 @@ export class InMemoryLedger implements LedgerExecutor {
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
     const snapBal = new Map(this.balances);
-    const snapRows = [...this.rows];
+    const snapRows = this.rows.map((r) => ({ ...r }));
     const snapRefs = new Set(this.refs);
     const snapBookings = [...this.bookings];
     const snapAborted = this.aborted;

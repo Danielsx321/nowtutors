@@ -688,9 +688,11 @@ Client                              Our server                    PayPal
   |                                   |<----------------------------|
   |                                   | in one transaction:          |
   |                                   |   payments.status = captured |
-  |                                   |   credit_transactions insert |
-  |                                   |     (unique on reference_id) |
-  |                                   |   booking → confirmed        |
+  |                                   |   mint credits (unique on    |
+  |                                   |     reference_id)            |
+  |                                   |   booking → confirmed?       |
+  |                                   |   if yes: debit them back    |
+  |                                   |   if no:  student keeps them |
   |<-- success -----------------------|                              |
 ```
 
@@ -736,6 +738,42 @@ Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plug
 > `pending:<payment id>` placeholder and stamped with the real id on return — the payment row always
 > predates anything the buyer can approve, so a capture or webhook always has a row to attribute
 > money to.
+>
+> **A captured payment is always honoured (Phase 5 Part 2 fix).** Direct-pay settlement runs
+> **mint → confirm → debit**, in that order, in one transaction, and the debit is **gated on the
+> confirm**. If the booking cannot be confirmed — the §12 sweep released the `pending_payment` hold
+> while the buyer was still on PayPal's approval screen — the debit is **skipped entirely** and the
+> student keeps the minted credits. They lost the slot, not the money, and can rebook immediately
+> with credits they already hold. **This is the only outcome that requires no refund**, which is
+> precisely why it is the right one: SPEC has no refund path (§18 item 4). The previous order (mint,
+> debit, confirm) committed both ledger legs and *then* discovered the booking was gone, leaving the
+> student charged, holding no credits and no booking, with the webhook returning 200 so PayPal never
+> retried — a silently lost payment. Settlement returns
+> **`booking_unavailable_credits_retained`** for this case, distinct from `booking_already_confirmed`
+> (which means an idempotent replay of a settlement that *did* confirm). The webhook still answers
+> 200: a retry cannot conjure the slot back, and the money is already accounted for.
+>
+> **The replay guard reads the ledger; it does not infer from ordering.** Because the debit is now
+> gated, a committed `purchase` mint may legitimately stand with **no** `booking_debit` beside it, so
+> "the mint duplicated, therefore the whole settlement ran" is no longer sound. A replay reads *both*
+> legs — `purchase`/`payments.id` and `booking_debit`/`bookings.id` — before writing anything. Both
+> shapes replay as a no-op: mint+confirm+debit reports `booking_already_confirmed`; mint-only reports
+> `booking_unavailable_credits_retained`. A retained mint is **never** debited retroactively, even if
+> the booking has somehow become confirmable since — the money question was settled when the capture
+> was honoured. The unique index remains the guard of record: a stale read (the real shape of a
+> client/webhook race, where the other settlement is a separate transaction) is absorbed by the
+> duplicate rejection, re-read, and reported identically.
+>
+> **The retained mint's ledger description says so.** That row appears on `/dashboard/wallet`
+> carrying a **positive** balance the student really holds, so it must not read as a session they
+> paid for: it names the slot as unavailable and the credits as theirs to spend. It is written after
+> the confirm fails — the mint has to commit before we can learn the booking is unconfirmable — via
+> `describeTransaction` in `lib/credits/ledger.ts`, which rewrites text only and moves no money.
+>
+> **`/admin/payments` flags this state outright.** A captured direct-pay whose `purchase` mint has no
+> `booking_debit` beside it is shown as *credits retained*, derived from the ledger rather than
+> inferred from a captured payment sitting next to an unconfirmed booking or from mismatched
+> timestamps.
 >
 > **Client capture and the webhook are the same code path**, `settleCapture` in
 > `lib/paypal/settlement.ts`, keyed on the same `reference_id` (our `payments.id`). Whichever

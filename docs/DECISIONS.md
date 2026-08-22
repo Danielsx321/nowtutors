@@ -981,12 +981,80 @@ a USD amount. Reintroducing a conversion constant would have re-opened exactly w
   that never heard of pending payments keeps its old meaning), and a `pending_payment` row with no
   `created_at` blocks, because the alternative is double-selling a slot someone may be paying for.
 
+### A captured payment is always honoured (direct-pay settlement reorder)
+
+The bug: when the §12 sweep moved a `pending_payment` booking to `expired` before its capture
+arrived, `settleCapture` committed the mint **and** the debit, then `confirmBooking` matched zero
+rows and no-opped. The student was charged, held no credits, held no booking, and the webhook
+returned 200 so PayPal never retried. A real payment, silently lost.
+
+- **The order is now mint → confirm → debit, and the debit is gated on the confirm.** Both legs stay
+  in the same outer transaction; the confirm sits between them rather than after them. *Why:* the
+  mint is the leg that turns money into something the student holds, so it must not depend on
+  anything; the debit is the leg that takes it away again, so it must depend on the booking actually
+  existing. Ordering them the other way round made the two legs a package deal whose success nobody
+  checked.
+- **If the booking cannot be confirmed, the debit is skipped entirely and the student keeps the
+  credits.** *Why:* **this is the only outcome that requires no refund**, and SPEC has no refund path
+  (§18 item 4) — a design we are not reopening for this. The student lost the slot, not the money,
+  and can rebook immediately at the same price with credits already in hand. Every alternative
+  (refund, admin queue, hold) invents machinery that does not exist and leaves the student worse off
+  while it runs. *How to apply:* never add a leg that can strand captured money; if a downstream step
+  can fail, the money-in leg goes first and unconditionally.
+- **New result status `booking_unavailable_credits_retained`.** *Why:* this case previously returned
+  `booking_already_confirmed`, which is a lie — that status means an idempotent replay of a
+  settlement that did confirm. A status that names a lost booking as a success is how the bug stayed
+  invisible. The webhook still returns 200 (a retry cannot conjure the slot back, and the money is
+  accounted for), but the *status* now says what happened.
+
+### The direct-pay replay guard reads the ledger instead of inferring from ordering
+
+- **A replay now reads both legs — `purchase`/`payments.id` and `booking_debit`/`bookings.id` —
+  before writing anything.** *Why:* the old shortcut was "a duplicate mint proves the whole
+  settlement already ran", which was sound **only** because the debit unconditionally followed the
+  mint. Gating the debit destroyed that premise: a committed mint may now legitimately stand with no
+  debit beside it. The shortcut would have survived the reorder silently and misreported case (b) as
+  case (a) forever. *How to apply:* when a guard's correctness rests on an ordering invariant, the
+  invariant belongs in the comment beside it — and changing the ordering means re-deriving the
+  guard, not re-testing it.
+- **The `booking_debit` row is the record of whether the booking was confirmed.** It is written iff
+  the confirm returned true, in the same transaction, so its presence is a fact rather than an
+  inference. `PaymentStore.settledLegs` reads it; `/admin/payments` derives its flag the same way,
+  which is why that flag stays correct however the booking row is edited later.
+- **A retained mint is never debited retroactively**, even if a later replay finds the booking
+  somehow confirmable again. *Why:* the money question was settled when the capture was honoured and
+  the student was told the credits are theirs. Reopening it later takes credits back from someone
+  who was told they had them.
+- **The unique index is still the guard of record, not the read.** A client/webhook race is two
+  separate transactions, so the loser's probe can predate the winner's commit; the duplicate
+  rejection absorbs it, the guard re-reads, and both report the same outcome. The probe is an
+  optimisation and a *disambiguator*, never the safety mechanism.
+
+### The retained mint has to explain itself in the student's wallet
+
+- **`describeTransaction` (lib/credits/ledger.ts) rewrites a ledger row's `description` after the
+  fact.** *Why:* the mint must commit before settlement can learn the booking is unconfirmable, so
+  the truthful description cannot be known at insert time. The row lands on `/dashboard/wallet`
+  carrying a **positive** balance the student really holds — left reading "Credit purchase" it looks
+  like a session they bought and cannot find. It now names the slot as unavailable and the credits
+  as theirs to spend.
+- **This does not break append-only.** Append-only is about the money: no delta, no `balance_after`,
+  no row created or removed — only the sentence a human reads. Keyed on `(type, reference_id)`, the
+  same pair the unique index uses, so it addresses exactly one row. *How to apply:* it exists for
+  this one caller; a second caller wanting it is a sign the description should have been derived at
+  read time instead.
+
 ### `/admin/payments` — read-only in this pass
 
 - **Look up by PayPal order id OR capture id**, and show everything: the `payments` row, the linked
   `credit_transactions`, the linked booking when `purpose = 'booking'`, and `raw_payload` rendered
   readably. *Why:* this is the view that debugs the one live transaction that cannot be run from
   Port Harcourt (§7.6), so it favours showing everything over showing it prettily.
+- **A captured direct-pay with no `booking_debit` is flagged *credits retained*** — a banner, a
+  badge, and a note on the ledger table. *Why:* this state is expected, not an error, but it is
+  indistinguishable at a glance from a half-finished settlement. An admin should not have to infer
+  it from a captured payment sitting beside an unconfirmed booking, or from mismatched timestamps.
+  The banner also states outright that **no refund is owed**, so nobody helpfully issues one.
 - **The refund-reverses-credits action is deliberately NOT built.** §18 item 4 records reversing
   credits as an **admin** action, and it needs its own design pass (partial refunds, a student who
   has already spent the credits, and the `wallets.credit_balance >= 0` check all interact). Noted as
