@@ -697,3 +697,60 @@ Tests: `tests/unit/availability.test.ts` — DST spring-forward and fall-back (t
 viewer `Africa/Lagos`), cross-tz rendering (viewer `Asia/Kolkata` +5:30), full-day block + partial
 override against an active rule, back-to-back bookings with the abutting-slot leak check, and the two
 cutoffs pinned to the seeded values. SPEC §4.2 was amended in the same commit as this entry.
+
+## Phase 4 Part 2 — scheduled booking flow, credits only (`phase-4-part2-booking-flow`)
+
+The first flow that debits real credit balances. Scope: the ledger, the booking-creation action,
+both sides' booking list/detail pages, and the availability editor. Out of scope (unchanged): no
+cancellation/refunds, no PayPal, no LessonSpace, no instant sessions. SPEC §7.3 gained a Part 2
+implementation note in the same commit.
+
+- **The ledger (`src/lib/credits/ledger.ts`) is the only writer to `wallets.credit_balance` and
+  `credit_transactions`** (SPEC §7.10, CLAUDE.md). `debitWallet`/`creditWallet` take a small
+  **`LedgerExecutor`** interface, not the Drizzle tx directly. *Why:* the pooler + CI have no live
+  Postgres, so the money invariants (insufficient-balance rejection, correct `balance_after`,
+  idempotency on a duplicate reference, no lost update under a serialized lock) had to be
+  unit-testable against an in-memory executor. *How to apply:* `walletExecutor(tx)` is the
+  production adapter and the single place issuing the wallet `UPDATE` + the `SELECT … FOR UPDATE`
+  lock; the booking action calls `debitWallet(walletExecutor(tx), …)` inside `db.transaction`.
+- **`InsufficientCreditsError` / `DuplicateLedgerReferenceError`** are typed so the action maps them
+  to clean user messages; anything else rethrows.
+- **`pgErrorCode(err)` unwraps Drizzle's `DrizzleQueryError.cause`.** *Why:* a live smoke test
+  (below) revealed Drizzle wraps the driver error, so the real SQLSTATE is on `.cause`, not the
+  top-level `.code`. Without unwrapping, the idempotency (`23505`) and overlap (`23P01`) catches
+  would silently miss and surface a raw 500 instead of the intended message. Both the ledger and the
+  booking action now go through `pgErrorCode`; a unit test locks the cause-walk.
+- **Booking action order: insert booking, then debit, in ONE transaction.** *Why:* the
+  `bookings_no_overlap` GiST exclusion rejects a slot won since re-validation before the wallet is
+  touched; if the debit then fails (insufficient), the booking insert rolls back with it — no
+  debited-but-no-booking and no booking-without-debit. The booking id (from `returning()`) is the
+  ledger `reference_id`, so a retried create can't double-debit.
+- **Server re-validates everything the client sends** (SPEC §5): price re-derived with
+  `sessionPriceCredits`; slot re-validated with the same pure `computeSlots` via `isSlotOpen`; tutor
+  must be approved and must teach the subject; can't book yourself. The client never sends a price.
+- **Shared slot grid `SLOT_STEP_MINUTES = 30`** (`src/lib/availability/validate-slot.ts`) is used by
+  both the server-rendered calendar and the re-validation, so a rendered slot is a recomputable
+  slot. The public calendar precomputes one slot list per offered duration.
+- **No wallet auto-creation on debit.** A debit against a missing wallet is *insufficient*, not an
+  auto-open at zero; a credit into a missing wallet opens it at zero first (Phase 5 purchases).
+- **Runtime writes go through the Drizzle `postgres` role (BYPASSRLS)** — the trusted server-side
+  path, same as the admin write path (drizzle/0012). `wallets`/`credit_transactions` stay
+  service-role-only for PostgREST; authorization for the booking path is Layer 2 guards
+  (`requireRole('student')` + `requireVerifiedEmail`), never the client `userId`. `db:verify-rls`
+  still passes unchanged.
+- **Booking-list tabs are status-based** (SPEC §6): upcoming = `confirmed`/`in_progress`, past =
+  `completed`, cancelled = the `cancelled_*`/`no_show_*`/`expired`/`pending_payment` set. Simpler and
+  drift-free vs. a time cutoff; a confirmed-but-elapsed booking lingers in Upcoming until the Phase-4
+  completion cron flips it (that cron is a later slice).
+- **Availability editor does a whole-schedule replace in one transaction** — the editor submits the
+  complete desired state, so delete-all-then-insert per tutor is simplest and atomic. Weekly rules
+  are recurring per-weekday windows in the tutor's timezone; exceptions are `is_available=false`
+  (day off, null times) or `is_available=true` + both times (custom hours). Confirmed weekly, not
+  one-off slots.
+
+**Live integration smoke (self-rolling-back).** Because this is the money path and the unit tests
+use an in-memory executor, a throwaway script ran the real Drizzle transaction against dev Postgres
+(session pooler) entirely inside transactions it then aborted — nothing persisted. It confirmed:
+`SELECT … FOR UPDATE` debit + `balance_after`, the append-only ledger row, the `(type, reference_id)`
+unique index → `DuplicateLedgerReferenceError` (`23505`), and `bookings_no_overlap` → `23P01`. This
+is what surfaced the `.cause` wrapping bug above.

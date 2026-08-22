@@ -19,6 +19,18 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   required**, PR required before merging, branches must be up to date, force pushes blocked and
   deletions restricted. CI is no longer advisory: the Phase 6 ungraceful-exit E2E now has something
   enforcing it. Changes to `main` go through a PR.
+- **Browse restyle** — ink shell + site-wide full-bleed layout (PR #7, `0489add`). Merged.
+- **Phase 4 Part 1 — availability slot computation** — the pure, DB-independent `computeSlots()`
+  (`src/lib/availability/compute-slots.ts`) + 13 Vitest cases (DST both sides, cross-tz rendering,
+  exception overrides, back-to-back bookings, notice/horizon cutoffs), plus the
+  `platform-settings-defaults` extraction so seed and tests share one source of truth. The Phase 1
+  migration already carried the `availability_rules`/`availability_exceptions` tables, so no new
+  migration. SPEC §4.2 pins the slot-grid semantics. **Merged via PR #8 (`4fed575`).**
+- **Phase 4 Part 2 — scheduled booking flow (credits only)** — IN PROGRESS on
+  `phase-4-part2-booking-flow`: the ledger (`lib/credits/ledger.ts`), the booking-creation action
+  with server-side slot re-validation + price re-derivation + atomic debit, both sides' booking
+  list/detail pages, and the availability editor. Out of scope: cancellation/refunds, PayPal,
+  LessonSpace, instant sessions.
 
 ## In flight — browse page restyle (PR #7, branch `feat/browse-page-ink-theme`, **not yet merged**)
 
