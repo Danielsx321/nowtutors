@@ -106,13 +106,30 @@ export async function settleCaptureOutcome(
       return { status: 404, body: { error: "Payment not found." } };
     }
 
+    // Credits only exist where the student actually ends up holding some. A
+    // settled direct-pay moves none — mint and spend net to zero — so it reports
+    // 0 and carries the booking instead. The one exception is
+    // `booking_unavailable_credits_retained`: the slot was gone, the capture was
+    // honoured anyway, and those credits are really in the wallet (§7.6).
+    const credits =
+      result.status === "credited" ||
+      result.status === "already_credited" ||
+      result.status === "booking_unavailable_credits_retained"
+        ? result.credits
+        : 0;
+
     return {
       status: 200,
       body: {
         ok: true,
         result: result.status,
-        credits: result.status === "captured_no_credit" ? 0 : result.credits,
+        credits,
         ...(result.status === "credited" ? { balance: result.balanceAfter } : {}),
+        ...(result.status === "booking_confirmed" ||
+        result.status === "booking_already_confirmed" ||
+        result.status === "booking_unavailable_credits_retained"
+          ? { bookingId: result.bookingId }
+          : {}),
       },
     };
   }

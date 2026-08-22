@@ -10,6 +10,14 @@ import type { creditTransactionType } from "@/db/schema/enums";
  * debit that would go negative, appends one append-only ledger row, and updates
  * the cached balance — all or nothing.
  *
+ * **`credit_transactions` is INSERT-only, without exception (§4.4).** There is
+ * no UPDATE and no DELETE here, and `LedgerExecutor` deliberately exposes no
+ * method that could become one — not even to fix a description. Anything a row
+ * should have said but doesn't is derived at read time instead (see
+ * `lib/credits/retained-credits.ts`). The rule earns its keep by being
+ * absolute: one narrow exception and every later reader has to wonder which
+ * rows were rewritten.
+ *
  * Testability (docs/DECISIONS.md, Phase 4 Part 2): the two functions operate on
  * a small `LedgerExecutor` interface rather than the Drizzle transaction
  * directly, so the money invariants — insufficient-balance rejection, correct

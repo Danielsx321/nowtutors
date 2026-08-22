@@ -1,4 +1,5 @@
 import "server-only";
+import { PayPalConfigError } from "./config-error";
 
 /**
  * The one PayPal integration (SPEC §7.6). Everything that talks to PayPal goes
@@ -47,14 +48,9 @@ export class PayPalApiError extends Error {
   }
 }
 
-/** Raised when the server is missing PayPal credentials. */
-export class PayPalConfigError extends Error {
-  readonly code = "paypal_not_configured" as const;
-  constructor(missing: string) {
-    super(`PayPal is not configured: ${missing} is unset.`);
-    this.name = "PayPalConfigError";
-  }
-}
+// Re-exported from a `server-only`-free module so the route-adapter config
+// boundary (and its test) can reach the class without importing this file.
+export { PayPalConfigError, isPayPalConfigError } from "./config-error";
 
 function requireEnv(name: string): string {
   const v = process.env[name]?.trim();

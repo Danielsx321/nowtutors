@@ -51,15 +51,39 @@ export interface AvailabilityException {
 }
 
 /**
- * An existing booking that occupies the tutor. The caller passes only bookings
- * that actually hold the slot — scheduled, status `confirmed` or `in_progress`
- * (SPEC §4.3) — as UTC instants. Overlap is checked half-open, so a booking
- * ending exactly when another would start does not collide.
+ * An existing booking that occupies the tutor, as UTC instants. Overlap is
+ * checked half-open, so a booking ending exactly when another would start does
+ * not collide.
+ *
+ * Callers pass bookings that hold the slot — scheduled, status `confirmed` or
+ * `in_progress` (SPEC §4.3) — **plus** `pending_payment` bookings, which hold
+ * the slot only while their checkout is still live (see
+ * {@link PENDING_PAYMENT_HOLD_MINUTES}). A row with no `status` always blocks,
+ * so a caller that hasn't been taught about pending payments keeps its old
+ * meaning.
  */
 export interface ExistingBooking {
   startAt: Date | string;
   endAt: Date | string;
+  /** `bookings.status`. Omitted means "occupies unconditionally". */
+  status?: string | null;
+  /** `bookings.created_at`. Required for a `pending_payment` row to be aged. */
+  createdAt?: Date | string | null;
 }
+
+/**
+ * How long an unpaid `pending_payment` booking holds its slot (SPEC §7.3 —
+ * "a 20-minute expiry", §4.2).
+ *
+ * After this, an abandoned PayPal checkout stops blocking the slot **on read**:
+ * `computeSlots` ages the row by its own `created_at` rather than waiting for
+ * anything to rewrite it. The §12 expire-unpaid cron is therefore **tidy-up,
+ * not correctness** — exactly the relationship `live_tutors` has with
+ * sweep-presence (§3.1), where the view derives liveness from a timestamp and
+ * the sweep merely tidies the flag. A student who abandons checkout does not
+ * strand the tutor's calendar until a cron happens to run.
+ */
+export const PENDING_PAYMENT_HOLD_MINUTES = 20;
 
 /** Inclusive calendar-date range, read in the viewer's time zone. */
 export interface DateRange {
@@ -88,6 +112,11 @@ export interface ComputeSlotsInput {
   slotDurationMinutes?: number;
   /** Grid granularity for candidate starts, from each window's start. */
   slotStepMinutes?: number;
+  /**
+   * How long a `pending_payment` booking holds its slot, from its `created_at`.
+   * Defaults to {@link PENDING_PAYMENT_HOLD_MINUTES}.
+   */
+  pendingPaymentHoldMinutes?: number;
 }
 
 /** A bookable slot as UTC instants. Render `startUtc` in the viewer's zone. */
@@ -296,10 +325,22 @@ export function computeSlots(input: ComputeSlotsInput): Slot[] {
   const startDate = addDays(toYmd(firstTutorDate.year, firstTutorDate.month, firstTutorDate.day), -1);
   const endDate = addDays(toYmd(lastTutorDate.year, lastTutorDate.month, lastTutorDate.day), 1);
 
-  const bookings = input.bookings.map((b) => ({
-    start: toDate(b.startAt).getTime(),
-    end: toDate(b.endAt).getTime(),
-  }));
+  // A pending_payment booking holds its slot only while its checkout is live.
+  // Past the hold window it is an abandoned checkout and stops blocking on
+  // read — the cron that expires the row is tidy-up, not correctness (§4.2).
+  const holdMs =
+    (input.pendingPaymentHoldMinutes ?? PENDING_PAYMENT_HOLD_MINUTES) * MS_PER_MINUTE;
+  const bookings = input.bookings
+    .filter((b) => {
+      if (b.status !== "pending_payment") return true;
+      // No created_at means we cannot age it; fail safe and keep blocking.
+      if (b.createdAt == null) return true;
+      return toDate(b.createdAt).getTime() + holdMs > now;
+    })
+    .map((b) => ({
+      start: toDate(b.startAt).getTime(),
+      end: toDate(b.endAt).getTime(),
+    }));
 
   const durationMs = duration * MS_PER_MINUTE;
   const seen = new Set<number>();

@@ -35,11 +35,22 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   money-path endpoints (`POST /api/paypal/orders`, `POST /api/paypal/orders/[orderId]/capture`,
   `POST /api/webhooks/paypal`) built on `lib/paypal/settlement.ts`, which client capture and the
   webhook both call so a race between the two is a no-op via the ledger's `(type, reference_id)`
-  unique index. **Code-complete on branch `phase-5-part1-paypal` (`15fc5bf`); PR #10 is OPEN,
-  awaiting review — not merged, not on `main`.** SPEC §7.6 and `DECISIONS.md` gained Part 1 sections
-  in the same commit, but only on that branch — `main`'s copies of those two docs do not yet
-  mention Phase 5. **Part 2 still owes:** `/dashboard/wallet` + transaction history, booking
-  direct-pay, and `/admin/payments`.
+  unique index. **Merged via PR #10.** SPEC §7.6 and `DECISIONS.md` gained Part 1 sections in the
+  same commit.
+- **Phase 5 Part 2 — wallet, booking direct-pay, admin payments** — `/dashboard/wallet` (balance,
+  buy credits, paginated ledger history), **booking direct-pay** (`POST /api/paypal/orders` now
+  takes `{ purpose: 'booking', bookingId }` as well), and `/admin/payments` reconciliation. Plus a
+  hardening fix: `PayPalConfigError` now returns **503** at the route-adapter boundary of all three
+  PayPal routes instead of escaping as an uncaught 500 (observed in production 2026-08-22).
+  **Direct-pay is buy-then-spend in one checkout** — a booking has no USD price of its own, so the
+  order mints exactly the credits the booking costs and settlement immediately spends them
+  (`purchase` + `booking_debit`, net zero), then flips the booking to `confirmed`. USD comes from
+  the one `credit_packages` tier flagged `is_direct_pay_basis`; zero or two flagged **throws**
+  rather than mis-charging. Migration `0013` adds `pending_payment` to `bookings_no_overlap`, and a
+  `pending_payment` booking older than **20 minutes** stops blocking a slot on read (§4.2), so the
+  §12 expire-unpaid cron is tidy-up rather than correctness. SPEC §4.2/§4.3/§4.4/§7.3 and §7.6
+  (now a Part 1+2 note) updated alongside the code; `DECISIONS.md` gained a Part 2 section.
+  **Acceptance is sandbox only** — real-card testing is Phase 10.
 
 ## What Phase 3 built
 
@@ -75,6 +86,14 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Still open — carry forward
 
+- **Refund-reverses-credits admin action NOT built — deferred, needs its own design pass.**
+  `/admin/payments` (Phase 5 Part 2) is **read-only**: it shows what happened to a payment but
+  cannot unwind one. `PAYMENT.CAPTURE.REFUNDED` already sets `payments.status = 'refunded'` and
+  deliberately does **not** claw credits back — §18 item 4 makes reversing credits an **admin**
+  action, not something a webhook does silently behind a student who may have spent them. Building
+  it needs decisions this phase didn't take: partial refunds, a student whose balance is now below
+  the amount to reverse (the `credit_balance >= 0` check would reject the debit), and whether a
+  direct-pay refund also cancels the booking it paid for. Design it before coding it.
 - **Bump the GitHub action versions to `@v5`** (`actions/checkout`, `actions/setup-node`,
   `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes).
 - **Obsolete pricing remnants — one cleanup migration when Phase 6 opens.**

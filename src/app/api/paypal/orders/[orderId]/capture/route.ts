@@ -11,6 +11,11 @@ import {
   type PayPalOrder,
 } from "@/lib/paypal/orders";
 import { settleCaptureOutcome } from "@/lib/paypal/capture";
+import {
+  PAYPAL_UNAVAILABLE_BODY,
+  PAYPAL_UNAVAILABLE_STATUS,
+  withPayPalConfigBoundary,
+} from "@/lib/paypal/config-boundary";
 import { PayPalApiError, PayPalConfigError } from "@/lib/paypal/client";
 import {
   markPaymentStatus,
@@ -37,6 +42,20 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ orderId: string }> },
 ) {
+  // Adapter-level config boundary: a missing credential is a 503, never an
+  // uncaught 500. The inner PayPalConfigError branch below still handles the
+  // common case explicitly; this catches every other path (e.g. getPayPalOrder).
+  return withPayPalConfigBoundary(
+    "POST /api/paypal/orders/[orderId]/capture",
+    () => capture(params),
+    () =>
+      NextResponse.json(PAYPAL_UNAVAILABLE_BODY, {
+        status: PAYPAL_UNAVAILABLE_STATUS,
+      }),
+  );
+}
+
+async function capture(params: Promise<{ orderId: string }>) {
   let user;
   try {
     user = await requireApiRole("student");

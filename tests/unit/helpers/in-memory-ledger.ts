@@ -12,6 +12,9 @@ import {
  *  - `lockWallet` is a per-user async mutex (Postgres `SELECT ... FOR UPDATE`),
  *    released when the operation writes its balance;
  *  - `insertTransaction` enforces the `(type, reference_id)` unique index;
+ *  - appended rows are **frozen**: `credit_transactions` is append-only without
+ *    exception (§4.4), so any attempt to rewrite one throws rather than
+ *    silently succeeding;
  *  - `transaction()` snapshots and restores on throw (atomic rollback), so a
  *    failed debit leaves no orphan wallet OR booking change;
  *  - a failed statement **aborts the transaction**: every later statement raises
@@ -82,7 +85,9 @@ export class InMemoryLedger implements LedgerExecutor {
       }
       this.refs.add(key);
     }
-    this.rows.push({ ...row });
+    // Frozen: an append-only table's rows are never edited afterwards, and a
+    // test that tries should fail rather than pass quietly (§4.4).
+    this.rows.push(Object.freeze({ ...row }));
   }
 
   async setBalance(userId: string, balance: number): Promise<void> {
@@ -90,6 +95,19 @@ export class InMemoryLedger implements LedgerExecutor {
     this.balances.set(userId, balance);
     this.release.get(userId)?.(); // end of critical section → next locker proceeds
     this.release.delete(userId);
+  }
+
+  /**
+   * Tripwire, not a feature. `credit_transactions` is append-only without
+   * exception (SPEC §4.4), so `LedgerExecutor` exposes no UPDATE path at all —
+   * this exists purely so that if one is ever reintroduced and called, the
+   * tests fail loudly instead of quietly passing. Rows are frozen on insert for
+   * the same reason: an in-place rewrite throws rather than succeeding.
+   */
+  async setDescription(): Promise<never> {
+    throw new Error(
+      "credit_transactions is append-only (SPEC §4.4): no UPDATE path exists.",
+    );
   }
 
   /** Drop every held wallet lock (a rollback releases them). */
