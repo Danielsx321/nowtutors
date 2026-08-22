@@ -262,6 +262,7 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 - **Date range is read in the *viewer's* time zone** (the student browses their own calendar, §7.3); rules/exceptions are expanded per *tutor-local* calendar date and converted to UTC, so a DST transition in the tutor's zone moves the UTC instant of a fixed wall-clock slot without moving the wall clock the tutor set.
 - **Exceptions:** `is_available = false` blocks the whole tutor-local day (any times ignored) and overrides all rules; `is_available = true` **with both times set** is a partial-day override window that *replaces* that day's rules (multiple such rows union); `is_available = true` with null times is a no-op (rules still apply).
 - **Existing-booking overlap is half-open** `[start, end)`: back-to-back bookings do not self-conflict, and a slot that begins exactly when a booking ends is bookable (no off-by-one).
+- **A `pending_payment` booking blocks for 20 minutes only, measured from its own `created_at`** (Phase 5 Part 2). A direct-pay checkout genuinely holds its slot while the buyer is in PayPal (§7.3 step 5), but past that window it is an abandoned checkout and `computeSlots` stops treating it as occupying — **on read**, without waiting for anything to rewrite the row. The §12 expire-unpaid cron is therefore **tidy-up, not correctness**: exactly the relationship `live_tutors` has with sweep-presence (§3.1), where the view derives liveness from a timestamp and the sweep merely tidies the flag. The window is `PENDING_PAYMENT_HOLD_MINUTES` (a parameter, defaulting to 20). A row with no status blocks unconditionally, and a `pending_payment` row with no `created_at` fails safe and blocks — the alternative is double-selling a slot someone may be paying for.
 - **Cutoffs, both inclusive:** a slot starting exactly `min_booking_notice_minutes` from `now` is bookable; the horizon is a rolling `now + max_booking_days_ahead × 24h`, and a slot starting exactly at the horizon is bookable.
 - Time-zone conversion uses the runtime IANA/ICU database via `Intl` (DST-correct, no added dependency). Nonexistent spring-forward wall times resolve forward; ambiguous fall-back times resolve to the first (pre-transition) occurrence.
 
@@ -298,7 +299,9 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 
 `status` enum: `pending_payment`, `confirmed`, `in_progress`, `completed`, `cancelled_by_student`, `cancelled_by_tutor`, `no_show_student`, `no_show_tutor`, `expired`.
 
-Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, scheduled_start_at)` for cron. Overlap prevention is a scheduled-only GiST exclusion constraint `bookings_no_overlap` (`tutor_id =`, `tstzrange(scheduled_start_at, scheduled_end_at) &&`) `where type='scheduled' and status in ('confirmed','in_progress')` — requires `btree_gist` (Decision #6).
+Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, scheduled_start_at)` for cron. Overlap prevention is a scheduled-only GiST exclusion constraint `bookings_no_overlap` (`tutor_id =`, `tstzrange(scheduled_start_at, scheduled_end_at) &&`) `where type='scheduled' and status in ('pending_payment','confirmed','in_progress')` — requires `btree_gist` (Decision #6).
+
+`pending_payment` was added to that predicate in Phase 5 Part 2 (migration `0013`), so a direct-pay booking really does hold its slot (§7.3 step 5) and two students cannot both reach checkout for it. The **20-minute release** (§4.2) is deliberately *not* in the predicate: an exclusion predicate must be `IMMUTABLE` and so cannot reference `now()`. The release therefore lives in `computeSlots` on the read side, and in an expiry sweep the booking transaction runs before inserting on the write side — which is what keeps the two sides agreeing without the cron being load-bearing.
 
 **`session_requests`** — the instant-session handshake. Replaces `has_live_request`.
 
@@ -404,6 +407,8 @@ max_booking_days_ahead       # 7
 session_durations            # [30, 60, 90] — fixed menu, not tutor-configurable
 cancellation_enabled         # false — no user cancel path (§7.3)
 credit_packages              # jsonb array of buyable packages: credits + USD price, no minutes column
+                             #   one entry carries is_direct_pay_basis: true — the direct-pay
+                             #   pricing basis (§7.6). Exactly one, or ordering throws.
 ```
 
 > **§18 resolution (2026-08-20)** removed the keys tied to now-deleted models:
@@ -588,7 +593,7 @@ Pagination: cursor-based, 24 per page.
 4. Payment choice:
    - **Credits** — if `wallet.credit_balance >= price`: create booking `confirmed`, debit ledger, done in one transaction.
    - **PayPal** — create booking `pending_payment` with a 20-minute expiry, then the PayPal flow (7.6). On successful capture → `confirmed`.
-5. Slot is held for the duration of `pending_payment` (the overlap constraint counts `pending_payment` as occupying).
+5. Slot is held for the duration of `pending_payment` (the overlap constraint counts `pending_payment` as occupying, §4.3). The hold **lapses after 20 minutes**, measured from the booking's `created_at`: past that an abandoned checkout stops blocking the slot on read (§4.2), and the booking transaction expires any such stale hold it collides with before inserting. A student who walks away from PayPal does not strand the tutor's calendar until a cron runs.
 6. On confirm: email both parties, in-app notification to tutor, calendar `.ics` attachment.
 
 > **Part 2 implementation (Phase 4, `phase-4-part2-booking-flow`).** The credits path is built by
@@ -695,12 +700,34 @@ Amounts are always computed server-side from `platform_settings` and the tutor's
 
 Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plugin is a Bubble chore that disappears entirely here — there is one PayPal integration, in `lib/paypal/`.
 
-> **Part 1 implementation (Phase 5, `phase-5-part1-paypal`).** The credit-purchase half of this
+> **Part 1 + Part 2 implementation (Phase 5, `phase-5-part1-paypal`, `phase-5-part2`).** The whole
 > flow is built: `lib/paypal/client.ts` (token cache + base URL switched by `PAYPAL_ENV` — neither
 > host appears at a call site), `POST /api/paypal/orders`, `POST /api/paypal/orders/[orderId]/capture`,
-> and `POST /api/webhooks/paypal`. **Booking direct-pay is Part 2**, together with `/dashboard/wallet`
-> and `/admin/payments`; the orders route accepts `purpose: 'credit_purchase'` only and rejects
-> anything else rather than half-supporting it.
+> and `POST /api/webhooks/paypal` (Part 1), plus **booking direct-pay**, `/dashboard/wallet` and
+> `/admin/payments` (Part 2). The orders route now takes `{ purpose: 'credit_purchase', packageId }`
+> or `{ purpose: 'booking', bookingId }` as a discriminated union; any other purpose 400s rather than
+> being half-supported.
+>
+> **Direct-pay is buy-then-spend in one checkout.** A booking has **no USD price of its own** —
+> credits are the unit of account and USD exists only where credits are sold. The order mints exactly
+> the credits the booking costs and immediately spends them: settlement writes a `purchase` credit
+> (`reference_id = payments.id`) *and* a `booking_debit` (`reference_id = bookings.id`), then flips
+> the booking `pending_payment → confirmed`. Net wallet effect is zero, which is correct — the
+> student never held these credits — and `reconcile-wallets` still balances because both legs are
+> real ledger rows. Both are covered by the existing `(type, reference_id)` unique index, so the
+> client/webhook race is a no-op on each leg independently; there is no new idempotency machinery.
+>
+> **Direct-pay pricing basis.** `price_credits = sessionPriceCredits(tutor's current rate, duration)`
+> as ever; `price_usd = price_credits × (basis package price_usd ÷ basis package credits)`, **rounded
+> up to the cent, never down**. The basis is the one `credit_packages` entry flagged
+> `is_direct_pay_basis` — resolved from that flag, never by array index and never by picking the
+> median at runtime — so retuning direct-pay is a **settings edit (which package carries the flag)
+> and never a code change, and never a new rate**. `credit_usd_rate` stays removed (§18): this is a
+> real published package price used for one purpose, not a general credit→USD conversion. The flag
+> sits on the middle tier, so **direct-pay is deliberately priced above the largest package's
+> per-credit price** and buying credits keeps its volume incentive. If zero or more than one package
+> is flagged, ordering **throws** — a mispriced direct-pay charge must surface as an error, never as
+> a wrong amount (§3.3, no silent failures).
 >
 > The order route takes `{ purpose, packageId }` and resolves credits **and** price from
 > `platform_settings.credit_packages` server-side (`lib/credits/packages.ts`); no client amount is

@@ -69,7 +69,9 @@ describe("credit package lookup", () => {
       null,
       "nope",
     ]);
-    expect(parsed).toEqual([{ id: "ok", name: "OK", credits: 10, priceUsd: 5 }]);
+    expect(parsed).toEqual([
+      { id: "ok", name: "OK", credits: 10, priceUsd: 5, isDirectPayBasis: false },
+    ]);
   });
 
   it("returns nothing for a non-array value", () => {

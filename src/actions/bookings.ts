@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { bookings, tutorSubjects } from "@/db/schema";
@@ -13,6 +13,7 @@ import {
 import { getSlotComputationData } from "@/db/queries/bookings";
 import { getBookingSettings } from "@/lib/settings";
 import { isSlotOpen } from "@/lib/availability/validate-slot";
+import { PENDING_PAYMENT_HOLD_MINUTES } from "@/lib/availability/compute-slots";
 import { sessionPriceCredits } from "@/lib/credits/pricing";
 import {
   debitWallet,
@@ -32,9 +33,13 @@ const inputSchema = z.object({
   startAt: z.string().datetime({ offset: true }),
   durationMinutes: z.number().int().positive(),
   notes: z.string().trim().max(1000).optional(),
+  /** `credits` debits the wallet now; `paypal` opens a pending_payment booking. */
+  paymentMethod: z.enum(["credits", "paypal"]).default("credits"),
 });
 
-export type CreateBookingInput = z.infer<typeof inputSchema>;
+// `z.input` (not `z.infer`) so `paymentMethod` stays optional at the call site —
+// it defaults to the credits path, which is what every Phase 4 caller wants.
+export type CreateBookingInput = z.input<typeof inputSchema>;
 
 /** Postgres SQLSTATE for an exclusion-constraint violation (bookings_no_overlap). */
 const EXCLUSION_VIOLATION = "23P01";
@@ -112,8 +117,32 @@ export async function createScheduledBooking(
   const price = sessionPriceCredits(data.hourlyRateCredits, v.durationMinutes);
   const endAt = new Date(startAt.getTime() + v.durationMinutes * 60_000);
 
+  const payWithPayPal = v.paymentMethod === "paypal";
+
   try {
     const bookingId = await db.transaction(async (tx) => {
+      // The overlap constraint counts pending_payment as occupying (§4.3), but
+      // an index predicate must be IMMUTABLE so it cannot express the 20-minute
+      // release (§4.2). Expire the abandoned holds this slot collides with
+      // first, so the write path agrees with what computeSlots already showed as
+      // free. This is why the §12 expire-unpaid cron is tidy-up, not correctness.
+      await tx
+        .update(bookings)
+        .set({ status: "expired" })
+        .where(
+          and(
+            eq(bookings.tutorId, v.tutorId),
+            eq(bookings.type, "scheduled"),
+            eq(bookings.status, "pending_payment"),
+            lt(
+              bookings.createdAt,
+              new Date(Date.now() - PENDING_PAYMENT_HOLD_MINUTES * 60_000),
+            ),
+            lt(bookings.scheduledStartAt, endAt),
+            gt(bookings.scheduledEndAt, startAt),
+          ),
+        );
+
       // Insert first: the GiST exclusion rejects a slot won since re-validation
       // before we touch the wallet. If the debit then fails, this rolls back too.
       const [inserted] = await tx
@@ -123,24 +152,30 @@ export async function createScheduledBooking(
           tutorId: v.tutorId,
           subjectId: v.subjectId,
           type: "scheduled",
-          status: "confirmed",
+          // Direct-pay holds the slot as pending_payment until capture flips it
+          // to confirmed (§7.3 step 4b/5).
+          status: payWithPayPal ? "pending_payment" : "confirmed",
           scheduledStartAt: startAt,
           scheduledEndAt: endAt,
           durationMinutes: v.durationMinutes,
           priceCredits: price,
-          paymentMethod: "credits",
+          paymentMethod: payWithPayPal ? "paypal" : "credits",
           studentNotes: v.notes ?? null,
         })
         .returning({ id: bookings.id });
 
-      await debitWallet(walletExecutor(tx), {
-        userId: student.id,
-        amount: price,
-        type: "booking_debit",
-        referenceType: "booking",
-        referenceId: inserted.id,
-        description: `Scheduled ${v.durationMinutes}-min session`,
-      });
+      // Direct-pay debits nothing now: the PayPal checkout mints the credits and
+      // spends them at capture, in settleCapture (§7.6).
+      if (!payWithPayPal) {
+        await debitWallet(walletExecutor(tx), {
+          userId: student.id,
+          amount: price,
+          type: "booking_debit",
+          referenceType: "booking",
+          referenceId: inserted.id,
+          description: `Scheduled ${v.durationMinutes}-min session`,
+        });
+      }
 
       return inserted.id;
     });

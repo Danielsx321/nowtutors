@@ -871,7 +871,7 @@ end-to-end and the single real-card transaction remain RUNBOOK items (§15, and 
 constraint), and `/admin/payments` — the view built specifically to debug that one transaction — is
 Part 2.
 
-**Live integration smoke (self-rolling-back).** As in Phase 4 Part 2, and for the same reason — this
+**Live integration smoke (self-rolling-back) — Part 1.** As in Phase 4 Part 2, and for the same reason — this
 is the money path and the unit tests use in-memory storage — a throwaway script ran the real
 `settleCapture` / `markStatus` against dev Postgres (session pooler) inside a transaction it then
 aborted; nothing persisted. It confirmed, against actual Postgres rather than a model: the
@@ -883,3 +883,105 @@ had to rebuild the `PaymentStore` adapter rather than import it: `server-only` i
 bundler and is not an installed package, so no `tsx` script can import a module that declares it —
 which is also why every unit test here drives the pure `settlement.ts`/`webhook.ts` modules and not
 the route files.
+
+## Phase 5 Part 2 — wallet, booking direct-pay, admin payments (`phase-5-part2`)
+
+Closes Phase 5: `/dashboard/wallet`, booking direct-pay, `/admin/payments`, plus one hardening fix
+carried over from a production incident. SPEC §7.6's Part 1 note became a Part 1+2 note, and §4.2 /
+§4.3 / §7.3 gained the pending-payment slot rule, in the commits with the code they describe.
+
+- **`PayPalConfigError` is a 503 at the route-adapter boundary, never an uncaught 500.** A deploy
+  missing `PAYPAL_CLIENT_ID` threw out of `verifySignature` and reached the caller as a 500 with a
+  stack trace (production logs, 2026-08-22). *Why 503:* a missing credential is the **server's**
+  fault and is retryable once set — identical reasoning to the unset-`PAYPAL_WEBHOOK_ID` 503 the
+  webhook handler already returned. *How to apply:* `withPayPalConfigBoundary` wraps the handler
+  body of all three PayPal routes; the response body is generic and the **missing variable's name
+  goes to the server log only** — naming it in the response is an information leak. The pure
+  handlers are untouched; this is adapter-level. `PayPalConfigError` moved to a `server-only`-free
+  module (re-exported from `client.ts`, so every existing import still resolves) because the routes
+  it protects cannot be imported by a test.
+- **Wallet history is paginated, never loaded whole.** `credit_transactions` is append-only and
+  unbounded, so `/dashboard/wallet` reads one `?page=` window ordered by the existing
+  `(user_id, created_at desc)` index. The user id comes from the guard, never the URL — `?page=`
+  selects a window of *that* user's ledger and nothing else.
+
+### Direct-pay: a booking has no USD price of its own
+
+The hard question in Part 2. §18 removed `credit_usd_rate` precisely because the five tiers span
+$2.00→$0.98 per credit, so there is no credits→USD rate to price a booking with — yet PayPal needs
+a USD amount. Reintroducing a conversion constant would have re-opened exactly what §18 closed.
+
+- **Direct-pay is buy-then-spend in one checkout.** Credits are the unit of account and USD exists
+  only where credits are **sold**. So the order mints exactly the credits the booking costs and
+  immediately spends them: `purchase` credit (`reference_id = payments.id`), then `booking_debit`
+  (`reference_id = bookings.id`), then `pending_payment → confirmed`, all in one transaction.
+  *Why:* it needs no new pricing concept — direct-pay is just a credit purchase the student never
+  gets to keep. **Net wallet effect is zero, which is correct** (they never held these credits), and
+  `reconcile-wallets` still balances because both legs are real ledger rows rather than a special
+  case that skips the ledger.
+- **Both legs ride the existing `(type, reference_id)` unique index**, so the client/webhook race is
+  a no-op on each independently — no new idempotency machinery, same mechanism as Part 1.
+  *How to apply:* each leg runs in its own SAVEPOINT (a unique violation aborts the whole
+  transaction otherwise). **The mint's duplicate is the signal that the whole settlement already
+  ran** — both legs land together, so either both rows exist or neither does — and the spend is
+  therefore **skipped** on a replay rather than retried. Retrying it would hit `applyDelta`'s
+  balance check, which runs *before* the unique index, and raise `InsufficientCredits` against a
+  wallet that is simply back to its pre-purchase balance, turning a benign replay into an error.
+  The unit tests caught this; the first cut had it wrong.
+- **Price basis: one flagged package, resolved by flag and nothing else.**
+  `price_usd = ceil_to_cent(price_credits × basis.price_usd ÷ basis.credits)`. The basis is the
+  `credit_packages` entry carrying `is_direct_pay_basis` — **never** array index, **never** a
+  runtime median. *Why:* retuning direct-pay must be a **settings edit (move the flag) and never a
+  code change, and never a new rate**; this is a real published package price used for one purpose,
+  not a general credit→USD conversion, so `credit_usd_rate` stays removed. The flag sits on the
+  middle tier, so **direct-pay is deliberately dearer per credit than the largest package** and
+  buying credits keeps its volume incentive — the lever if that needs retuning is *which* package
+  carries the flag.
+- **Zero or two flagged packages throws** (`DirectPayBasisError`), with no fallback tier and no
+  first-match-wins. *Why:* a mispriced charge on the money path must surface as an error, not as a
+  wrong amount (§3.3, no silent failures). The route lets it propagate rather than 400ing, because
+  it is a server misconfiguration, not bad input.
+- **Rounding is up, in integer cents.** A fractional cent never rounds in the buyer's favour against
+  the platform. Cents-first arithmetic is load-bearing, not fussiness: `30 × 39.99 × 100 ÷ 30` in
+  floats lands on `3999.000000000001` and would ceil to **$40.00** instead of $39.99.
+- **The price is re-derived from the tutor's *current* rate**, not from `bookings.price_credits`.
+  That column is a snapshot; the current rate is what the student is being asked to pay. No client
+  amount is read at any point — the client can only name a `bookingId`.
+- **A booking belonging to someone else 404s**, identically to a missing booking, so the endpoint
+  cannot be used to probe which booking ids exist — the same choice the capture route makes for
+  `payments`.
+
+### The 20-minute pending_payment hold
+
+- **`pending_payment` was added to the `bookings_no_overlap` predicate** (migration `0013`). *Why:*
+  §7.3 step 5 always said the constraint counts pending_payment as occupying; the Phase 1 constraint
+  did not, because nothing created such a row until now. Without it two students can both reach
+  checkout for one slot, both pay, and the second capture has nowhere to land — money taken for a
+  session that cannot exist.
+- **A pending_payment booking older than 20 minutes does not block, measured from its `created_at`.**
+  *Why:* an abandoned checkout must not strand the tutor's calendar until a cron happens to run. The
+  §12 expire-unpaid cron becomes **tidy-up, not correctness** — the same relationship `live_tutors`
+  has with sweep-presence (§3.1): the derived read is authoritative and the sweep merely tidies.
+- **The 20 minutes is deliberately NOT in the exclusion predicate.** An exclusion predicate must be
+  `IMMUTABLE`, so it cannot reference `now()` — the rule is unexpressible in the index. *How to
+  apply:* it lives in `computeSlots` on the read side, and the booking transaction **expires the
+  stale holds its slot collides with before inserting** on the write side. Without that sweep the
+  two sides disagree: the calendar would offer a slot the constraint then refuses, and the student
+  would get "just booked" forever. This is why the cron is not load-bearing.
+- **Fail-safe directions:** a booking row with no `status` blocks unconditionally (a Phase 4 caller
+  that never heard of pending payments keeps its old meaning), and a `pending_payment` row with no
+  `created_at` blocks, because the alternative is double-selling a slot someone may be paying for.
+
+### `/admin/payments` — read-only in this pass
+
+- **Look up by PayPal order id OR capture id**, and show everything: the `payments` row, the linked
+  `credit_transactions`, the linked booking when `purpose = 'booking'`, and `raw_payload` rendered
+  readably. *Why:* this is the view that debugs the one live transaction that cannot be run from
+  Port Harcourt (§7.6), so it favours showing everything over showing it prettily.
+- **The refund-reverses-credits action is deliberately NOT built.** §18 item 4 records reversing
+  credits as an **admin** action, and it needs its own design pass (partial refunds, a student who
+  has already spent the credits, and the `wallets.credit_balance >= 0` check all interact). Noted as
+  deferred in PROGRESS rather than half-built.
+
+**Acceptance is SANDBOX ONLY.** Real-card testing stays deferred to Phase 10, along with the live
+webhook registration (RUNBOOK) — the sandbox webhook id does not work in live.

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { payments } from "@/db/schema";
+import { bookings, payments, tutorProfiles } from "@/db/schema";
 import {
   authErrorResponse,
   requireApiRole,
@@ -10,12 +10,15 @@ import {
 } from "@/lib/auth/api-guards";
 import { getCreditPackages } from "@/lib/settings";
 import {
+  directPayAmount,
   requireCreditPackage,
+  requireDirectPayBasisPackage,
   toPayPalAmount,
   UnknownCreditPackageError,
 } from "@/lib/credits/packages";
 import { createPayPalOrder } from "@/lib/paypal/orders";
 import { PayPalApiError, PayPalConfigError } from "@/lib/paypal/client";
+import { checkDirectPayEligibility } from "@/lib/paypal/direct-pay";
 import {
   PAYPAL_UNAVAILABLE_BODY,
   PAYPAL_UNAVAILABLE_STATUS,
@@ -23,24 +26,39 @@ import {
 } from "@/lib/paypal/config-boundary";
 
 /**
- * `POST /api/paypal/orders` — open a PayPal order for a credit purchase
- * (SPEC §7.6). Booking direct-pay is the other `purpose` in the spec and is
- * **Phase 5 Part 2**; this route accepts `credit_purchase` only, and the schema
- * rejects anything else rather than half-supporting it.
+ * `POST /api/paypal/orders` — open a PayPal order (SPEC §7.6). Two purposes:
  *
- * The client sends an *intent*, never a price. The amount and the credits both
- * come from `platform_settings.credit_packages`, looked up server-side from the
- * package id — a client-supplied amount is not read, so there is nothing to
- * tamper with.
+ *  - `{ purpose: 'credit_purchase', packageId }` — credits and price resolved
+ *    from `platform_settings.credit_packages`.
+ *  - `{ purpose: 'booking', bookingId }` — direct-pay (Part 2). The booking must
+ *    belong to the caller and be `pending_payment`; the price is re-derived from
+ *    the tutor's current rate, and the USD amount from the direct-pay basis
+ *    package. Direct-pay is buy-then-spend: this order MINTS the credits the
+ *    booking costs, and settlement spends them on it.
+ *
+ * Any other purpose fails the discriminated union and 400s rather than being
+ * half-supported.
+ *
+ * The client sends an *intent*, never a price. No client-supplied amount is read
+ * in either branch, so there is nothing to tamper with.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({
-  purpose: z.literal("credit_purchase"),
-  packageId: z.string().trim().min(1).max(64),
-});
+// Two purposes, each with its own required field. Anything else — an unknown
+// purpose, or a booking id on a credit purchase — fails the union and 400s
+// rather than being half-supported. No amount is accepted in either branch.
+const bodySchema = z.discriminatedUnion("purpose", [
+  z.object({
+    purpose: z.literal("credit_purchase"),
+    packageId: z.string().trim().min(1).max(64),
+  }),
+  z.object({
+    purpose: z.literal("booking"),
+    bookingId: z.string().uuid(),
+  }),
+]);
 
 const CURRENCY = "USD";
 
@@ -78,13 +96,23 @@ async function createOrder(request: Request) {
     );
   }
 
-  let pkg;
+  // Resolve the order's amount, credits and (for direct-pay) the booking. Every
+  // number here is server-derived; the client sent an intent only.
+  let resolved: ResolvedOrder;
   try {
-    pkg = requireCreditPackage(await getCreditPackages(), parsed.data.packageId);
+    resolved =
+      parsed.data.purpose === "credit_purchase"
+        ? await resolveCreditPurchase(parsed.data.packageId)
+        : await resolveBookingDirectPay(parsed.data.bookingId, user.id);
   } catch (err) {
     if (err instanceof UnknownCreditPackageError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    if (err instanceof BookingOrderError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    // DirectPayBasisError deliberately falls through: a misconfigured basis is a
+    // server fault and must surface, never become a wrong charge (SPEC §3.3).
     throw err;
   }
 
@@ -99,19 +127,22 @@ async function createOrder(request: Request) {
     userId: user.id,
     provider: "paypal",
     providerOrderId: `pending:${paymentId}`,
-    amountUsd: toPayPalAmount(pkg.priceUsd),
+    amountUsd: resolved.amountValue,
     currency: CURRENCY,
-    creditsGranted: pkg.credits,
-    purpose: "credit_purchase",
+    // For direct-pay this is the amount the checkout MINTS and immediately
+    // spends on the booking — settlement credits then debits it (§7.6).
+    creditsGranted: resolved.credits,
+    purpose: resolved.purpose,
+    bookingId: resolved.bookingId ?? null,
     status: "created",
   });
 
   let order;
   try {
     order = await createPayPalOrder({
-      amountValue: toPayPalAmount(pkg.priceUsd),
+      amountValue: resolved.amountValue,
       currency: CURRENCY,
-      description: `${pkg.credits} NowTutors credits — ${pkg.name}`,
+      description: resolved.description,
       customId: paymentId,
       invoiceId: paymentId,
     });
@@ -143,6 +174,76 @@ async function createOrder(request: Request) {
     .where(eq(payments.id, paymentId));
 
   return NextResponse.json({ orderId: order.id }, { status: 201 });
+}
+
+interface ResolvedOrder {
+  purpose: "credit_purchase" | "booking";
+  /** 2-decimal string. Server-derived; never a client value. */
+  amountValue: string;
+  credits: number;
+  description: string;
+  bookingId?: string;
+}
+
+/** A booking direct-pay order the caller may not open, with its HTTP status. */
+class BookingOrderError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BookingOrderError";
+  }
+}
+
+/** Credit purchase: credits and price both come from settings. */
+async function resolveCreditPurchase(packageId: string): Promise<ResolvedOrder> {
+  const pkg = requireCreditPackage(await getCreditPackages(), packageId);
+  return {
+    purpose: "credit_purchase",
+    amountValue: toPayPalAmount(pkg.priceUsd),
+    credits: pkg.credits,
+    description: `${pkg.credits} NowTutors credits — ${pkg.name}`,
+  };
+}
+
+/**
+ * Booking direct-pay (SPEC §7.3 step 4b, §7.6). The booking must belong to the
+ * caller and still be awaiting payment; the price is **re-derived** from the
+ * tutor's current rate and the booking's duration, never read from the booking
+ * row and never from the client. USD comes from the direct-pay basis package.
+ */
+async function resolveBookingDirectPay(
+  bookingId: string,
+  userId: string,
+): Promise<ResolvedOrder> {
+  const [row] = await db
+    .select({
+      id: bookings.id,
+      studentId: bookings.studentId,
+      status: bookings.status,
+      type: bookings.type,
+      durationMinutes: bookings.durationMinutes,
+      hourlyRateCredits: tutorProfiles.hourlyRateCredits,
+    })
+    .from(bookings)
+    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, bookings.tutorId))
+    .where(eq(bookings.id, bookingId))
+    .limit(1);
+
+  // Ownership + status + server-side price re-derivation, all in the pure check.
+  const eligible = checkDirectPayEligibility(row, userId);
+  if (!eligible.ok) throw new BookingOrderError(eligible.status, eligible.message);
+
+  const basis = requireDirectPayBasisPackage(await getCreditPackages());
+
+  return {
+    purpose: "booking",
+    amountValue: directPayAmount(eligible.credits, basis),
+    credits: eligible.credits,
+    description: `NowTutors session — ${row.durationMinutes} min (${eligible.credits} credits)`,
+    bookingId: eligible.bookingId,
+  };
 }
 
 /** A JSON-safe record of a failed order attempt, for `/admin/payments` (Part 2). */

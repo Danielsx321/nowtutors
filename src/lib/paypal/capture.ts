@@ -106,13 +106,24 @@ export async function settleCaptureOutcome(
       return { status: 404, body: { error: "Payment not found." } };
     }
 
+    // Credits only exist on a credit_purchase settlement; a booking direct-pay
+    // moves no credits at all, so it reports 0 and carries the booking instead.
+    const credits =
+      result.status === "credited" || result.status === "already_credited"
+        ? result.credits
+        : 0;
+
     return {
       status: 200,
       body: {
         ok: true,
         result: result.status,
-        credits: result.status === "captured_no_credit" ? 0 : result.credits,
+        credits,
         ...(result.status === "credited" ? { balance: result.balanceAfter } : {}),
+        ...(result.status === "booking_confirmed" ||
+        result.status === "booking_already_confirmed"
+          ? { bookingId: result.bookingId }
+          : {}),
       },
     };
   }

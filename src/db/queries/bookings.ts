@@ -20,8 +20,14 @@ import type {
   ExistingBooking,
 } from "@/lib/availability/compute-slots";
 
-/** Booking statuses that occupy the tutor for overlap/slot purposes (SPEC §4.3). */
-const OCCUPYING_STATUSES = ["confirmed", "in_progress"] as const;
+/**
+ * Booking statuses that occupy the tutor for overlap/slot purposes (SPEC §4.3).
+ * `pending_payment` is included because a live direct-pay checkout genuinely
+ * holds the slot — but only for {@link PENDING_PAYMENT_HOLD_MINUTES}, which
+ * `computeSlots` applies using each row's `created_at` (§4.2). Loading them and
+ * letting the pure function age them keeps that rule in one place.
+ */
+const OCCUPYING_STATUSES = ["pending_payment", "confirmed", "in_progress"] as const;
 
 export interface SlotComputationData {
   tutorTimeZone: string;
@@ -76,6 +82,8 @@ export async function getSlotComputationData(
       .select({
         startAt: bookings.scheduledStartAt,
         endAt: bookings.scheduledEndAt,
+        status: bookings.status,
+        createdAt: bookings.createdAt,
       })
       .from(bookings)
       .where(
@@ -105,8 +113,13 @@ export async function getSlotComputationData(
       endTime: e.endTime,
     })),
     bookings: bookingRows
-      .filter((b): b is { startAt: Date; endAt: Date } => !!b.startAt && !!b.endAt)
-      .map((b) => ({ startAt: b.startAt, endAt: b.endAt })),
+      .filter((b) => !!b.startAt && !!b.endAt)
+      .map((b) => ({
+        startAt: b.startAt as Date,
+        endAt: b.endAt as Date,
+        status: b.status,
+        createdAt: b.createdAt,
+      })),
   };
 }
 

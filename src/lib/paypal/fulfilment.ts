@@ -1,7 +1,7 @@
 import "server-only";
-import { eq, or, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
-import { payments } from "@/db/schema";
+import { bookings, payments } from "@/db/schema";
 import { walletExecutor } from "@/lib/credits/ledger";
 import {
   markStatus,
@@ -51,6 +51,7 @@ function paymentStore(tx: DbTransaction): PaymentStore {
           currency: payments.currency,
           providerCaptureId: payments.providerCaptureId,
           capturedAt: payments.capturedAt,
+          bookingId: payments.bookingId,
         })
         .from(payments)
         .where(match)
@@ -83,6 +84,23 @@ function paymentStore(tx: DbTransaction): PaymentStore {
     // outer transaction stays usable.
     savepoint(fn) {
       return tx.transaction((inner) => fn(walletExecutor(inner)));
+    },
+
+    // Conditional on `pending_payment`, so exactly one of the client capture and
+    // the webhook reports having moved it. Same transaction as the payments
+    // update: the booking is confirmed iff the payment is recorded captured.
+    async confirmBooking(bookingId: string) {
+      const moved = await tx
+        .update(bookings)
+        .set({ status: "confirmed", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(bookings.id, bookingId),
+            eq(bookings.status, "pending_payment"),
+          ),
+        )
+        .returning({ id: bookings.id });
+      return moved.length > 0;
     },
   };
 }

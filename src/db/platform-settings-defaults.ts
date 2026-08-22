@@ -29,15 +29,23 @@ export const PLATFORM_SETTINGS: PlatformSetting[] = [
   {
     // Real Bubble tiers. No "minutes" column: credits are a purchased currency, not a
     // unit of time (credits-are-money amendment) — see docs/DECISIONS.md.
+    //
+    // `is_direct_pay_basis` marks the ONE tier whose per-credit price prices a
+    // booking direct-pay (SPEC §4.4, §7.6). It sits on the middle tier, so
+    // direct-pay costs more per credit than the larger packages and buying
+    // credits keeps its volume incentive. Exactly one tier must carry it —
+    // zero or two throws rather than mispricing a charge. Retuning direct-pay
+    // means moving this flag in settings, never a code change.
     key: "credit_packages",
     value: [
       { id: "starter", name: "Starter", credits: 5, price_usd: 9.99 },
       { id: "standard", name: "Standard", credits: 15, price_usd: 24.99 },
-      { id: "popular", name: "Popular", credits: 30, price_usd: 39.99 },
+      { id: "popular", name: "Popular", credits: 30, price_usd: 39.99, is_direct_pay_basis: true },
       { id: "pro", name: "Pro", credits: 60, price_usd: 67.99 },
       { id: "premium", name: "Premium", credits: 100, price_usd: 97.99 },
     ],
-    description: "buyable credit packages: credits + USD price (no minutes column — §18/DECISIONS)",
+    description:
+      "buyable credit packages: credits + USD price (no minutes column — §18/DECISIONS); is_direct_pay_basis marks the direct-pay pricing basis (§7.6)",
   },
 ];
 

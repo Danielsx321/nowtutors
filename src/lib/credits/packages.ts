@@ -18,6 +18,12 @@ export interface CreditPackage {
   name: string;
   credits: number;
   priceUsd: number;
+  /**
+   * Marks the one tier whose per-credit price is the **direct-pay basis**
+   * (SPEC §4.4, §7.6). Exactly one package must carry it — see
+   * {@link requireDirectPayBasisPackage}.
+   */
+  isDirectPayBasis: boolean;
 }
 
 /** Raised when a client sends a packageId that isn't a live package. */
@@ -26,6 +32,21 @@ export class UnknownCreditPackageError extends Error {
   constructor(readonly packageId: string) {
     super("That credit package isn't available.");
     this.name = "UnknownCreditPackageError";
+  }
+}
+
+/**
+ * Raised when the direct-pay basis is not exactly one package. Deliberately
+ * fatal: a mispriced direct-pay charge must surface as an error, never as a
+ * wrong amount (SPEC §3.3, no silent failures).
+ */
+export class DirectPayBasisError extends Error {
+  readonly code = "direct_pay_basis" as const;
+  constructor(readonly found: number) {
+    super(
+      `Direct-pay basis must be exactly one credit package; found ${found}.`,
+    );
+    this.name = "DirectPayBasisError";
   }
 }
 
@@ -59,9 +80,62 @@ export function parseCreditPackages(value: unknown): CreditPackage[] {
     if (priceUsd === null) continue;
     const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id;
     seen.add(id);
-    out.push({ id, name, credits, priceUsd });
+    out.push({
+      id,
+      name,
+      credits,
+      priceUsd,
+      isDirectPayBasis: raw.is_direct_pay_basis === true,
+    });
   }
   return out;
+}
+
+/**
+ * The package whose per-credit price prices a direct-pay booking (SPEC §7.6).
+ *
+ * Resolved from an explicit flag on the package, never by array index or by
+ * picking the median at runtime, so retuning direct-pay is a **settings edit**
+ * (move the flag to another tier) and never a code change.
+ *
+ * Throws when zero or more than one package is flagged. There is no fallback
+ * tier and no "first match wins": either the basis is unambiguous or the charge
+ * does not happen.
+ */
+export function requireDirectPayBasisPackage(
+  packages: readonly CreditPackage[],
+): CreditPackage {
+  const flagged = packages.filter((p) => p.isDirectPayBasis);
+  if (flagged.length !== 1) throw new DirectPayBasisError(flagged.length);
+  return flagged[0];
+}
+
+/**
+ * USD **cents** for a direct-pay booking of `priceCredits`, at the basis tier's
+ * per-credit price, **rounded up** so a fractional cent never rounds in the
+ * buyer's favour against the platform.
+ *
+ * Computed in integer cents throughout: `credits × basisCents / basisCredits`
+ * as floats reintroduces binary-float error (30 × 39.99 × 100 / 30 lands on
+ * 3999.000000000001 and would ceil to $40.00 instead of $39.99).
+ */
+export function directPayUsdCents(
+  priceCredits: number,
+  basis: CreditPackage,
+): number {
+  if (!Number.isInteger(priceCredits) || priceCredits <= 0) {
+    throw new Error("Direct-pay credits must be a positive integer.");
+  }
+  const basisCents = Math.round(basis.priceUsd * 100);
+  return Math.ceil((priceCredits * basisCents) / basis.credits);
+}
+
+/** `directPayUsdCents` as PayPal's 2-decimal string. */
+export function directPayAmount(
+  priceCredits: number,
+  basis: CreditPackage,
+): string {
+  return (directPayUsdCents(priceCredits, basis) / 100).toFixed(2);
 }
 
 /** The package with this id, or null. Ids are matched exactly, never fuzzily. */
