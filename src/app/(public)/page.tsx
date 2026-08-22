@@ -53,7 +53,7 @@ export default async function BrowsePage({
   } catch (e) {
     if (e instanceof SearchParamError) {
       return (
-        <div className="container-page py-8">
+        <div className="w-full px-4 py-8 md:px-6">
           <Alert variant="danger" title="That link has an invalid filter">
             <p>{e.message}</p>
             <div className="mt-3">
@@ -93,7 +93,7 @@ export default async function BrowsePage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="container-page py-8">
+    <div className="w-full px-4 py-8 md:px-6">
       <div className="mb-6">
         <h1 className="text-h1 font-bold text-gray-700">Find a tutor</h1>
         <p className="mt-1 text-body text-gray-500">
@@ -106,8 +106,8 @@ export default async function BrowsePage({
 
       <div className="mt-4 grid gap-8 md:grid-cols-[260px_1fr]">
         <aside className="hidden md:block">
-          <div className="sticky top-20">
-            <TutorFilters subjects={subjectRows} />
+          <div className="sticky top-20 rounded-lg border border-ink-700 bg-ink-900 p-6">
+            <TutorFilters subjects={subjectRows} surface="ink" />
           </div>
         </aside>
 

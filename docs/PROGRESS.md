@@ -20,6 +20,35 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   deletions restricted. CI is no longer advisory: the Phase 6 ungraceful-exit E2E now has something
   enforcing it. Changes to `main` go through a PR.
 
+## In flight — browse page restyle (PR #7, branch `feat/browse-page-ink-theme`, **not yet merged**)
+
+Visual-only work on top of Phase 3, ahead of Phase 4. Confirmed against `gh pr view 7` before
+writing this: **state OPEN, `mergedAt` null** — still awaiting Daniels' review in the browser.
+
+Went further than originally scoped, across three pushes to the same PR:
+
+- **Ink shell + full-bleed browse.** Public `Header`/`Footer` moved to the ink surface (`ink-900`,
+  plus a new `ink-1000` token for the footer, darker than the header — Bubble parity), the desktop
+  filters rail on `/` became a dark panel (`TutorFilters` gained a `surface: "light" | "ink"` prop;
+  the mobile drawer stays light), and `/` itself dropped its centered max-width box for a full-bleed
+  layout with the sidebar pinned left.
+- **Header/footer edge fix + centered nav.** `Header`/`Footer` still boxed themselves in
+  `container-page` even after `/`'s body went full-bleed, leaving a mismatched white margin; fixed
+  by dropping `container-page` from both and centering the header nav in a three-region
+  `grid-cols-[auto_1fr_auto]` layout instead of left-aligning it after the logo.
+- **Scope change — full-bleed everywhere, not just the browse page.** The original plan kept
+  `container-page` (1200px max-width) as the default for every page except `/`; that constraint was
+  reversed. `container-page` was removed from every remaining page-wrapper use — the `(auth)` layout
+  header (`/login`, `/signup`, `/forgot-password`, `/reset-password`), `/tutors/[slug]`,
+  `/dev/kitchen-sink`, and `AppShell`'s content panel (`/dashboard/favourites`, `/tutor/profile`,
+  `/admin/tutors`) — each replaced with `w-full` plus the same `px-4`/`md:px-6` edge gutter already
+  used by the header/footer/browse body. Every currently-built route is now full-bleed with a
+  consistent edge gutter, verified at 360px and 1440px. `/suspended` was **left out of scope**
+  (still boxed in `container-page`). Component-internal max-widths were kept intentionally —
+  `/tutor/profile`'s own card and `/onboarding`'s centered card are a form choosing its own width,
+  not a page-level box, and were not touched. `container-page` itself is untouched in `globals.css`.
+  SPEC §10.1 and `DECISIONS.md` were updated in the same commits as the code.
+
 ## What Phase 3 built
 
 - **Auth** (`(auth)` group + `/auth/callback`): login, signup, forgot/reset password, Google OAuth.

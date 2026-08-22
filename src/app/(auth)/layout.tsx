@@ -8,7 +8,7 @@ import { GraduationCap } from "lucide-react";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      <header className="container-page py-6">
+      <header className="w-full px-4 py-6 md:px-6">
         <Link
           href="/"
           className="focus-ring inline-flex items-center gap-2 rounded-sm text-h3 font-bold text-gray-700"

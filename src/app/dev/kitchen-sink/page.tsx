@@ -43,7 +43,7 @@ export default function KitchenSink() {
             : "border-gray-200 bg-white/90",
         )}
       >
-        <div className="container-page flex flex-wrap items-center justify-between gap-3 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
           <div>
             <h1
               className={cn(
@@ -95,7 +95,7 @@ export default function KitchenSink() {
           </div>
         </div>
 
-        <nav className="container-page flex flex-wrap gap-x-4 gap-y-1 pb-3">
+        <nav className="flex flex-wrap gap-x-4 gap-y-1 px-4 pb-3 md:px-6">
           {sections.map((s) => (
             <a
               key={s.id}
@@ -112,7 +112,7 @@ export default function KitchenSink() {
         </nav>
       </header>
 
-      <main className="container-page space-y-16 py-12">
+      <main className="w-full space-y-16 px-4 py-12 md:px-6">
         <FoundationsSection surface={surface} />
         <ButtonsSection surface={surface} />
         <FormsSection surface={surface} />

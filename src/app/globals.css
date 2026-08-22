@@ -15,6 +15,7 @@
      single ink surface (#34495E); a card/dropdown/drawer on ink cannot separate
      by being lighter — it separates by an ink-700 border or a shadow. ink-800 is
      an INTERACTION state (hover/pressed), NEVER a surface. */
+  --color-ink-1000: #1c2733; /* near-black footer surface, darker than ink-950 (Bubble parity) */
   --color-ink-950: #263544; /* active nav item, modal scrim */
   --color-ink-900: #34495e; /* THE surface: shell, topbar, cards */
   --color-ink-800: #3e566e; /* hover / pressed on ink — NOT a surface */

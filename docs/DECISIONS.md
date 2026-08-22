@@ -570,3 +570,79 @@ SELECT session_user IN ('postgres', 'supabase_admin')
 - Those assertions must be **state-independent** (write a unique value per run). Two of ours
   "passed" spuriously because a previous run had already written the value being tested and a no-op
   `UPDATE` never fires an `IS DISTINCT FROM` trigger.
+
+## Browse page — ink shell + full-bleed layout (`feat/browse-page-ink-theme`)
+
+Four colour/layout changes to the public browse page and shell, requested directly (visual parity
+with the Bubble build), no schema or behaviour changes. Density (Phase 3) is untouched.
+
+1. **`PublicHeader` → `ink-900`.** Wordmark and nav go white, active nav / wordmark accent go gold
+   (7.22:1). "Log in" and "Sign up" deliberately avoid a purple fill on ink — even though §10.1
+   allows purple as a *fill carrying white text*, doing that here would put a purple block directly
+   against the ink-900 header background with no visual separation, which reads as low-contrast in
+   practice. Two new `Button` variants, `ink` (gold fill, `ink-900` text) and `ink-ghost` (white
+   text, `ink-800` hover), carry the header CTAs instead. Measured: white-on-ink 9.29:1,
+   gold-on-ink 7.22:1, `ink-300` hover 4.69:1.
+
+2. **`PublicFooter` → new `ink-1000` token (`#1C2733`).** No existing token was dark enough for
+   "darker than the header, near-black." Added exactly one token to the ink ramp (`--color-ink-1000`
+   in `src/app/globals.css`, documented in SPEC §10.1) rather than hardcoding a hex in the
+   component — Phase 2's "no hardcoded hex outside the token file" acceptance criterion still holds.
+   `ink-1000` is scoped to the public footer; it is not a second authenticated-shell surface (§10.1's
+   "ONE ink surface" claim is about the app shell/cards and is unaffected). All footer text is white
+   (15.14:1).
+
+3. **Filters rail → `ink-900` panel on desktop only.** `TutorFilters` gained a `surface: "light" |
+   "ink"` prop (default `"light"`) instead of being recoloured unconditionally, because the same
+   component renders inside the mobile `Drawer`, which is a separate light-surface container — a
+   global recolour would have made the mobile drawer's filter text white-on-white. Only the `/`
+   desktop `<aside>` passes `surface="ink"`. Unchecked checkboxes get an `ink-300` border (4.69:1,
+   invisible `border-gray-500` on ink otherwise). Checked checkboxes/switch use gold fill instead of
+   purple, for the same adjacent-contrast reason as the header CTAs. The `Sort` `<select>` gets an
+   explicit on-ink treatment (`ink-800` fill / `ink-700` border / white text) — the shared component
+   defaults to a white trigger, which is legible but inconsistent with a "dark panel"; left
+   unstyled it would not have failed contrast, but would have looked like a light chip floating in
+   the dark rail.
+
+4. **Browse page (`/`) → full-bleed, sidebar pinned left.** The page no longer wraps in
+   `container-page` (1200px max-width); it's `w-full` with a small edge gutter (`px-4`/`px-6`) so
+   the layout matches the Bubble build instead of centering with large white margins. Scoped to `/`
+   only — SPEC §10.1 now says so explicitly, so a future reader doesn't "fix" the browse page back
+   to the shared container.
+
+Verified at 360px and 1440px. All four changes, the new token, and both SPEC edits (§10.1 token
+table + prose, §10.1 spacing/container paragraph) landed in the same commit as this entry, per the
+CLAUDE.md standing rule.
+
+## Reversal — full-bleed is now the site-wide default, not a browse-only exception
+
+Item 4 above (and the SPEC line it added) said the browse page's full-bleed layout was a one-off,
+scoped to `/`, and that `container-page`'s 1200px max-width stayed the default everywhere else.
+That constraint was **reversed** on the same branch, same PR (#7), before merge: every currently
+built page is now full-bleed, matching `/`, not just the browse page.
+
+**Why.** Once the browse page, header, and footer went full-bleed, every other page sat at 1200px
+centered next to a full-bleed one — the boxed pages now look like the exception rather than the
+rule, and the visual seam is worse than either being consistent. Site-wide full-bleed (with a small
+edge gutter, not a hard max-width) is the intended layout, matching the Bubble build page-for-page,
+not a browse-specific concession to the sidebar-pinned-left layout.
+
+**What changed.** `container-page` was removed from every remaining page-*wrapper* use: `PublicHeader`,
+`PublicFooter` (already full-bleed from item 1/2/4 above), `AppShell`'s content panel (drives
+`/dashboard/favourites`, `/tutor/profile`, `/admin/tutors`), the `(auth)` layout header (drives
+`/login`, `/signup`, `/forgot-password`, `/reset-password`), `/tutors/[slug]`, and
+`/dev/kitchen-sink`. Each was replaced with `w-full` + the same `px-4 md:px-6` gutter already used
+by the header/footer/browse body, not with no gutter at all. `/onboarding` needed no change — it
+was never wrapped in `container-page`; its outer `min-h-screen bg-gray-50 px-4 py-12` was already
+full-bleed with a centered form card inside, which is the pattern this reversal generalizes, not
+one it conflicts with.
+
+**What did NOT change.** `container-page` the `@utility` is untouched in `globals.css` — it's still
+valid CSS, still used by `/suspended` (out of scope for this pass), and stays available for a future
+page that genuinely wants a boxed reading-width. Component-internal max-widths are untouched:
+`/tutor/profile`'s `mx-auto max-w-2xl` and `/onboarding`'s `mx-auto w-full max-w-xl` are a
+form/card choosing its own width, not a page-level box, and SPEC §10.1 now says so explicitly so a
+future reader doesn't try to "fix" those back to full width or `container-page` forward onto them.
+
+SPEC §10.1's spacing/container paragraph was rewritten (not just amended) in the same commit as this
+entry, per the CLAUDE.md standing rule.
