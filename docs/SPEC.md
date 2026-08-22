@@ -324,7 +324,7 @@ Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this tab
 
 **`wallets`** — `user_id uuid unique FK, credit_balance integer not null default 0 check (credit_balance >= 0)`. Cache only; authoritative value is the ledger sum. A nightly job asserts they agree and alerts on drift.
 
-**`credit_transactions`** — append-only. Never updated, never deleted.
+**`credit_transactions`** — append-only. Never updated, never deleted. **Absolutely**: application code issues `INSERT` and `SELECT` against this table and nothing else, and `LedgerExecutor` (`lib/credits/ledger.ts`) deliberately exposes no method that could become an UPDATE — not even to correct a `description`. Anything a row should have said but doesn't is **derived at read time** instead (see §7.6, retained credits). The rule earns its keep by admitting no exception: one narrow UPDATE path and every later reader has to ask which rows were rewritten, which is exactly the question an audit trail exists to foreclose.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -764,11 +764,17 @@ Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plug
 > client/webhook race, where the other settlement is a separate transaction) is absorbed by the
 > duplicate rejection, re-read, and reported identically.
 >
-> **The retained mint's ledger description says so.** That row appears on `/dashboard/wallet`
-> carrying a **positive** balance the student really holds, so it must not read as a session they
-> paid for: it names the slot as unavailable and the credits as theirs to spend. It is written after
-> the confirm fails — the mint has to commit before we can learn the booking is unconfirmable — via
-> `describeTransaction` in `lib/credits/ledger.ts`, which rewrites text only and moves no money.
+> **The retained mint is labelled at READ time, never rewritten.** That row appears on
+> `/dashboard/wallet` carrying a **positive** balance the student really holds, so it must not read
+> as a session they paid for: the wallet shows it as credits kept, naming the slot as unavailable and
+> the credits as theirs to spend. The stored `description` is the ordinary purchase wording and stays
+> that way forever. A ledger row is a retained-credit mint iff **all** of: `type = 'purchase'`; the
+> `payments` row it references has `purpose = 'booking'`; and **no** `booking_debit` exists for that
+> payment's `booking_id`. `lib/credits/retained-credits.ts` holds the derivation (pure, unit-tested);
+> `db/queries/wallet.ts` supplies the two page-scoped reads. *An earlier implementation amended the
+> mint's `description` after the confirm failed, through a narrow UPDATE on `credit_transactions`.
+> That was **rejected**: §4.4's append-only rule is worth more as an absolute than any single row's
+> wording, and deriving the label costs two keyed reads per page of history.*
 >
 > **`/admin/payments` flags this state outright.** A captured direct-pay whose `purchase` mint has no
 > `booking_debit` beside it is shown as *credits retained*, derived from the ledger rather than

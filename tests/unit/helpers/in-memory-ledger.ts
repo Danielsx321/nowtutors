@@ -12,9 +12,9 @@ import {
  *  - `lockWallet` is a per-user async mutex (Postgres `SELECT ... FOR UPDATE`),
  *    released when the operation writes its balance;
  *  - `insertTransaction` enforces the `(type, reference_id)` unique index;
- *  - `setDescription` rewrites the text of an existing row in place, and the
- *    snapshot below copies row objects (not just the array) so a rollback
- *    restores the old text as Postgres would;
+ *  - appended rows are **frozen**: `credit_transactions` is append-only without
+ *    exception (§4.4), so any attempt to rewrite one throws rather than
+ *    silently succeeding;
  *  - `transaction()` snapshots and restores on throw (atomic rollback), so a
  *    failed debit leaves no orphan wallet OR booking change;
  *  - a failed statement **aborts the transaction**: every later statement raises
@@ -85,7 +85,9 @@ export class InMemoryLedger implements LedgerExecutor {
       }
       this.refs.add(key);
     }
-    this.rows.push({ ...row });
+    // Frozen: an append-only table's rows are never edited afterwards, and a
+    // test that tries should fail rather than pass quietly (§4.4).
+    this.rows.push(Object.freeze({ ...row }));
   }
 
   async setBalance(userId: string, balance: number): Promise<void> {
@@ -95,17 +97,17 @@ export class InMemoryLedger implements LedgerExecutor {
     this.release.delete(userId);
   }
 
-  async setDescription(
-    type: LedgerRow["type"],
-    referenceId: string,
-    description: string,
-  ): Promise<void> {
-    this.assertUsable();
-    for (const row of this.rows) {
-      if (row.type === type && row.referenceId === referenceId) {
-        row.description = description;
-      }
-    }
+  /**
+   * Tripwire, not a feature. `credit_transactions` is append-only without
+   * exception (SPEC §4.4), so `LedgerExecutor` exposes no UPDATE path at all —
+   * this exists purely so that if one is ever reintroduced and called, the
+   * tests fail loudly instead of quietly passing. Rows are frozen on insert for
+   * the same reason: an in-place rewrite throws rather than succeeding.
+   */
+  async setDescription(): Promise<never> {
+    throw new Error(
+      "credit_transactions is append-only (SPEC §4.4): no UPDATE path exists.",
+    );
   }
 
   /** Drop every held wallet lock (a rollback releases them). */
@@ -121,7 +123,7 @@ export class InMemoryLedger implements LedgerExecutor {
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
     const snapBal = new Map(this.balances);
-    const snapRows = this.rows.map((r) => ({ ...r }));
+    const snapRows = [...this.rows];
     const snapRefs = new Set(this.refs);
     const snapBookings = [...this.bookings];
     const snapAborted = this.aborted;

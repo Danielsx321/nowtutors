@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { creditTransactions, wallets } from "@/db/schema";
 import type { DbTransaction } from "@/db";
 import type { creditTransactionType } from "@/db/schema/enums";
@@ -9,6 +9,14 @@ import type { creditTransactionType } from "@/db/schema/enums";
  * transaction, takes a `SELECT ... FOR UPDATE` row lock on the wallet, rejects a
  * debit that would go negative, appends one append-only ledger row, and updates
  * the cached balance — all or nothing.
+ *
+ * **`credit_transactions` is INSERT-only, without exception (§4.4).** There is
+ * no UPDATE and no DELETE here, and `LedgerExecutor` deliberately exposes no
+ * method that could become one — not even to fix a description. Anything a row
+ * should have said but doesn't is derived at read time instead (see
+ * `lib/credits/retained-credits.ts`). The rule earns its keep by being
+ * absolute: one narrow exception and every later reader has to wonder which
+ * rows were rewritten.
  *
  * Testability (docs/DECISIONS.md, Phase 4 Part 2): the two functions operate on
  * a small `LedgerExecutor` interface rather than the Drizzle transaction
@@ -75,16 +83,6 @@ export interface LedgerExecutor {
   insertTransaction(row: LedgerRow): Promise<void>;
   /** Overwrite the cached balance for an existing wallet row. */
   setBalance(userId: string, balance: number): Promise<void>;
-  /**
-   * Rewrite the `description` of an already-appended row, keyed on the same
-   * `(type, reference_id)` pair the unique index uses. See
-   * {@link describeTransaction} for why this does not break append-only.
-   */
-  setDescription(
-    type: CreditTransactionType,
-    referenceId: string,
-    description: string,
-  ): Promise<void>;
 }
 
 interface CreditParams {
@@ -176,29 +174,6 @@ export function debitWallet(
   return applyDelta(ex, { ...rest, delta: -amount });
 }
 
-/**
- * Amend the human-readable `description` of a row already in the ledger.
- *
- * **This does not break append-only.** Append-only is about the money: no
- * delta, no `balance_after`, and no row is ever created, changed or removed
- * here — only the sentence the student reads on `/dashboard/wallet`. It exists
- * for exactly one caller: PayPal direct-pay settlement, which mints credits
- * *before* it learns whether the booking can still be confirmed (SPEC §7.6), so
- * the mint's description can only be made truthful after the fact. Keyed on
- * `(type, reference_id)` — the same pair the unique index keys on — so it
- * addresses precisely one row.
- */
-export function describeTransaction(
-  ex: LedgerExecutor,
-  p: {
-    type: CreditTransactionType;
-    referenceId: string;
-    description: string;
-  },
-): Promise<void> {
-  return ex.setDescription(p.type, p.referenceId, p.description);
-}
-
 /** Postgres unique-violation SQLSTATE (the idempotency-guard conflict). */
 const UNIQUE_VIOLATION = "23505";
 
@@ -269,17 +244,6 @@ export function walletExecutor(t: DbTransaction): LedgerExecutor {
         .update(wallets)
         .set({ creditBalance: balance, updatedAt: sql`now()` })
         .where(eq(wallets.userId, userId));
-    },
-    async setDescription(type, referenceId, description) {
-      await t
-        .update(creditTransactions)
-        .set({ description })
-        .where(
-          and(
-            eq(creditTransactions.type, type),
-            eq(creditTransactions.referenceId, referenceId),
-          ),
-        );
     },
   };
 }

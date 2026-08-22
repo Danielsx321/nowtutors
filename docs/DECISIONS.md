@@ -1030,19 +1030,37 @@ returned 200 so PayPal never retried. A real payment, silently lost.
   rejection absorbs it, the guard re-reads, and both report the same outcome. The probe is an
   optimisation and a *disambiguator*, never the safety mechanism.
 
-### The retained mint has to explain itself in the student's wallet
+### The retained mint explains itself at read time, because §4.4 is absolute
 
-- **`describeTransaction` (lib/credits/ledger.ts) rewrites a ledger row's `description` after the
-  fact.** *Why:* the mint must commit before settlement can learn the booking is unconfirmable, so
-  the truthful description cannot be known at insert time. The row lands on `/dashboard/wallet`
-  carrying a **positive** balance the student really holds — left reading "Credit purchase" it looks
-  like a session they bought and cannot find. It now names the slot as unavailable and the credits
-  as theirs to spend.
-- **This does not break append-only.** Append-only is about the money: no delta, no `balance_after`,
-  no row created or removed — only the sentence a human reads. Keyed on `(type, reference_id)`, the
-  same pair the unique index uses, so it addresses exactly one row. *How to apply:* it exists for
-  this one caller; a second caller wanting it is a sign the description should have been derived at
-  read time instead.
+The retained mint lands on `/dashboard/wallet` carrying a **positive** balance the student really
+holds. Left reading "Credit purchase — 20 credits" it looks like a session they bought and cannot
+find, so it has to say why they were credited and that the credits are theirs.
+
+- **Rejected: amending the row's `description` after the confirm fails.** The first implementation
+  did exactly this, through a narrow UPDATE on `credit_transactions` (`describeTransaction`), argued
+  as "append-only is about the money — no delta moves, only the sentence a human reads". *Why
+  rejected:* that argument is fine on its own terms and still wrong, because the constraint's value
+  is not per-row — it is that it holds **without exception**. An append-only table with one narrow
+  UPDATE path is a table where every future reader, auditor and reconciliation job has to establish
+  which rows were rewritten and which weren't. That question is precisely the one an audit trail
+  exists to foreclose, and no single row's wording is worth reopening it. *How to apply:* when a
+  constraint's worth comes from being absolute, "this exception is tiny" is an argument **for**
+  refusing it, not against — the tiny ones are the only kind anyone ever proposes.
+- **The mint is inserted once, with the ordinary purchase wording, and never touched again.** The
+  retained-credit label is derived on every read: `type = 'purchase'`, its `payments` row has
+  `purpose = 'booking'`, and no `booking_debit` exists for that payment's `booking_id`.
+- **The derivation is pure, in `lib/credits/retained-credits.ts`;** `db/queries/wallet.ts` supplies
+  two page-scoped reads (payments by primary key, `booking_debit` by the `(type, reference_id)`
+  unique index), both skipped when a page holds no `purchase` rows. *Why:* the same pure-core /
+  thin-adapter split the ledger and settlement use, so the three cases that matter — retained mint,
+  ordinary credit purchase, completed direct-pay — are unit-tested without a live Postgres.
+- **It reuses the fact `/admin/payments` already derives**, the missing `booking_debit`, so the
+  student's wallet and the admin's reconciliation view cannot disagree about whether credits were
+  retained. Neither reads a stored flag; there is none to drift.
+- **`LedgerExecutor` exposes no UPDATE-shaped method at all**, so there is nothing for a future
+  caller to reach for. The in-memory ledger freezes appended rows and keeps a `setDescription`
+  tripwire that throws, so reintroducing a write path fails loudly in tests rather than passing
+  quietly.
 
 ### `/admin/payments` — read-only in this pass
 

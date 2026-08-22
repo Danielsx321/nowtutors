@@ -27,6 +27,11 @@ import { InMemoryLedger } from "./helpers/in-memory-ledger";
  * the credits rather than being charged for nothing. Because that leaves a
  * committed mint with no spend beside it, the replay guard reads both legs out
  * of the ledger instead of inferring one from the other.
+ *
+ * Settlement writes each ledger row exactly once and never returns to it —
+ * `credit_transactions` is append-only without exception (§4.4). The
+ * student-facing wording for a retained mint is derived on read; see
+ * `tests/unit/retained-credits.test.ts`.
  */
 
 const PAYMENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -314,19 +319,41 @@ describe("direct-pay settlement — the slot is gone: honour the capture, keep t
     expect(s.bookings.get(BOOKING_ID)).toBe("expired");
   });
 
-  it("describes the retained mint as credits the student keeps, not a session paid for", async () => {
-    // This row shows on /dashboard/wallet carrying a positive balance. It has
-    // to explain itself: why they were credited, and that the credits are
-    // theirs. The happy-path wording ("Credit purchase") would read as a
-    // session they bought and cannot find.
+  it("appends the mint once with the ordinary purchase wording and never rewrites it", async () => {
+    // The student-facing "credits retained" wording is NOT written here. It is
+    // derived on read (tests/unit/retained-credits.test.ts) from the missing
+    // booking_debit, because credit_transactions is append-only without
+    // exception (§4.4) — settlement gets no UPDATE path to make a row read
+    // better after the fact.
     const s = expiredStore();
     await settleCapture(s, { providerOrderId: ORDER_ID });
 
-    const description = s.ledger.rows[0].description ?? "";
-    expect(description).toContain("20 credits");
-    expect(description).toContain("no longer available");
-    expect(description).toMatch(/spend|yours/i);
-    expect(description).not.toContain("Credit purchase");
+    expect(s.ledger.rows).toHaveLength(1);
+    expect(s.ledger.rows[0].description).toBe(
+      "Credit purchase — 20 credits ($26.66 USD)",
+    );
+  });
+
+  it("reaches no UPDATE path on credit_transactions", async () => {
+    // The invariant, asserted where it could plausibly be broken: settlement is
+    // the one caller that ever wanted to amend a row. Rows are frozen on
+    // insert, so an in-place rewrite would have thrown during the settlement
+    // above rather than passing quietly...
+    const s = expiredStore({ alice: 4 });
+    await settleCapture(s, { providerOrderId: ORDER_ID });
+    expect(Object.isFrozen(s.ledger.rows[0])).toBe(true);
+
+    // ...and the ledger executor exposes no UPDATE method for it to call. This
+    // tripwire only fires if one is reintroduced; that it is never hit during
+    // any settlement in this file is the assertion that matters.
+    await expect(s.ledger.setDescription()).rejects.toThrow(/append-only/i);
+
+    // Untouched by everything above: the row as first appended.
+    expect(s.ledger.rows[0]).toMatchObject({
+      delta: 20,
+      type: "purchase",
+      description: "Credit purchase — 20 credits ($26.66 USD)",
+    });
   });
 
   it("does not confirm anything on a booking that is already gone", async () => {

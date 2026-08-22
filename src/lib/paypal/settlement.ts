@@ -1,7 +1,6 @@
 import {
   creditWallet,
   debitWallet,
-  describeTransaction,
   DuplicateLedgerReferenceError,
   type LedgerExecutor,
 } from "@/lib/credits/ledger";
@@ -130,24 +129,6 @@ export type MarkResult =
 /** Wallet-history text for a purchase (SPEC §7.10 shows this in the ledger). */
 export function purchaseDescription(payment: PaymentRecord, credits: number): string {
   return `Credit purchase — ${credits} credits ($${payment.amountUsd} ${payment.currency})`;
-}
-
-/**
- * Wallet-history text for a direct-pay mint whose booking could NOT be
- * confirmed (SPEC §7.6). This row lands on `/dashboard/wallet` carrying a
- * **positive** balance the student really holds, so it must not read like a
- * session payment: it has to tell them, unprompted, why they were credited and
- * that the credits are theirs to spend.
- */
-export function retainedCreditsDescription(
-  payment: PaymentRecord,
-  credits: number,
-): string {
-  return (
-    `${credits} credits added — that session slot was no longer available, so ` +
-    `your $${payment.amountUsd} ${payment.currency} payment was kept as ` +
-    `credits. They are yours to spend on a new booking.`
-  );
 }
 
 /**
@@ -280,18 +261,11 @@ export async function settleCapture(
     const confirmed = await confirmBooking(bookingId);
 
     if (!confirmed) {
-      // The slot is gone. Keep the money as credits and say so in the student's
-      // own wallet history: this row now carries a positive balance they really
-      // hold, so it must not read like a session they paid for. The description
-      // can only be written now — the mint had to commit before we could learn
-      // the booking was unconfirmable.
-      await store.savepoint((ledger) =>
-        describeTransaction(ledger, {
-          type: "purchase",
-          referenceId: payment.id,
-          description: retainedCreditsDescription(payment, credits),
-        }),
-      );
+      // The slot is gone. The money stays with the student as credits, and the
+      // mint stands exactly as it was appended — settlement writes nothing
+      // further. The wallet's "credits retained" wording is derived on read
+      // (`lib/credits/retained-credits.ts`) from the missing `booking_debit`,
+      // because `credit_transactions` is append-only without exception (§4.4).
       return {
         status: "booking_unavailable_credits_retained",
         paymentId: payment.id,
