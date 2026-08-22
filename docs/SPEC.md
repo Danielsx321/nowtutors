@@ -324,7 +324,21 @@ Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this tab
 
 **`wallets`** — `user_id uuid unique FK, credit_balance integer not null default 0 check (credit_balance >= 0)`. Cache only; authoritative value is the ledger sum. A nightly job asserts they agree and alerts on drift.
 
-**`credit_transactions`** — append-only. Never updated, never deleted. **Absolutely**: application code issues `INSERT` and `SELECT` against this table and nothing else, and `LedgerExecutor` (`lib/credits/ledger.ts`) deliberately exposes no method that could become an UPDATE — not even to correct a `description`. Anything a row should have said but doesn't is **derived at read time** instead (see §7.6, retained credits). The rule earns its keep by admitting no exception: one narrow UPDATE path and every later reader has to ask which rows were rewritten, which is exactly the question an audit trail exists to foreclose.
+**`credit_transactions`** — append-only. Never updated, never deleted. **The rule constrains
+application code paths**: every route, Server Action, and background job reaches this table through
+`INSERT` and `SELECT` only, and `LedgerExecutor` (`lib/credits/ledger.ts`) deliberately exposes no
+method that could become an UPDATE — not even to correct a `description`. Anything a row should have
+said but doesn't is **derived at read time** instead (see §7.6, retained credits). The rule earns its
+keep by admitting no exception **in application code**: one narrow UPDATE path there and every later
+reader has to ask which rows were rewritten, which is exactly the question an audit trail exists to
+foreclose.
+
+**Carve-out: development fixture resets.** `src/db/seed.ts` may `DELETE` seeded `credit_transactions`
+rows scoped to seeded user ids, on a non-production database, so repeated seeding stays idempotent.
+This is a carve-out for a fixture-reset script outside the request path, not a loosening of the rule
+— no application code path may `UPDATE` or `DELETE` this table, ever, and `LedgerExecutor` continues
+to expose no update-shaped method by design. If a seed script ever needs this on a database that
+could be production, that is the bug, not the carve-out.
 
 | Column | Type | Notes |
 |---|---|---|

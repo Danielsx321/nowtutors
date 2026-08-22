@@ -48,9 +48,28 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   the one `credit_packages` tier flagged `is_direct_pay_basis`; zero or two flagged **throws**
   rather than mis-charging. Migration `0013` adds `pending_payment` to `bookings_no_overlap`, and a
   `pending_payment` booking older than **20 minutes** stops blocking a slot on read (§4.2), so the
-  §12 expire-unpaid cron is tidy-up rather than correctness. SPEC §4.2/§4.3/§4.4/§7.3 and §7.6
-  (now a Part 1+2 note) updated alongside the code; `DECISIONS.md` gained a Part 2 section.
-  **Acceptance is sandbox only** — real-card testing is Phase 10.
+  §12 expire-unpaid cron is tidy-up rather than correctness (still not built — see "Still open"
+  below). SPEC §4.2/§4.3/§4.4/§7.3 and §7.6 (now a Part 1+2 note) updated alongside the code;
+  `DECISIONS.md` gained a Part 2 section. **Acceptance is sandbox only** — real-card testing is
+  deferred to **Phase 10**, along with live webhook registration.
+  **Same-PR fix — a captured direct-pay is always honoured.** Settlement originally minted and
+  debited before confirming the booking; if the §12 sweep had already expired the
+  `pending_payment` hold, the debit and mint both committed, the confirm no-opped, and the student
+  was charged with no credits and no booking (the webhook still answered 200, so PayPal never
+  retried — a silently lost payment). Fixed by reordering to **mint → confirm → debit**, gating the
+  debit on the confirm succeeding: if the slot is gone the debit is skipped and the student keeps
+  the minted credits (the only outcome needing no refund, and SPEC has none). New result status
+  `booking_unavailable_credits_retained`; the replay guard now reads both ledger legs
+  (`PaymentStore.settledLegs`) instead of inferring one from the other, since a committed mint can
+  now legitimately stand with no debit beside it. `/admin/payments` flags this state outright.
+  **Same-PR follow-up — the retained-credit label is derived at read time, not written.** An initial
+  version amended the mint's ledger `description` after the confirm failed, via a narrow `UPDATE`
+  (`describeTransaction`). Rejected before merge: §4.4's append-only rule is worth more as an
+  absolute than any one row's wording. Replaced with `lib/credits/retained-credits.ts`, a pure
+  read-time derivation (`purchase` + payment `purpose = 'booking'` + no matching `booking_debit`)
+  consumed by `db/queries/wallet.ts`; `credit_transactions` reverted to INSERT-only, with the
+  in-memory ledger fake now freezing rows and throwing on any attempted rewrite so the invariant
+  fails loudly in tests if ever reintroduced. **Merged via PR #13 (`003b992`).**
 
 ## What Phase 3 built
 
@@ -86,6 +105,11 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Still open — carry forward
 
+- **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
+  `pending_payment` booking older than 20 minutes already stops blocking a slot on the **read**
+  side (§4.2), and the booking transaction sweeps stale holds its slot collides with on the
+  **write** side, so double-selling cannot happen without the cron. The cron is tidy-up (rows that
+  sit `pending_payment` forever without a colliding booking to trigger the sweep), not correctness.
 - **Refund-reverses-credits admin action NOT built — deferred, needs its own design pass.**
   `/admin/payments` (Phase 5 Part 2) is **read-only**: it shows what happened to a payment but
   cannot unwind one. `PAYMENT.CAPTURE.REFUNDED` already sets `payments.status = 'refunded'` and
@@ -132,6 +156,10 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   `src/app/(public)/…` route-group paths and `grep --include='*.ts'`.
 - **`pnpm db:reset` is destructive** (drops `public`) — **dev only**. `.env.local` holds dev creds
   (ref `mipnoxlhurdbaahmvhhx`, eu-west-3); no prod project yet.
+- **Production still runs on the DEV Supabase project** (`mipnoxlhurdbaahmvhhx`). There is no
+  separate prod database — every deploy reads/writes the same project the local seed and
+  `db:verify-rls` run against. Provisioning a real prod project is unstarted; until then, treat
+  anything in that project as live data, not disposable fixtures.
 - Seed login password for all seeded users: `Password123!` (`student1@nowtutors.dev`,
   `tutor1@nowtutors.dev`, `admin@nowtutors.dev`).
 - **Run the local gates before pushing**: `pnpm typecheck && pnpm lint && pnpm test && pnpm build &&
