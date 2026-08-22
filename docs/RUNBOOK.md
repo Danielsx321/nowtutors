@@ -29,18 +29,31 @@ environment.
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
 - [ ] Google OAuth consent screen and redirect URIs — Phase 3.
-- [ ] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
-  - Sandbox `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` are set locally; `PAYPAL_ENV=sandbox`.
-  - **`PAYPAL_WEBHOOK_ID` is still blank.** Register the webhook in the PayPal dashboard
-    (Apps & Credentials → the app → Add Webhook) pointing at
-    `https://<deployment>/api/webhooks/paypal`, subscribed to `PAYMENT.CAPTURE.COMPLETED`,
-    `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`; copy the generated webhook id into
-    `PAYPAL_WEBHOOK_ID`. **Until it is set the webhook route returns 503 and processes nothing** —
-    client-side capture still works, but the closed-tab backstop does not.
-  - Going live is env-only: `PAYPAL_ENV=live` plus the live client id/secret and a **separate**
-    live webhook registration (webhook ids are per-environment). No code change.
+- [x] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
+  **Done for SANDBOX only.** Live is Phase 10 — see the warning below.
+  - **Webhook registered (sandbox).** URL `https://nowtutors-brown.vercel.app/api/webhooks/paypal`.
+  - **Webhook id (SANDBOX):** `9TL802630X898090D`. This id is **sandbox-only** — a *different* id
+    exists for live, and the two are not interchangeable.
+  - **Subscribed events:** `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`,
+    `PAYMENT.CAPTURE.REFUNDED` — exactly the three the route handles.
+  - **Verified 2026-08-22:** a PayPal webhook-simulator delivery returned **200**, with signature
+    verification succeeding against the real webhook id (not a stub).
+  - **Env vars are set in TWO independent places, and setting one does NOT set the other.**
+    `PAYPAL_WEBHOOK_ID`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID`
+    and `PAYPAL_ENV` are configured in **Vercel (Production)** *and* must **also** be set separately
+    in local **`.env.local`**. Vercel's dashboard and `.env.local` are unrelated stores: adding a
+    variable in Vercel does not populate `.env.local`, and adding it locally does not deploy it.
+    A missing local value breaks `pnpm dev`; a missing Vercel value breaks production. Set both.
   - `NEXT_PUBLIC_PAYPAL_CLIENT_ID` must match `PAYPAL_CLIENT_ID` for the environment — it is the
-    same public value, used by the PayPal JS SDK on the purchase page (Phase 5 Part 2).
+    same public value, used by the PayPal JS SDK on the purchase page.
+  - ⚠️ **Phase 10 live cutover — the sandbox webhook id will NOT work in live.** Going live needs a
+    **separate webhook registered on the LIVE PayPal app**, which issues its **own** webhook id.
+    Webhook ids are per-environment and PayPal signs live deliveries against the live id only.
+    **Shipping the sandbox id (`9TL802630X898090D`) to production means every live delivery fails
+    signature verification and 400s** — the closed-tab backstop silently stops working while client
+    capture still appears fine. The live cutover is: register the live webhook, copy its new id into
+    the production `PAYPAL_WEBHOOK_ID`, and set `PAYPAL_ENV=live` with the live client id/secret.
+    No code change — but it is **not** just flipping `PAYPAL_ENV`.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
 - [ ] Agora project settings and token-service health check — Phase 6.
 - [ ] Resend domain verification and DNS records — Phase 10.
