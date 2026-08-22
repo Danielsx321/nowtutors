@@ -3,6 +3,10 @@ import { cache } from "react";
 import { db } from "@/db";
 import { platformSettings } from "@/db/schema";
 import { seededSetting } from "@/db/platform-settings-defaults";
+import {
+  parseCreditPackages,
+  type CreditPackage,
+} from "@/lib/credits/packages";
 
 /**
  * Cached platform_settings accessor (SPEC §13). `getSettings` is memoized per
@@ -51,4 +55,18 @@ export async function getBookingSettings(): Promise<BookingSettings> {
     ),
     sessionDurations: durations.length ? durations : seededSetting<number[]>("session_durations"),
   };
+}
+
+/**
+ * The buyable credit packages (SPEC §4.7 / §18 item 7), read from
+ * `platform_settings.credit_packages` and coerced by the pure parser. Falls back
+ * to the seeded tiers only when the row is missing or every entry is malformed,
+ * so a purchase page never renders an empty shop because of one bad edit.
+ */
+export async function getCreditPackages(): Promise<CreditPackage[]> {
+  const s = await getSettings();
+  const parsed = parseCreditPackages(s.credit_packages);
+  return parsed.length
+    ? parsed
+    : parseCreditPackages(seededSetting<unknown>("credit_packages"));
 }

@@ -695,6 +695,31 @@ Amounts are always computed server-side from `platform_settings` and the tutor's
 
 Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plugin is a Bubble chore that disappears entirely here — there is one PayPal integration, in `lib/paypal/`.
 
+> **Part 1 implementation (Phase 5, `phase-5-part1-paypal`).** The credit-purchase half of this
+> flow is built: `lib/paypal/client.ts` (token cache + base URL switched by `PAYPAL_ENV` — neither
+> host appears at a call site), `POST /api/paypal/orders`, `POST /api/paypal/orders/[orderId]/capture`,
+> and `POST /api/webhooks/paypal`. **Booking direct-pay is Part 2**, together with `/dashboard/wallet`
+> and `/admin/payments`; the orders route accepts `purpose: 'credit_purchase'` only and rejects
+> anything else rather than half-supporting it.
+>
+> The order route takes `{ purpose, packageId }` and resolves credits **and** price from
+> `platform_settings.credit_packages` server-side (`lib/credits/packages.ts`); no client amount is
+> read, so there is nothing to tamper with. `payments.provider_order_id` is `NOT NULL UNIQUE` and
+> PayPal's id doesn't exist until after the call, so the row is inserted first with a
+> `pending:<payment id>` placeholder and stamped with the real id on return — the payment row always
+> predates anything the buyer can approve, so a capture or webhook always has a row to attribute
+> money to.
+>
+> **Client capture and the webhook are the same code path**, `settleCapture` in
+> `lib/paypal/settlement.ts`, keyed on the same `reference_id` (our `payments.id`). Whichever
+> arrives first credits; the second returns `already_credited` off the `(type, reference_id)` unique
+> index (§4.4) — a race is a no-op, not a special case. The ledger append runs in a SAVEPOINT so the
+> duplicate-key rejection unwinds only the append and not the `payments` status update. `DENIED` →
+> `failed` and `REFUNDED` → `refunded`, neither touching the wallet (reversing credits is an admin
+> action, §18 item 4). An event whose signature PayPal will not vouch for is **400ed before any
+> lookup or write**; a missing `PAYPAL_WEBHOOK_ID` is a 503 so the delivery is retried rather than
+> discarded. See `docs/DECISIONS.md`.
+
 > **Known constraint:** real-card testing can't be completed from Port Harcourt due to PayPal availability. Plan for a supervised live test with a real end user, and build an admin "reconcile payment" view (`/admin/payments`) that lets an admin look up a PayPal order id and see exactly what the system did with it. That view is how you'll debug the one transaction you can't run yourself.
 
 ### 7.7 LessonSpace

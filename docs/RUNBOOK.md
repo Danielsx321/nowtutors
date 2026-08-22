@@ -30,6 +30,17 @@ environment.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
 - [ ] Google OAuth consent screen and redirect URIs — Phase 3.
 - [ ] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
+  - Sandbox `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` are set locally; `PAYPAL_ENV=sandbox`.
+  - **`PAYPAL_WEBHOOK_ID` is still blank.** Register the webhook in the PayPal dashboard
+    (Apps & Credentials → the app → Add Webhook) pointing at
+    `https://<deployment>/api/webhooks/paypal`, subscribed to `PAYMENT.CAPTURE.COMPLETED`,
+    `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`; copy the generated webhook id into
+    `PAYPAL_WEBHOOK_ID`. **Until it is set the webhook route returns 503 and processes nothing** —
+    client-side capture still works, but the closed-tab backstop does not.
+  - Going live is env-only: `PAYPAL_ENV=live` plus the live client id/secret and a **separate**
+    live webhook registration (webhook ids are per-environment). No code change.
+  - `NEXT_PUBLIC_PAYPAL_CLIENT_ID` must match `PAYPAL_CLIENT_ID` for the environment — it is the
+    same public value, used by the PayPal JS SDK on the purchase page (Phase 5 Part 2).
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
 - [ ] Agora project settings and token-service health check — Phase 6.
 - [ ] Resend domain verification and DNS records — Phase 10.

@@ -5,84 +5,14 @@ import {
   DuplicateLedgerReferenceError,
   InsufficientCreditsError,
   pgErrorCode,
-  type LedgerExecutor,
-  type LedgerRow,
 } from "@/lib/credits/ledger";
+import { InMemoryLedger } from "./helpers/in-memory-ledger";
 
 /**
- * In-memory {@link LedgerExecutor} for unit-testing the money invariants without
- * a live Postgres (the pooler + CI have none — docs/DECISIONS.md). It models the
- * three behaviours the production adapter delegates to the database:
- *  - `lockWallet` is a per-user async mutex (Postgres `SELECT ... FOR UPDATE`),
- *    released when the operation writes its balance;
- *  - `insertTransaction` enforces the `(type, reference_id)` unique index;
- *  - `transaction()` snapshots and restores on throw (atomic rollback), so a
- *    failed debit leaves no orphan wallet OR booking change.
+ * The money invariants of `lib/credits/ledger.ts`, driven against the shared
+ * in-memory {@link InMemoryLedger} executor (see that file for what it models
+ * and why — the pooler + CI have no live Postgres, docs/DECISIONS.md).
  */
-interface FakeBooking {
-  id: string;
-}
-
-class InMemoryLedger implements LedgerExecutor {
-  balances = new Map<string, number>();
-  rows: LedgerRow[] = [];
-  bookings: FakeBooking[] = [];
-  private refs = new Set<string>();
-  private tail = new Map<string, Promise<void>>();
-  private release = new Map<string, () => void>();
-
-  constructor(seed: Record<string, number> = {}) {
-    for (const [k, v] of Object.entries(seed)) this.balances.set(k, v);
-  }
-
-  async lockWallet(userId: string): Promise<number | null> {
-    const prev = this.tail.get(userId) ?? Promise.resolve();
-    let releaseMine!: () => void;
-    const mine = new Promise<void>((r) => (releaseMine = r));
-    this.tail.set(userId, prev.then(() => mine));
-    await prev; // wait for any earlier holder to release (serialization)
-    this.release.set(userId, releaseMine);
-    return this.balances.has(userId) ? this.balances.get(userId)! : null;
-  }
-
-  async createWallet(userId: string): Promise<void> {
-    if (!this.balances.has(userId)) this.balances.set(userId, 0);
-  }
-
-  async insertTransaction(row: LedgerRow): Promise<void> {
-    if (row.referenceId != null) {
-      const key = `${row.type}:${row.referenceId}`;
-      if (this.refs.has(key)) {
-        throw new DuplicateLedgerReferenceError(row.type, String(row.referenceId));
-      }
-      this.refs.add(key);
-    }
-    this.rows.push({ ...row });
-  }
-
-  async setBalance(userId: string, balance: number): Promise<void> {
-    this.balances.set(userId, balance);
-    this.release.get(userId)?.(); // end of critical section → next locker proceeds
-    this.release.delete(userId);
-  }
-
-  /** Model of db.transaction(): snapshot, run, restore-on-throw. */
-  async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    const snapBal = new Map(this.balances);
-    const snapRows = [...this.rows];
-    const snapRefs = new Set(this.refs);
-    const snapBookings = [...this.bookings];
-    try {
-      return await fn();
-    } catch (err) {
-      this.balances = snapBal;
-      this.rows = snapRows;
-      this.refs = snapRefs;
-      this.bookings = snapBookings;
-      throw err;
-    }
-  }
-}
 
 describe("debitWallet — insufficient balance", () => {
   it("rejects a debit larger than the balance and writes nothing", async () => {
