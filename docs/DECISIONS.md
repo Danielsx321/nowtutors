@@ -754,3 +754,111 @@ use an in-memory executor, a throwaway script ran the real Drizzle transaction a
 `SELECT … FOR UPDATE` debit + `balance_after`, the append-only ledger row, the `(type, reference_id)`
 unique index → `DuplicateLedgerReferenceError` (`23505`), and `bookings_no_overlap` → `23P01`. This
 is what surfaced the `.cause` wrapping bug above.
+
+## Phase 5 Part 1 — PayPal orders, capture, webhook (`phase-5-part1-paypal`)
+
+The first flow that takes real money, and `creditWallet`'s first production caller. Scope: the
+PayPal client, the order/capture routes, the webhook, and credit-package lookup. Out of scope
+(Part 2): `/dashboard/wallet`, booking direct-pay, `/admin/payments`. SPEC §7.6 gained a Part 1
+implementation note in the same commit.
+
+- **No PayPal SDK.** Three REST endpoints via `fetch` in `src/lib/paypal/client.ts`. *Why:* SPEC §2
+  pins the dependency list and CLAUDE.md forbids unlisted deps; the SDK buys nothing here.
+  *How to apply:* the two hosts live in one `HOSTS` map keyed by `PAYPAL_ENV`, and
+  `paypalBaseUrl()` is the only place either appears — going live is an env change, never a code
+  change. Anything other than `PAYPAL_ENV=live` resolves to **sandbox**, so a typo cannot silently
+  point a dev build at real money. Credentials are read lazily inside the request path, so importing
+  the module in a build or test that never calls PayPal needs no secrets.
+- **Access token cached in module scope, keyed by `env:client_id`.** Refreshed 60s before PayPal's
+  stated expiry, and `paypalFetch` retries once on a 401 with a fresh token. *Why:* a rotated key or
+  a sandbox→live switch must never reuse the previous environment's token.
+- **`payments` row is inserted *before* the PayPal order, with a `pending:<payment id>` placeholder
+  in `provider_order_id`.** *Why:* the column is `NOT NULL UNIQUE` and PayPal's order id doesn't
+  exist until the call returns, but the row must predate anything the buyer can approve — otherwise
+  a capture or webhook could arrive for money we have no record of. *How to apply:* insert with the
+  placeholder (no PayPal id can collide with a `pending:` prefix), create the order with
+  `custom_id = payments.id`, then stamp the real order id. If order creation fails the row is marked
+  `failed`, with the PayPal error body in `raw_payload` for `/admin/payments` (Part 2).
+- **`PayPal-Request-Id` is set to our `payments.id` on create and to `capture:<orderId>` on capture.**
+  *Why:* a retried create would otherwise open a *second* order the buyer could pay twice; PayPal's
+  own idempotency replays the original response instead.
+- **The client capture and the `PAYMENT.CAPTURE.COMPLETED` webhook are one code path**
+  (`settleCapture`, `src/lib/paypal/settlement.ts`), called with the same `reference_type='payment'`
+  / `reference_id = payments.id`. *Why:* the spec's requirement is that a webhook racing or
+  following a client capture is a **no-op via the existing `(type, reference_id)` unique index**
+  (§4.4), not a special case — so there is no second idempotency mechanism, no "was this already
+  captured" flag, and no ordering assumption between the two. Whichever arrives first credits;
+  the other gets `DuplicateLedgerReferenceError` and returns `already_credited`.
+- **The ledger append runs inside a SAVEPOINT (a Drizzle nested transaction).** *Why:* in Postgres a
+  unique violation **aborts the whole transaction** — every later statement raises `25P02`. Catching
+  `DuplicateLedgerReferenceError` at the top level would therefore roll the `payments.status =
+  captured` update back along with the rejected append, and the second capture path would silently
+  undo the first one's bookkeeping. *How to apply:* `PaymentStore.savepoint()` wraps the append;
+  `ROLLBACK TO SAVEPOINT` unwinds only it and leaves the outer transaction usable. The in-memory
+  test ledger models the aborted-transaction state precisely so this is a real assertion, not a
+  comment.
+- **Settlement is storage-agnostic (`settlement.ts` pure, `fulfilment.ts` the Drizzle adapter)** —
+  the same split as `LedgerExecutor` in Phase 4 Part 2, and for the same reason: the pooler + CI have
+  no live Postgres, so "credits exactly once across a client/webhook race" has to be testable
+  against an in-memory `PaymentStore`. The shipped function is the one under test, not a copy.
+- **The payments row is taken `SELECT … FOR UPDATE` before anything else in settlement**, so a
+  concurrent capture and webhook serialize on it instead of interleaving. It is matched by
+  `provider_order_id` first, falling back to `provider_capture_id` — `PAYMENT.CAPTURE.REFUNDED`
+  carries a *refund* resource, so `resource.id` is the refund id and the capture must come from
+  `supplementary_data.related_ids`.
+- **A late `COMPLETED` does not resurrect a refunded payment.** The status update is skipped when the
+  row is already `refunded`; the credit stays guarded by the unique index regardless.
+- **`DENIED` → `failed`, `REFUNDED` → `refunded`, and neither touches the wallet.** *Why:* a denied
+  capture never credited, and clawing credits back on a refund is an **admin** action (§18 item 4 —
+  no automatic refunds), not something a webhook does silently behind a student who may have already
+  spent them. A refund that should reverse credits is `/admin/payments` work (Part 2).
+- **Unverified webhook → 400 before any lookup or write; unset `PAYPAL_WEBHOOK_ID` → 503.** *Why:*
+  the signature is the *only* authorization on that route (the caller is PayPal, not a session), and
+  a forged `PAYMENT.CAPTURE.COMPLETED` mints free credits — so verification precedes everything. The
+  503 is a deliberate split from the spec'd 400: a **misconfigured server** should have the delivery
+  retried once configured, not permanently discarded, which a 4xx would cause. *How to apply:*
+  `PAYPAL_WEBHOOK_ID` is still blank in `.env.local`; it is filled in after registering the webhook
+  in the PayPal dashboard (RUNBOOK), and until then the route 503s every delivery.
+- **Verified-but-unhandled events return 200**, including event types we don't handle and orders we
+  have no record of. *Why:* both are final — a retry cannot change the outcome — and leaving PayPal
+  to redeliver forever hides real failures.
+- **The webhook handler is pure and dependency-injected** (`handlePayPalWebhook(rawBody, headers,
+  deps)`); the route file is a ten-line adapter. *Why:* the whole decision table — reject unverified,
+  credit only on COMPLETED, status-only on DENIED/REFUNDED — is then unit-testable without a running
+  Next server, PayPal credentials, or Postgres. The raw body is read with `request.text()` and parsed
+  here, because the signature covers those exact bytes.
+- **New route-handler guards (`src/lib/auth/api-guards.ts`).** *Why:* the existing guards
+  `redirect()`, which is right for a page but useless to a `fetch` caller — a 307 to /login is not
+  something the client can act on. *How to apply:* `requireApiRole`/`requireApiUser` throw a typed
+  `ApiAuthError` the route maps to a JSON status. Ownership on the capture route is checked against
+  `payments.user_id` **before PayPal is called**, and a payment belonging to someone else 404s rather
+  than 403s so the route can't be used to probe order ids.
+- **Buying credits requires `role = 'student'` and a verified email.** *Why:* one account, one role
+  (§18 item 13) — a tutor earns credits, never buys them — and credits are only spendable on
+  bookings, which require a verified email (§7.1). Verifying *before* taking money beats leaving a
+  paid-up student unable to book. Both are one-line reversals if the product decision changes.
+- **`credit_packages` parsing drops malformed rows** (`parseCreditPackages`). *Why:* the key is
+  admin-editable, and a half-saved row must never reach PayPal as a `$0` or `NaN` order. A dropped
+  row means its id is unknown, which fails loud in the route; `getCreditPackages()` falls back to the
+  seeded tiers only when *every* row is unusable.
+- **Package ids are matched exactly** — no trimming, casing, or prefix matching — so `"starter "`
+  is an error rather than a guess about which tier the buyer meant.
+
+**Not tested against live PayPal.** The unit tests cover package lookup, the client/webhook
+double-capture race, signature rejection, and DENIED/REFUNDED; none of them talk to PayPal. Sandbox
+end-to-end and the single real-card transaction remain RUNBOOK items (§15, and the §7.6 Port Harcourt
+constraint), and `/admin/payments` — the view built specifically to debug that one transaction — is
+Part 2.
+
+**Live integration smoke (self-rolling-back).** As in Phase 4 Part 2, and for the same reason — this
+is the money path and the unit tests use in-memory storage — a throwaway script ran the real
+`settleCapture` / `markStatus` against dev Postgres (session pooler) inside a transaction it then
+aborted; nothing persisted. It confirmed, against actual Postgres rather than a model: the
+`SELECT … FOR UPDATE` on `payments`, `credited` → `already_credited` on a replay with **one** ledger
+row and the balance moved once, `payments.status = captured` **surviving** the duplicate-key
+rejection (the SAVEPOINT doing its job — this is the assertion the whole design turns on), a late
+COMPLETED leaving a refunded row refunded, and the refund path not clawing credits back. The script
+had to rebuild the `PaymentStore` adapter rather than import it: `server-only` is resolved by Next's
+bundler and is not an installed package, so no `tsx` script can import a module that declares it —
+which is also why every unit test here drives the pure `settlement.ts`/`webhook.ts` modules and not
+the route files.
