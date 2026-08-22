@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-22)
 
-**Phases 0–5 are complete and merged to `main`. Phase 6 Part 1 is on a branch, PR open.**
+**Phases 0–5 and Phase 6 Part 1 are complete and merged to `main`.**
 
 - **Phase 0** — foundation scaffold (PR #1, `56cc101`).
 - **Phase 1** — data layer: 21 tables + 16 enums, 7 migrations, RLS, `live_tutors` /
@@ -70,8 +70,8 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   consumed by `db/queries/wallet.ts`; `credit_transactions` reverted to INSERT-only, with the
   in-memory ledger fake now freezing rows and throwing on any attempted rewrite so the invariant
   fails loudly in tests if ever reintroduced. **Merged via PR #13 (`003b992`).**
-- **Phase 6 Part 1 — presence + migration `0014`** — branch `phase-6-part-1-presence`, **PR open,
-  not merged**. See "What Phase 6 Part 1 built" below.
+- **Phase 6 Part 1 — presence + migration `0014`.** **Merged via PR #16 (`7b84841`).** See "What
+  Phase 6 Part 1 built" below.
 
 ## What Phase 6 Part 1 built
 
@@ -110,40 +110,24 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
 - **Docs in the same commit** — SPEC §3.5, §4.1, §4.3, §4.4, §7.4, §7.5, §12, §15; DECISIONS gained
   a Part 1 section; RUNBOOK gained `CRON_SECRET` and the pg_cron setup step.
 
-### Phase 6 Part 1 — open items
+### Phase 6 Part 1 — shipped state
 
-- **Migration `0014` is NOT YET APPLIED to the database** at the time of writing — see the warning
-  under "Env / toolchain gotchas". Applying it breaks the currently-deployed build until this PR
-  merges and redeploys.
-- **The E2E is not in CI, and has not yet completed a full local run.** It needs a running app and
-  a seeded database, and the only Supabase project that exists is shared with production, so running
-  it in CI would mutate live rows. Wiring it up waits on a disposable test project. SPEC §15 amended
-  to say so rather than implying it runs.
-  - *Local attempt, 2026-08-22:* it got as far as sign-in and stopped there — Supabase Auth returned
-    a failure over an intermittent link from this machine. Nothing about presence was reached. Two
-    things came out of the attempt and are fixed in the same commit: the test matched the tutor by
-    **display name** ("Tom Turner"), which never appears — the seeded `display_name` is `Tom`, so
-    every assertion would silently have been false; it now matches the **profile link/slug**. And
-    `signIn()` waited on the URL alone, so a rejected login burned the whole 5-minute timeout and
-    reported only "waiting for navigation"; it now races the error alert and fails in seconds with
-    the reason. Note `login()` returns "Invalid email or password" for bad credentials **and** for
-    an unreachable Supabase — deliberate anti-enumeration (§7.1) — so that message never means only
-    one thing.
-  - *What was verified instead:* the assertion the test exists to make was confirmed directly
-    against the running app — tutor `is_live = true` with a fresh `last_seen_at` is listed on
-    `/?live=1`; ageing `last_seen_at` one second past the threshold removes them from the page while
-    `is_live` **stays true** and **no sweep runs**. That is the §3.1 claim — the view alone does the
-    whole job — proven end to end through the real HTTP render, with no beacon in the picture.
-  - *Running it locally:* `pnpm db:seed`, start the dev server, then
-    `E2E_BASE_URL=http://localhost:3000 pnpm test:e2e`. Add `E2E_CHANNEL=chrome` on machines where
-    `playwright install` cannot reach the CDN (a VPN client blocks it here).
+**Migration `0014` is APPLIED** to the shared Supabase project (`mipnoxlhurdbaahmvhhx`) — 15
+migrations recorded in the `drizzle.__drizzle_migrations` journal. Both `DO`-block guards passed
+silently (both tables were still empty, as the pre-flight counts predicted). Post-conditions checked
+directly against the live database: `session_requests.duration_minutes`/`price_credits` exist,
+`NOT NULL`, no default; `session_request_status` has `failed_payment`; `credit_transaction_type` is
+down to the 8 non-instant values with no leftover `_old` type; `tutor_profiles.instant_rate_credits_per_minute`
+is gone; `live_tutors` is recreated without that column and keeps its 2-minute threshold,
+`approval_status` filter, and `anon`/`authenticated` grants; `credit_tx_ref_unique` survived the enum
+swap; the Phase 1 `tutor_presence_guard` trigger is untouched. **Production smoke-tested green**
+after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
+
 - **Only the deliberate toggle-off clears `is_live` immediately.** Leaving `/tutor` — by link, tab
   close, or losing the connection — stops the heartbeat and lets the `live_tutors` view age the
-  tutor out within the staleness window. This is the shape after the beacon removal; the earlier
-  revision's reload false-positive is gone. See DECISIONS and SPEC §7.5.
-- **`tests/unit/pending-payment-slots.test.ts` is slow (~10s) and times out under load** on the
-  5-second default when the whole suite runs in one process. Pre-existing, unrelated to Part 1; it
-  passes on its own. Worth a `testTimeout` bump on that file.
+  tutor out within the staleness window. This is the shape after the same-PR beacon removal (see
+  DECISIONS' "Same-PR revision" and SPEC §7.5, both already correct on `main`); there is no reload
+  false-positive because there is no `pagehide` handler at all.
 
 ## What Phase 3 built
 
@@ -197,6 +181,26 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
 - **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
   `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
   `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
+- **Phase 6 Part 1's E2E (`tests/e2e/presence-ungraceful-exit.spec.ts`) needs a disposable seeded
+  database before it can be trusted as a CI gate.** `pnpm db:seed` writes to the project that also
+  serves production, so the spec cannot be run green locally as things stand — the only local
+  attempt (2026-08-22) stopped at sign-in when Supabase Auth was unreachable over this machine's
+  link, before reaching any presence assertion. Two real bugs in the spec were found and fixed in
+  PR #16 anyway: it matched the tutor by **display name** ("Tom Turner"), which never appears — the
+  seeded `display_name` is `Tom` — so every assertion would have **silently passed as false**
+  without ever exercising the intended path; and `signIn()` waited on the URL alone, so a rejected
+  login burned the whole 5-minute timeout before reporting only "waiting for navigation" instead of
+  the real cause. This is now the **second** item blocked on the shared-project problem (the first
+  is `db:verify-rls`, which already runs locally only for the same reason).
+- **`CRON_SECRET` is unset in Vercel, so `/api/cron/sweep-presence` fail-closes with `503`.** Not
+  urgent — the sweep is tidy-up, not correctness; the `live_tutors` view is what protects students
+  at read time (§3.1) whether or not the sweep ever runs. Two steps close it: set `CRON_SECRET` in
+  **both** Vercel and local `.env.local` (two independent stores, per the PayPal precedent in
+  RUNBOOK), then run `drizzle/snippets/pg_cron_sweep_presence.sql` once with the **same** value in
+  the `cron_secret` Vault entry.
+- **`tests/unit/pending-payment-slots.test.ts` is slow (~10s) and can time out on the 5-second
+  default when the whole suite runs in one process under load.** Unrelated to Phase 6. Worth a
+  `testTimeout` bump on that file.
 - **Approval and rejection emails are `TODO(Phase 10)` hooks — nothing is sent.** The hooks are
   marked in `src/actions/admin-tutors.ts`; Resend wires in Phase 10.
 - **Tutor profile diff view not built.** The admin "Edited since review" tab flags the profile and
@@ -244,13 +248,6 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
   separate prod database — every deploy reads/writes the same project the local seed and
   `db:verify-rls` run against. Provisioning a real prod project is unstarted; until then, treat
   anything in that project as live data, not disposable fixtures.
-- ⚠️ **Applying migration `0014` breaks the currently-deployed build until this PR merges.** Because
-  prod and dev share one database, dropping `tutor_profiles.instant_rate_credits_per_minute` breaks
-  any deployed code whose Drizzle schema still lists it — specifically `getOwnTutorProfile()`
-  (`db/queries/tutor-profile.ts`), which uses a bare `.select()` and so names every column in the
-  schema. `/tutor/profile` will 500 for the window between `pnpm db:migrate` and the redeploy.
-  **Order the cutover: merge the PR, let Vercel deploy, then run `pnpm db:migrate`** — or accept a
-  short outage on that one page. This is a property of the shared-project setup, not of `0014`.
 - Seed login password for all seeded users: `Password123!` (`student1@nowtutors.dev`,
   `tutor1@nowtutors.dev`, `admin@nowtutors.dev`).
 - **Run the local gates before pushing**: `pnpm typecheck && pnpm lint && pnpm test && pnpm build &&
