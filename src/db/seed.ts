@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { sessionPoolerUrl } from "./session-url";
 import { splitEarnings } from "../lib/credits/fees";
 import { sessionPriceCredits } from "../lib/credits/pricing";
+import { PLATFORM_SETTINGS } from "./platform-settings-defaults";
 
 // DEV seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
@@ -71,32 +72,9 @@ const SUBJECTS = SUBJECT_NAMES.map((name, i) => ({
 const slugOf = Object.fromEntries(SUBJECTS.map((s) => [s.name, s.slug]));
 
 // Resolved values from SPEC §18 (2026-08-20). All live in platform_settings so retuning is a
-// settings change, not a rebuild. Keys removed by §18 (credit_usd_rate, min_withdrawal_credits,
-// cancellation_window_hours, max_instant_minutes, min_instant_credits) are intentionally gone —
-// see docs/DECISIONS.md.
-const SETTINGS: { key: string; value: unknown; description: string }[] = [
-  { key: "platform_fee_percent", value: 25, description: "platform fee on earnings; tutor keeps 75% (§18)" },
-  { key: "earnings_hold_hours", value: 48, description: "hold before earnings become available (§18)" },
-  { key: "instant_request_ttl_seconds", value: 60, description: "instant-request accept window" },
-  { key: "min_withdrawal_usd", value: 30, description: "minimum withdrawal in USD; enforced server-side (§18)" },
-  { key: "min_booking_notice_minutes", value: 120, description: "min notice before a slot (existing default, kept)" },
-  { key: "max_booking_days_ahead", value: 7, description: "how far ahead students can book (§18)" },
-  { key: "session_durations", value: [30, 60, 90], description: "fixed duration menu, not tutor-configurable (§18)" },
-  { key: "cancellation_enabled", value: false, description: "no user cancel path; admin force-cancel only (§7.3, §18)" },
-  {
-    // Real Bubble tiers. No "minutes" column: credits are a purchased currency, not a
-    // unit of time (credits-are-money amendment) — see docs/DECISIONS.md.
-    key: "credit_packages",
-    value: [
-      { id: "starter", name: "Starter", credits: 5, price_usd: 9.99 },
-      { id: "standard", name: "Standard", credits: 15, price_usd: 24.99 },
-      { id: "popular", name: "Popular", credits: 30, price_usd: 39.99 },
-      { id: "pro", name: "Pro", credits: 60, price_usd: 67.99 },
-      { id: "premium", name: "Premium", credits: 100, price_usd: 97.99 },
-    ],
-    description: "buyable credit packages: credits + USD price (no minutes column — §18/DECISIONS)",
-  },
-];
+// settings change, not a rebuild. The canonical set lives in ./platform-settings-defaults so the
+// seed and the DB-independent unit tests read one source of truth (see docs/DECISIONS.md).
+const SETTINGS = PLATFORM_SETTINGS;
 
 type SeedUser = {
   key: string;

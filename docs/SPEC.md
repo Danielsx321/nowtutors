@@ -256,6 +256,15 @@ Stored in the **tutor's** timezone (`tutor_profiles.user_id → profiles.timezon
 
 Bookable slots are computed, not stored: expand rules for the requested date range, subtract exceptions, subtract existing bookings, subtract slots starting less than `min_booking_notice_minutes` from now.
 
+**Slot computation semantics (Phase 4 Part 1 — pinned in `docs/DECISIONS.md`).** The pure function is `src/lib/availability/compute-slots.ts`; it takes plain data (rules, exceptions, bookings, a date range, tutor + viewer time zones, `now`, and the two cutoffs) and returns bookable slots as UTC instants. No DB access, so it is unit-testable per §15.
+
+- **Slot = a discrete candidate start on a fixed grid.** A slot is bookable iff `[start, start + slot_duration)` fits entirely inside one of that tutor-local day's availability windows. Candidate starts step from each window's own start by `slot_step` (defaults: duration 60 min, step 30 min); the booking flow (Part 2) calls the function once per offered duration (30/60/90). Duration and step are function parameters, not columns.
+- **Date range is read in the *viewer's* time zone** (the student browses their own calendar, §7.3); rules/exceptions are expanded per *tutor-local* calendar date and converted to UTC, so a DST transition in the tutor's zone moves the UTC instant of a fixed wall-clock slot without moving the wall clock the tutor set.
+- **Exceptions:** `is_available = false` blocks the whole tutor-local day (any times ignored) and overrides all rules; `is_available = true` **with both times set** is a partial-day override window that *replaces* that day's rules (multiple such rows union); `is_available = true` with null times is a no-op (rules still apply).
+- **Existing-booking overlap is half-open** `[start, end)`: back-to-back bookings do not self-conflict, and a slot that begins exactly when a booking ends is bookable (no off-by-one).
+- **Cutoffs, both inclusive:** a slot starting exactly `min_booking_notice_minutes` from `now` is bookable; the horizon is a rolling `now + max_booking_days_ahead × 24h`, and a slot starting exactly at the horizon is bookable.
+- Time-zone conversion uses the runtime IANA/ICU database via `Intl` (DST-correct, no added dependency). Nonexistent spring-forward wall times resolve forward; ambiguous fall-back times resolve to the first (pre-transition) occurrence.
+
 ### 4.3 Bookings
 
 **`bookings`**
