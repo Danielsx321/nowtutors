@@ -613,3 +613,36 @@ with the Bubble build), no schema or behaviour changes. Density (Phase 3) is unt
 Verified at 360px and 1440px. All four changes, the new token, and both SPEC edits (§10.1 token
 table + prose, §10.1 spacing/container paragraph) landed in the same commit as this entry, per the
 CLAUDE.md standing rule.
+
+## Reversal — full-bleed is now the site-wide default, not a browse-only exception
+
+Item 4 above (and the SPEC line it added) said the browse page's full-bleed layout was a one-off,
+scoped to `/`, and that `container-page`'s 1200px max-width stayed the default everywhere else.
+That constraint was **reversed** on the same branch, same PR (#7), before merge: every currently
+built page is now full-bleed, matching `/`, not just the browse page.
+
+**Why.** Once the browse page, header, and footer went full-bleed, every other page sat at 1200px
+centered next to a full-bleed one — the boxed pages now look like the exception rather than the
+rule, and the visual seam is worse than either being consistent. Site-wide full-bleed (with a small
+edge gutter, not a hard max-width) is the intended layout, matching the Bubble build page-for-page,
+not a browse-specific concession to the sidebar-pinned-left layout.
+
+**What changed.** `container-page` was removed from every remaining page-*wrapper* use: `PublicHeader`,
+`PublicFooter` (already full-bleed from item 1/2/4 above), `AppShell`'s content panel (drives
+`/dashboard/favourites`, `/tutor/profile`, `/admin/tutors`), the `(auth)` layout header (drives
+`/login`, `/signup`, `/forgot-password`, `/reset-password`), `/tutors/[slug]`, and
+`/dev/kitchen-sink`. Each was replaced with `w-full` + the same `px-4 md:px-6` gutter already used
+by the header/footer/browse body, not with no gutter at all. `/onboarding` needed no change — it
+was never wrapped in `container-page`; its outer `min-h-screen bg-gray-50 px-4 py-12` was already
+full-bleed with a centered form card inside, which is the pattern this reversal generalizes, not
+one it conflicts with.
+
+**What did NOT change.** `container-page` the `@utility` is untouched in `globals.css` — it's still
+valid CSS, still used by `/suspended` (out of scope for this pass), and stays available for a future
+page that genuinely wants a boxed reading-width. Component-internal max-widths are untouched:
+`/tutor/profile`'s `mx-auto max-w-2xl` and `/onboarding`'s `mx-auto w-full max-w-xl` are a
+form/card choosing its own width, not a page-level box, and SPEC §10.1 now says so explicitly so a
+future reader doesn't try to "fix" those back to full width or `container-page` forward onto them.
+
+SPEC §10.1's spacing/container paragraph was rewritten (not just amended) in the same commit as this
+entry, per the CLAUDE.md standing rule.

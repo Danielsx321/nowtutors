@@ -70,7 +70,7 @@ export default async function TutorProfilePage({
   const canRequestNow = isLiveNow && tutor.acceptsInstant;
 
   return (
-    <div className="container-page py-8">
+    <div className="w-full px-4 py-8 md:px-6">
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
           <Card surface="ink" className="relative overflow-hidden">

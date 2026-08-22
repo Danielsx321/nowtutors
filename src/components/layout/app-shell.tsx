@@ -66,7 +66,7 @@ export function AppShell({
         />
         {/* White content panel inset into the ink frame (§ Bubble parity). */}
         <main className="flex-1 bg-white p-4 md:rounded-tl-lg md:p-5">
-          <div className="container-page px-0">{children}</div>
+          <div className="w-full">{children}</div>
         </main>
       </div>
     </div>
