@@ -45,6 +45,8 @@ environment.
 - [ ] Agora project settings and token-service health check — Phase 6.
 - [ ] Resend domain verification and DNS records — Phase 10.
 - [ ] DNS cutover for nowtutors.com — Phase 10.
+  - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
+    nowtutors.com at it.**
 - [ ] First-admin promotion SQL — Phase 1/8.
 - [ ] Rollback procedure.
 
