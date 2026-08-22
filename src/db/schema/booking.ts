@@ -76,6 +76,13 @@ export const sessionRequests = pgTable(
       .references(() => profiles.id),
     subjectId: uuid("subject_id").references(() => subjects.id),
     message: text("message"),
+    // Both SERVER-AUTHORED at insert and pinned on the row (SPEC §4.3, added in
+    // drizzle/0014): the student picks a duration from the session_durations
+    // menu, the server computes price via sessionPriceCredits(). Pinning means
+    // the accept transaction charges exactly what the student was quoted even if
+    // hourly_rate_credits changes in between. Never read from the client.
+    durationMinutes: integer("duration_minutes").notNull(),
+    priceCredits: integer("price_credits").notNull(),
     status: sessionRequestStatus("status").notNull().default("pending"),
     bookingId: uuid("booking_id").references(() => bookings.id),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

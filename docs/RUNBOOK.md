@@ -8,8 +8,10 @@ environment.
 
 - **Dev Supabase:** project ref `mipnoxlhurdbaahmvhhx` (eu-west-3). Only environment
   in use during Phase 0. No prod project yet.
-- **Deploy target:** Vercel **Hobby**. No `vercel.json` / cron entries yet — scheduled
-  jobs are deferred to Phase 6 and will likely run on Supabase `pg_cron`, not Vercel.
+- **Deploy target:** Vercel **Hobby**. **There is deliberately no `vercel.json`** — Hobby
+  crons run at most **once a day**, which cannot serve a 5-minute presence sweep. Scheduled
+  jobs run on Supabase **`pg_cron` + `pg_net`** instead (settled in Phase 6 Part 1; see
+  SPEC §3.5/§12 and the pg_cron section below).
 
 ## Database connections (important)
 
@@ -55,7 +57,27 @@ environment.
     the production `PAYPAL_WEBHOOK_ID`, and set `PAYPAL_ENV=live` with the live client id/secret.
     No code change — but it is **not** just flipping `PAYPAL_ENV`.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
-- [ ] Agora project settings and token-service health check — Phase 6.
+- [ ] **`CRON_SECRET`** set in Vercel (per environment) **and** in local `.env.local` — Phase 6
+  Part 1. Currently **blank in `.env.local`**, so `/api/cron/sweep-presence` answers **503** locally
+  until it is filled. As with the PayPal vars, Vercel and `.env.local` are unrelated stores: set
+  both. The value must be byte-identical to the `cron_secret` Vault entry used by pg_cron below —
+  a mismatch shows up as a **401** in `net._http_response`, not as a failed job.
+- [ ] **pg_cron + pg_net scheduling for `/api/cron/sweep-presence`** — Phase 6 Part 1. Run
+  `drizzle/snippets/pg_cron_sweep_presence.sql` **once per environment**, as `postgres`, from the
+  Supabase SQL editor (it is not a migration — see the snippet's header for why). Steps:
+  1. `create extension` for `pg_cron` (schema `pg_catalog`) and `pg_net` (schema `extensions`).
+  2. `vault.create_secret` for `app_base_url` (no trailing slash) and `cron_secret`.
+  3. `cron.schedule('sweep-presence', '*/5 * * * *', …)` — the snippet unschedules first, so
+     re-running it updates the job rather than duplicating it.
+  4. Verify: `select jobid, jobname, schedule, active from cron.job;` then, after five minutes,
+     `select status_code, content from net._http_response order by created desc limit 5;` —
+     a healthy run returns `{"ok":true,"job":"sweep-presence","swept":N,…}`. **401** = the Vault
+     secret and Vercel's `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
+  The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
+  (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
+- [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
+  Part 1 built presence only, and the §12 warm-ping to the Render token service is a
+  `TODO(Phase 6 Part 3)` in the sweep handler).
 - [ ] Resend domain verification and DNS records — Phase 10.
 - [ ] DNS cutover for nowtutors.com — Phase 10.
   - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point

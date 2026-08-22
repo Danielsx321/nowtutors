@@ -4,10 +4,11 @@ import type { CreditTransactionType } from "./ledger";
  * Human labels for `credit_transactions.type` (SPEC §4.4), shown in wallet
  * history (§7.10) and `/admin/payments`. Pure and DB-free.
  *
- * The three `instant_*` values are retained in the enum but **unused** — §18
- * made instant billing a single flat `booking_debit`. They are labelled anyway
- * so a historical row (or a hand-written admin adjustment) never renders as a
- * raw enum string in front of a user.
+ * The three `instant_*` labels are gone with the enum values themselves
+ * (drizzle/0014): §18 made instant billing a single flat `booking_debit`, and
+ * the ledger held no rows of those types to orphan. `Record<CreditTransactionType, …>`
+ * means adding an enum value without a label is a typecheck failure, so this map
+ * cannot silently fall behind §4.4 again.
  */
 const LABELS: Record<CreditTransactionType, string> = {
   purchase: "Credit purchase",
@@ -18,9 +19,6 @@ const LABELS: Record<CreditTransactionType, string> = {
   withdrawal_paid: "Withdrawal paid",
   withdrawal_reversed: "Withdrawal reversed",
   admin_adjustment: "Admin adjustment",
-  instant_hold: "Instant session hold",
-  instant_release: "Instant session release",
-  instant_capture: "Instant session charge",
 };
 
 export function creditTransactionLabel(type: CreditTransactionType): string {

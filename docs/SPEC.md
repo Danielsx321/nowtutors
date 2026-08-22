@@ -146,7 +146,7 @@ A cron sweep also exists (Section 12) to tidy the underlying rows, but correctne
 **3.4 Instant session requests are rows, not flags, and are pushed, not polled.**
 `has_live_request` on the user record becomes a `session_requests` table. The tutor's browser holds one Supabase Realtime subscription filtered to their own pending requests. No 10-second polling loop, no duplicated workflows in a header and a page, no two-level-deep condition that won't fire.
 
-**3.5 Scheduled work runs on Vercel Cron.** Declared in `vercel.json`, versioned, idempotent, and impossible to accidentally start twice — which removes the whole class of "self-scheduling workflow started in two environments" failure.
+**3.5 Scheduled work runs on one external scheduler, never on a self-scheduling workflow.** Versioned, idempotent, and impossible to accidentally start twice — which removes the whole class of "self-scheduling workflow started in two environments" failure. **Amended in Phase 6 Part 1:** the scheduler is **Supabase `pg_cron` + `pg_net`**, not Vercel Cron. The deploy target is Vercel **Hobby**, whose crons fire at most **once a day** — useless for a 5-minute presence sweep. There is deliberately no `vercel.json`; see §12.
 
 **3.6 Credits are an append-only ledger.** Balance is never edited in place. Every change is a row. This makes the reconciliation problems that plagued the current build tractable: any balance can be explained by replaying its transactions.
 
@@ -207,7 +207,6 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer **nullable** | unused; instant price uses the same formula as scheduled — `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.4). **Pending removal in migration `0014`** (Phase 6 pre-build decision — neither this column nor a per-minute instant rate exists in the live Bubble app). |
 | accepts_instant | boolean default true |  |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
@@ -223,6 +222,11 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | profile_reviewed_at | timestamptz null | stamped by an admin's "Mark reviewed" action |
 
 Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(hourly_rate_credits)`, GIN on `languages`.
+
+> **`instant_rate_credits_per_minute` DROPPED (migration `0014`, Phase 6 Part 1).** There is no
+> per-minute instant rate: instant and scheduled price off the same `hourly_rate_credits` formula
+> (§7.4), and no such rate exists in the live Bubble app. The `live_tutors` view enumerated this
+> column, so `0014` drops and recreates the view around the column drop.
 
 > **Re-review on material change (added Phase 3, `drizzle/0011`).** When an already-approved tutor edits their profile the edit goes **live immediately** — they stay visible and bookable, and `approval_status` does **not** change. If the edit touches a **material** field the profile is flagged for admin re-review instead. **Material:** `headline`, `about`, subjects (`tutor_subjects`), `hourly_rate_credits`, `intro_video_url`. **Non-material:** avatar, `languages`, `education`, `years_experience`.
 >
@@ -320,13 +324,15 @@ Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, sch
 
 Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this table.
 
-**`duration_minutes` / `price_credits` (pending migration `0014`, Phase 6 Part 1).** The student
+**`duration_minutes` / `price_credits` (shipped in migration `0014`, Phase 6 Part 1).** The student
 picks a duration when sending an instant request; the server computes the price at insert via
 `sessionPriceCredits()` and pins both columns on the request row. Both are integer, `not null`, and
 **server-authored** — never taken from the client — so the accept transaction charges exactly what
 the student was quoted, even if `hourly_rate_credits` or settings change between request and accept.
+`0014` ships **no default** on either column: the table was empty, and a default would quietly cover
+for a caller that forgot to compute them.
 
-**`failed_payment` status (pending migration `0014`, Phase 6 Part 1).** The credit debit runs inside
+**`failed_payment` status (shipped in migration `0014`, Phase 6 Part 1).** The credit debit runs inside
 the tutor's accept transaction. If the student's balance moved between request and accept (e.g.
 spent elsewhere) such that the debit would fail, the whole accept rolls back and the request goes
 terminal as `failed_payment` — not `expired`, not `declined` — so an operator reading this table can
@@ -359,7 +365,7 @@ could be production, that is the bug, not the carve-out.
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: the old instant-session hold, Decision #3 — **now unused**; §18 made instant billing a single flat `booking_debit`, §7.4. **Pending removal in migration `0014`** — Phase 6 pre-build decision, no such model exists in the live Bubble app) |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`. The old instant-session hold's `instant_hold` / `instant_release` / `instant_capture` (Decision #3) were **removed in migration `0014`** — §18 made instant billing a single flat `booking_debit` (§7.4) and no hold model exists in the live Bubble app. Postgres has no `ALTER TYPE ... DROP VALUE`, so `0014` does the rename-create-alter-drop dance by hand, guarded by a check that no row still uses the three values (none did — the ledger is append-only, so rows of a dropped type could not have been rewritten). |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -688,11 +694,11 @@ Rules:
 - A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest.
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
-- **Duration and price are decided at request time, not accept time (Phase 6 pre-build decision; pending migration `0014`).** The student picks a duration from `session_durations` (now **30 / 60 / 90 / 120**, §18 item 1) when sending the request; the server computes `price_credits` via `sessionPriceCredits()` and pins both `duration_minutes` and `price_credits` on the `session_requests` row (§4.3). The accept transaction charges exactly that pinned price — it never re-derives price from the tutor's current `hourly_rate_credits`, so a mid-flight rate change can't move the number the student already saw.
+- **Duration and price are decided at request time, not accept time (Phase 6 pre-build decision; shipped in migration `0014`).** The student picks a duration from `session_durations` (now **30 / 60 / 90 / 120**, §18 item 1) when sending the request; the server computes `price_credits` via `sessionPriceCredits()` and pins both `duration_minutes` and `price_credits` on the `session_requests` row (§4.3). The accept transaction charges exactly that pinned price — it never re-derives price from the tutor's current `hourly_rate_credits`, so a mid-flight rate change can't move the number the student already saw.
 - **Validation is a balance check against the quoted price, not a flat floor.** The old `min_instant_credits` check ("student has >= min_instant_credits") is gone — that setting and `max_instant_minutes` are artifacts of the abandoned hold model and don't exist in the live Bubble app (§4.7). The request-time check is simply: student's balance >= `price_credits` for the chosen duration.
 - **A mid-flight balance failure is a distinct terminal state.** The debit runs inside the tutor's accept transaction, atomic with the booking insert. If the student's balance moved between request and accept such that the pinned-price debit would fail, the whole accept rolls back and the request goes terminal as `failed_payment` (§4.3) — not `expired`, not `declined` — so an operator reading `session_requests` can tell a refusal from a payment failure.
 
-**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` is **pending removal in migration `0014`** (Phase 6 pre-build decision — §4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are likewise **pending removal in migration `0014`**. See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decrements a `credits_remaining` field on a **180-second** client interval, one credit per tick — the withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a units bug; not ported regardless, since elapsed time is computed server-side).
+**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` was **dropped in migration `0014`** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values were likewise **removed in `0014`** (§4.4). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decrements a `credits_remaining` field on a **180-second** client interval, one credit per tick — the withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a units bug; not ported regardless, since elapsed time is computed server-side).
 
 **Ending a session is unchanged from Bubble (Phase 6 pre-build decision).** Credits are charged upfront and **nothing is refunded on early exit by either party** — a student who leaves after 5 minutes of a paid 60-minute session, or a tutor who ends it early, gets no partial credit back. The session **hard-stops when the booked duration elapses**, with **no grace period**. Bubble's mid-session "buy more credits" top-up popup is **not ported**: under flat upfront billing there is nothing to run out of mid-session, so the popup has no equivalent state to attach to.
 
@@ -704,15 +710,16 @@ Rules:
 
 **Heartbeat.** A `usePresence()` hook mounted in the authenticated layout `POST`s to `/api/presence/heartbeat` every 30 seconds while the tab is visible, and once immediately on mount. The route sets `profiles.last_seen_at = now()`, and for tutors also `tutor_profiles.last_seen_at = now()`. Pause on `document.hidden`, resume and fire immediately on visible.
 
-**Going live.** Tutor toggles "Available for instant sessions" on `/tutor`. Sets `is_live = true`, `live_mode = 'instant'`, `last_seen_at = now()`. Toggling off, or navigating away cleanly, sets `is_live = false`.
+**Going live.** Tutor toggles "Available for instant sessions" on `/tutor`. Sets `is_live = true`, `live_mode = 'instant'`, `last_seen_at = now()`. **Toggling off sets `is_live = false` immediately, and is the only thing that does.** Amended in Phase 6 Part 1: this line previously also promised "or navigating away cleanly". Nothing now clears presence on navigation — see the staleness note below for why the `pagehide` beacon that would have implemented it was removed. Leaving the page simply stops the heartbeat, and the tutor ages out of the view within the staleness window like any other departure.
 
 **Ending a session does NOT clear `is_live` (explicit non-behaviour, Phase 6 pre-build decision).** A tutor who finishes an instant session is usually still available for another one; clearing `is_live` on session end would silently drop them off the live list. Presence is owned exclusively by the heartbeat and the staleness sweep cron below — never by session lifecycle. This is called out because a later reader implementing end-session will otherwise assume it's a missing step.
 
-**Staleness — three independent defences:**
+**Staleness — two independent defences** (three until Phase 6 Part 1; see below)**:**
 
 1. **The `live_tutors` view** filters on `last_seen_at` at read time. Students are protected even if everything else fails.
-2. **Cron sweep** every 5 minutes sets `is_live = false`, `live_mode = null` for rows with `last_seen_at < now() - presence_stale_seconds`, and expires their pending session requests.
-3. **`navigator.sendBeacon`** on `pagehide` for the best-effort clean exit.
+2. **Cron sweep** every 5 minutes sets `is_live = false`, `live_mode = null` for every row still flagged `is_live` that the **`live_tutors` view does not return** — and expires their pending session requests. The sweep does **not** carry a threshold of its own: the view already defines what "still live" means (§3.1), so deriving the work set from it is what keeps "the view is the single definition of stale" literally true rather than merely intended. There is no `presence_stale_seconds` setting to disagree with the view — it was deleted in Phase 1 (§4.7, Decision #8), and an earlier draft of this line still described the sweep in terms of it. Because the view also requires `approval_status = 'approved'`, a tutor whose approval is revoked mid-session is swept offline too, which is the correct outcome. Built in Phase 6 Part 1 (`GET /api/cron/sweep-presence`); the request-expiry half arrives with `session_requests`' first writer in Part 2.
+
+**A third defence — `navigator.sendBeacon` on `pagehide`, clearing `is_live` on the way out — was built in Phase 6 Part 1 and then removed before merge. Do not restore it.** `pagehide` cannot distinguish a page reload from a real exit, so it silently dropped a tutor offline every time they refreshed `/tutor`, while their own toggle still read "live" — a false positive with no upside, because §3.1 guarantees no student-facing read depends on that signal in the first place. The view already answers an ungraceful exit correctly at read time, and it cannot mistake a refresh for a departure. Removing the beacon costs no correctness; the only thing it changes is that a departed tutor's underlying row now waits for the staleness window or the sweep, which is exactly what §3.1 says the design must tolerate.
 
 **Never write `is_live = true` without also writing `last_seen_at`.** Enforce with a database trigger: on insert or update where `is_live` is true and `last_seen_at` is null, set `last_seen_at = now()`. This makes the "tutor went live before the heartbeat confirmed, `last_active` is blank" data-corruption case structurally impossible rather than something to clean up manually.
 
@@ -1029,25 +1036,29 @@ All emails carry an unsubscribe link for non-transactional types, and honour a `
 
 ## 12. Scheduled jobs
 
-`vercel.json`:
+**Scheduled by Supabase `pg_cron` + `pg_net`, not `vercel.json` (amended Phase 6 Part 1).** Vercel
+**Hobby** — the deploy target — runs cron jobs at most **once a day**, so a `vercel.json` schedule
+could not honour any of the intervals below. `pg_cron` runs inside the same Postgres project as the
+data and calls each route over `pg_net` with the bearer header, so the routes stay ordinary HTTP
+handlers and nothing about them is Vercel-specific. Setup SQL:
+`drizzle/snippets/pg_cron_sweep_presence.sql`; per-environment steps in `docs/RUNBOOK.md`.
 
-```json
-{
-  "crons": [
-    { "path": "/api/cron/sweep-presence",      "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/expire-requests",     "schedule": "* * * * *" },
-    { "path": "/api/cron/expire-unpaid",       "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/complete-sessions",   "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/release-earnings",    "schedule": "0 * * * *" },
-    { "path": "/api/cron/booking-reminders",   "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/reconcile-wallets",   "schedule": "0 3 * * *" }
-  ]
-}
-```
+| Route | Schedule | Status |
+|---|---|---|
+| `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
+| `/api/cron/expire-requests` | `* * * * *` | Phase 6 Part 2 |
+| `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
+| `/api/cron/complete-sessions` | `*/15 * * * *` | Phase 6 Part 3 |
+| `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
+| `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
+| `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
 
-Every handler: verify `Authorization: Bearer ${CRON_SECRET}`, be idempotent, log a structured summary of what it changed, and return counts. Each is also individually invocable from `/admin/settings` with a "run now" button for debugging.
+Every handler: verify `Authorization: Bearer ${CRON_SECRET}` — and **fail closed with 503 when the
+variable is unset**, so a missing secret can never degrade into "no auth required" — be idempotent,
+log a structured summary of what it changed, and return counts. Each is also individually invocable
+from `/admin/settings` with a "run now" button for debugging.
 
-- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm.
+- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half; broadcasts, request expiry and the Agora warm-ping are marked `TODO(Phase 6 Part 2 / Part 3)` in the handler.
 - **expire-requests** — `session_requests` past `expires_at`.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`, releasing the slot.
 - **complete-sessions** — bookings past `scheduled_end_at + 30m` still `confirmed`/`in_progress` → `completed` (or `no_show_*` if one party never joined), create `tutor_earnings`.
@@ -1133,7 +1144,7 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 **E2E (Playwright), the paths that lose money or trust:**
 1. Student signs up → buys credits (PayPal sandbox) → books a scheduled session → joins the classroom.
 2. Tutor goes live → student requests → tutor accepts → both land in the session → session ends → earnings appear.
-3. Tutor goes live → student requests → **tutor closes the browser** → assert the tutor disappears from `/tutors?live_now=true` within the staleness window and the request expires. *This is the regression test for the original bug. It runs in CI.*
+3. Tutor goes live → student requests → **tutor closes the browser** → assert the tutor disappears from the Live-now list (`/tutors?live=1` — the browse filter's actual parameter) within the staleness window **without the sweep running**, and the request expires. *This is the regression test for the original bug.* The presence half is built in Phase 6 Part 1 (`tests/e2e/presence-ungraceful-exit.spec.ts`); the request-expiry half is stubbed `test.fixme` until `session_requests` has a writer in Part 2. **Not yet in CI** — it needs a disposable seeded database, and the only Supabase project that exists is shared with production (PROGRESS.md).
 4. Tutor requests withdrawal → admin marks paid → balances reconcile.
 5. Student cancels inside and outside the free window → correct refund in both cases.
 
