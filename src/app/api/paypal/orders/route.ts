@@ -16,6 +16,11 @@ import {
 } from "@/lib/credits/packages";
 import { createPayPalOrder } from "@/lib/paypal/orders";
 import { PayPalApiError, PayPalConfigError } from "@/lib/paypal/client";
+import {
+  PAYPAL_UNAVAILABLE_BODY,
+  PAYPAL_UNAVAILABLE_STATUS,
+  withPayPalConfigBoundary,
+} from "@/lib/paypal/config-boundary";
 
 /**
  * `POST /api/paypal/orders` — open a PayPal order for a credit purchase
@@ -40,6 +45,20 @@ const bodySchema = z.object({
 const CURRENCY = "USD";
 
 export async function POST(request: Request) {
+  // Adapter-level config boundary: a missing credential is a 503, never an
+  // uncaught 500. The inner PayPalConfigError branch below still marks the
+  // payment row failed first; this is the backstop for every other path.
+  return withPayPalConfigBoundary(
+    "POST /api/paypal/orders",
+    () => createOrder(request),
+    () =>
+      NextResponse.json(PAYPAL_UNAVAILABLE_BODY, {
+        status: PAYPAL_UNAVAILABLE_STATUS,
+      }),
+  );
+}
+
+async function createOrder(request: Request) {
   let user;
   try {
     user = await requireApiRole("student");
