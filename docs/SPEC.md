@@ -591,6 +591,18 @@ Pagination: cursor-based, 24 per page.
 5. Slot is held for the duration of `pending_payment` (the overlap constraint counts `pending_payment` as occupying).
 6. On confirm: email both parties, in-app notification to tutor, calendar `.ics` attachment.
 
+> **Part 2 implementation (Phase 4, `phase-4-part2-booking-flow`).** The credits path is built by
+> `createScheduledBooking` (`src/actions/bookings.ts`); PayPal (step 4b) is Phase 5. The action
+> trusts the client for **nothing** (SPEC §5): it re-derives the price with `sessionPriceCredits`,
+> re-validates the requested slot server-side via the same pure `computeSlots` the calendar used
+> (`isSlotOpen`, shared 30-min grid `SLOT_STEP_MINUTES`), and confirms the tutor is approved and
+> teaches the subject. It inserts the booking **then** debits in **one** transaction, so an
+> insufficient balance rolls back the booking and a debit can't outlive a rejected insert; the
+> `bookings_no_overlap` GiST exclusion (§4.3) is the last-writer backstop for a slot won between
+> re-validation and insert, surfaced as a clean "just booked" error. **Email/notification/.ics
+> (step 6) are deferred to Phase 10** — the booking is created and debited, but nothing is emailed
+> yet. See `docs/DECISIONS.md`.
+
 **Joining:** the join button on `/dashboard/bookings/[id]` becomes active 10 minutes before `scheduled_start_at` and stays active until 30 minutes after `scheduled_end_at`. It calls `/api/lessonspace/join` (7.7) and navigates to `/classroom/[bookingId]`.
 
 **Cancellation:** there is **no cancellation path for either party** — neither student nor tutor can cancel a booking, and there are **no refunds** on the normal path (`cancellation_enabled = false`, §18). The **only** unwind is an **admin force-cancel with refund** in `/admin/bookings` (full credit refund via the ledger). The booking-status values `cancelled_by_student` / `cancelled_by_tutor` / `no_show_student` / `no_show_tutor` are **retained in the enum but are admin- or cron-set only, never user-set**.

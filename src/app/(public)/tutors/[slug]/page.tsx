@@ -1,8 +1,17 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { GraduationCap, Globe, Languages as LanguagesIcon, CalendarClock } from "lucide-react";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { profiles } from "@/db/schema";
 import { getTutorBySlug, getTutorSubjects } from "@/db/queries/tutor-profile";
+import {
+  getBookableSubjects,
+  getPublicBookingCalendar,
+  getWalletBalance,
+} from "@/db/queries/bookings";
 import { getViewer } from "@/lib/auth/guards";
+import { BookingWidget, type BookingMode } from "@/components/features/booking/booking-widget";
 import { Avatar } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { PriceTag } from "@/components/ui/price-tag";
@@ -58,7 +67,31 @@ export default async function TutorProfilePage({
   const tutor = await getTutorBySlug(slug, { viewerId: viewer?.userId ?? null });
   if (!tutor) notFound();
 
-  const subjects = await getTutorSubjects(tutor.userId);
+  const isStudentViewer = viewer?.role === "student";
+  const [subjects, calendar, bookableSubjects, viewerProfile, walletBalance] =
+    await Promise.all([
+      getTutorSubjects(tutor.userId),
+      getPublicBookingCalendar(tutor.userId),
+      getBookableSubjects(tutor.userId),
+      viewer
+        ? db
+            .select({ timezone: profiles.timezone })
+            .from(profiles)
+            .where(eq(profiles.id, viewer.userId))
+            .limit(1)
+        : Promise.resolve([]),
+      isStudentViewer ? getWalletBalance(viewer.userId) : Promise.resolve(0),
+    ]);
+
+  const bookingMode: BookingMode = !viewer
+    ? "anon"
+    : viewer.userId === tutor.userId
+      ? "self"
+      : viewer.role === "student"
+        ? "student"
+        : "tutor";
+  // Render slots in the student's saved timezone, then the tutor's for reference.
+  const viewerTimeZone = viewerProfile[0]?.timezone ?? calendar?.tutorTimeZone ?? "UTC";
 
   const favouriteMode: FavouriteMode = !viewer
     ? "anon"
@@ -195,13 +228,32 @@ export default async function TutorProfilePage({
                   Request now
                 </Button>
               )}
-              {/* Availability calendar + "Book a session" are Phase 4 (§7.3).
-                  A visible placeholder is used rather than a dead button so the
-                  page reads as complete without implying a working flow. */}
-              <Alert variant="info">
-                Booking opens soon — the availability calendar and “Book a
-                session” arrive with scheduled bookings.
-              </Alert>
+            </CardContent>
+          </Card>
+
+          {/* Scheduled booking (SPEC §7.3). Slots computed server-side, rendered
+              in the student's timezone; the action re-validates + re-prices. */}
+          <Card>
+            <CardContent className="space-y-4 p-6">
+              <h2 className="text-h3 font-bold text-gray-700">Book a session</h2>
+              {calendar ? (
+                <BookingWidget
+                  tutorId={tutor.userId}
+                  hourlyRateCredits={calendar.hourlyRateCredits}
+                  durations={calendar.durations}
+                  slotsByDuration={calendar.slotsByDuration}
+                  subjects={bookableSubjects}
+                  mode={bookingMode}
+                  viewerTimeZone={viewerTimeZone}
+                  tutorTimeZone={calendar.tutorTimeZone}
+                  walletBalance={walletBalance}
+                  loginHref={`/login?next=/tutors/${slug}`}
+                />
+              ) : (
+                <Alert variant="info">
+                  This tutor hasn’t opened any availability yet.
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </aside>
