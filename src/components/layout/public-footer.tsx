@@ -32,7 +32,7 @@ const columns: { heading: string; links: { label: string; href: string }[] }[] =
 export function PublicFooter() {
   return (
     <footer className="border-t border-ink-700 bg-ink-1000">
-      <div className="container-page grid gap-8 py-12 sm:grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-8 px-4 py-12 sm:grid-cols-2 md:grid-cols-4 md:px-6">
         <div className="space-y-3">
           <p className="text-h3 font-bold text-white">
             Now<span className="text-gold-400">Tutors</span>
@@ -62,7 +62,7 @@ export function PublicFooter() {
         ))}
       </div>
       <div className="border-t border-ink-700">
-        <div className="container-page flex flex-col items-center justify-between gap-2 py-4 text-caption text-white sm:flex-row">
+        <div className="flex flex-col items-center justify-between gap-2 px-4 py-4 text-caption text-white sm:flex-row md:px-6">
           <p>© {new Date().getFullYear()} NowTutors. All rights reserved.</p>
           <p>Made for learners everywhere.</p>
         </div>
