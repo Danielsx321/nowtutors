@@ -50,6 +50,13 @@ export async function touchPresence(
  * not block going live. That collision is enforced at **accept** (Phase 6 Part
  * 2, SPEC §7.4) — blocking here would take a tutor off the live list for a
  * booking they may well finish before anyone requests them.
+ *
+ * `live = false` here is the ONLY path that clears `is_live` immediately, and it
+ * only ever runs from the tutor's own deliberate toggle-off. Nothing clears
+ * presence on page unload: `pagehide` cannot tell a reload from an exit, so the
+ * beacon that used to do it was removed (docs/DECISIONS.md). An ungraceful exit
+ * is answered by the `live_tutors` view at read time (§3.1) and tidied by the
+ * sweep — neither of which can mistake a refresh for a departure.
  */
 export async function setTutorLive(
   userId: string,
@@ -83,26 +90,6 @@ export async function getTutorLiveState(
     .where(eq(tutorProfiles.userId, userId))
     .limit(1);
   return row ?? null;
-}
-
-/**
- * Clean-exit signal (`navigator.sendBeacon` on `pagehide`, SPEC §7.5 defence 3).
- *
- * Note what this does NOT do: it does not bump `last_seen_at`. A "final
- * heartbeat" on the way out would extend the tutor's liveness by the full
- * staleness window at the exact moment they left — backwards from the point of
- * the defence, which is to remove them *sooner* than the view would.
- *
- * Scoped to `is_live = true` so an exit beacon from a tutor who was never live
- * writes nothing at all.
- */
-export async function clearTutorLiveOnExit(userId: string): Promise<boolean> {
-  const cleared = await db
-    .update(tutorProfiles)
-    .set({ isLive: false, liveMode: null })
-    .where(and(eq(tutorProfiles.userId, userId), eq(tutorProfiles.isLive, true)))
-    .returning({ userId: tutorProfiles.userId });
-  return cleared.length > 0;
 }
 
 /**

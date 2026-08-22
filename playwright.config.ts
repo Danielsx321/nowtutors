@@ -10,6 +10,11 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Locally: `pnpm db:seed`, then `pnpm test:e2e`. Set `E2E_BASE_URL` to point at a
  * deployment instead of the dev server.
+ *
+ * `E2E_CHANNEL=chrome` runs against an installed system browser instead of
+ * Playwright's bundled Chromium — the escape hatch for machines where
+ * `playwright install` cannot reach the CDN (a VPN client on this one). Unset in
+ * CI, which should use the pinned bundled build.
  */
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -26,7 +31,15 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.E2E_CHANNEL ? { channel: process.env.E2E_CHANNEL } : {}),
+      },
+    },
+  ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {

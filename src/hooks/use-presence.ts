@@ -11,17 +11,20 @@ import * as React from "react";
  *   - fire once immediately on mount;
  *   - every 30s **while the tab is visible**;
  *   - pause on `document.hidden`, and fire immediately again on visible (rather
- *     than waiting out the remainder of an interval the user can't see);
- *   - `navigator.sendBeacon` on `pagehide` for the clean-exit path.
+ *     than waiting out the remainder of an interval the user can't see).
  *
  * This interval is the ONE exception to CLAUDE.md's "no setInterval polling
  * anywhere" rule, and it is named there as such. It carries no data and reads
  * nothing back — everything else that would have polled uses Realtime.
  *
- * The `exit` beacon is a departure signal, not a last heartbeat: it clears a
- * tutor's `is_live` and leaves `last_seen_at` alone. Sending a heartbeat on the
- * way out would keep a departed tutor on the live list for the full staleness
- * window, which is the opposite of what defence 3 is for.
+ * **There is deliberately no `pagehide` / `sendBeacon` handler.** An earlier
+ * revision fired one to clear a departing tutor's `is_live`. It was removed
+ * because `pagehide` cannot tell a reload from a real exit: a tutor who
+ * refreshed `/tutor` was silently dropped offline while the toggle still read
+ * "live" to them. Ungraceful exit is already handled at read time by the
+ * `live_tutors` view (§3.1) and tidied by the sweep cron (§7.5, §12), so the
+ * beacon bought no correctness — only that false positive. Deliberate
+ * toggle-off remains immediate and explicit (`actions/presence.ts`).
  */
 
 const HEARTBEAT_URL = "/api/presence/heartbeat";
@@ -36,8 +39,6 @@ export function usePresence(): void {
       if (cancelled || document.hidden) return;
       void fetch(HEARTBEAT_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "heartbeat" }),
         keepalive: true,
         // Presence is best-effort: a failed beat is corrected by the next one,
         // and by the view/sweep if there is no next one. Never surface it.
@@ -64,40 +65,15 @@ export function usePresence(): void {
       startTimer();
     };
 
-    const onPageHide = () => {
-      stopTimer();
-      const payload = JSON.stringify({ event: "exit" });
-      // sendBeacon cannot set headers; the route sniffs the body, not the type.
-      const sent =
-        typeof navigator !== "undefined" &&
-        typeof navigator.sendBeacon === "function" &&
-        navigator.sendBeacon(
-          HEARTBEAT_URL,
-          new Blob([payload], { type: "application/json" }),
-        );
-      if (!sent) {
-        // No sendBeacon (or it refused the payload): keepalive fetch is the
-        // fallback. If both fail the sweep and the view still cover it.
-        void fetch(HEARTBEAT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: payload,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    };
-
     beat();
     if (!document.hidden) startTimer();
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("pagehide", onPageHide);
 
     return () => {
       cancelled = true;
       stopTimer();
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("pagehide", onPageHide);
     };
   }, []);
 }

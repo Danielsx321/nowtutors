@@ -1184,22 +1184,15 @@ half-implemented hook into them, it carries a `TODO(Phase 6 Part 2 / Part 3)` in
   committed. Secrets go in Supabase Vault rather than inline in `cron.job.command`, which is
   readable by anyone who can read the catalog. SPEC §3.5 and §12 amended. RUNBOOK carries the steps.
 
-- **The `pagehide` beacon is a DEPARTURE signal, not a final heartbeat.** `POST
-  /api/presence/heartbeat` takes `{ event: 'heartbeat' | 'exit' }`; `exit` clears a live tutor's
-  `is_live` and pointedly does **not** touch `last_seen_at`. *Why:* a "last heartbeat" on the way
-  out would extend the departing tutor's liveness by the full staleness window at the exact moment
-  they left — backwards from the purpose of §7.5's third defence, which is to remove them *sooner*
-  than the view would. *Trade-off accepted:* `pagehide` fires on a full-page reload too, so an
-  approved tutor who hits F5 while live comes back offline and must re-toggle. Next.js client-side
-  navigation does **not** fire it, so moving around the app is safe. SPEC §7.5 is explicit that
-  navigating away cleanly sets `is_live = false`; treating reload as an exception would mean
-  guessing at intent from an event that cannot distinguish the two, and the recovery is one click.
+- **Nothing clears presence on page unload — there is no `pagehide` / `sendBeacon` handler.** The
+  heartbeat does one thing: bump `last_seen_at`. It never writes `is_live` in either direction.
+  `is_live = false` is written by exactly one path, the tutor's own deliberate toggle-off. *Why not
+  a beacon:* see the same-PR revision at the end of this section — an earlier revision had one, and
+  it was removed before merge.
 
-- **The heartbeat route accepts a body precisely because `sendBeacon` cannot set headers — and the
-  body carries no identity.** `requireApiUser()` is the first statement and the user id comes from
-  the session; the payload's only field is the event kind. A malformed or absent body is treated as
-  a plain heartbeat rather than 400ing: beacons are fire-and-forget, and rejecting one would lose
-  presence for no benefit.
+- **The heartbeat route reads nothing from the request body.** `requireApiUser()` is the first
+  statement and the user id comes from the session, so there is no id to spoof; with the beacon gone
+  there is no event kind to send either, and the route ignores any payload entirely.
 
 - **Going live is unrestricted by the tutor's calendar, but not by their approval.** The action
   refuses unapproved, suspended, wrong-role and unverified-email callers (`requireRole('tutor')` +
@@ -1249,3 +1242,40 @@ half-implemented hook into them, it carries a `TODO(Phase 6 Part 2 / Part 3)` in
   still uses one of the three values being removed. Both were verified empty against the live
   project before the migration was written; the guards make that a permanent property of the file
   rather than a fact about one afternoon.
+
+### Same-PR revision — the `sendBeacon` presence-clear was removed before merge
+
+An earlier revision of this PR sent `navigator.sendBeacon` on `pagehide` with `{ event: 'exit' }`,
+and the heartbeat route cleared the departing tutor's `is_live` on receipt — SPEC §7.5's third
+staleness defence, implemented literally. **Removed before merge.**
+
+*Why.* `pagehide` fires on a full-page **reload** exactly as it fires on a real exit, and nothing in
+the event distinguishes them. So a tutor who pressed F5 on `/tutor` while live was silently taken
+off the live list, came back to a page whose toggle still read "live", and had no way to know they
+had stopped receiving requests. That is a worse failure than the one the beacon was defending
+against: it is silent, it is self-inflicted by an ordinary user action, and it makes the toggle lie.
+
+*Why removing it is safe, not a regression.* §3.1 is the whole argument: **no student-facing read
+ever consults `is_live` alone.** Every read goes through `live_tutors`, which filters on
+`last_seen_at` at request time, so an ungraceful exit — killed process, closed laptop, dropped
+connection, or a clean close — is answered correctly by the view whether or not any signal was sent
+on the way out. The beacon was never load-bearing; it only shortened the window in which the
+underlying row was untidy, which is precisely what the sweep cron is for and precisely what §3.1
+says correctness must not depend on. Deleting it removes a false positive and costs nothing that
+a student can observe.
+
+*What was deleted rather than left as a no-op.* With the presence-clear gone the beacon had no
+remaining job. The one other thing it could have sent — a final heartbeat on the way out — is
+actively wrong: it would refresh `last_seen_at` at the exact moment the tutor left, extending their
+liveness by the full staleness window instead of ending it. So the `pagehide`
+listener, the `sendBeacon` call and its keepalive-fetch fallback, the `{ event }` body contract on
+`POST /api/presence/heartbeat`, and `clearTutorLiveOnExit()` in the query layer were all removed
+outright. A no-op beacon left in place would have read as a working defence to the next person.
+
+*What still clears `is_live` immediately:* the tutor's deliberate toggle-off, and nothing else.
+SPEC §7.5's "Going live" paragraph previously also promised "or navigating away cleanly"; that
+clause is now gone from the spec, because with the beacon removed nothing implements it and Next.js
+client-side navigation never fired `pagehide` in the first place. Leaving `/tutor` — by link, by
+tab close, or by pulling the plug — now stops the heartbeat and lets the view age the tutor out.
+SPEC §7.5 records the removal in place of the third defence so a later reader does not restore it as
+an oversight.

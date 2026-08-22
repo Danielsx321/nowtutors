@@ -1,60 +1,33 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { authErrorResponse, requireApiUser } from "@/lib/auth/api-guards";
-import { clearTutorLiveOnExit, touchPresence } from "@/db/queries/presence";
+import { touchPresence } from "@/db/queries/presence";
 
 /**
  * `POST /api/presence/heartbeat` — the presence heartbeat (SPEC §7.5).
  *
  * The caller's identity comes from `requireApiUser()`, which runs as the FIRST
- * statement and reads the session. The body carries an EVENT KIND and nothing
- * else — there is no user id in the payload to spoof, so no request can move
- * another account's presence. (This is the whole reason the route takes a body
- * at all: `navigator.sendBeacon` cannot set headers, so the exit signal has to
- * ride in the payload.)
+ * statement and reads the session. **Nothing is read from the request body** —
+ * there is no user id to spoof and no event kind to send, so no request can move
+ * another account's presence.
  *
- * Two events:
- *   - `heartbeat` (default) — bump `last_seen_at`. Fired on mount and every 30s
- *     while the tab is visible.
- *   - `exit` — the `pagehide` beacon (§7.5 defence 3). Clears `is_live` for a
- *     live tutor and deliberately does NOT bump `last_seen_at`; see
- *     `clearTutorLiveOnExit`.
+ * One job: bump `last_seen_at` (and `tutor_profiles.last_seen_at` for tutors).
+ * It does not touch `is_live` in either direction. Going live is the explicit
+ * toggle (`actions/presence.ts`); going offline is that toggle or the sweep.
  *
- * A malformed or absent body is treated as a plain heartbeat rather than a 400:
- * beacons are fire-and-forget and a rejected one would silently lose presence
- * for no benefit.
+ * An earlier revision also accepted `{ event: 'exit' }` from a `pagehide`
+ * `sendBeacon` to clear a departing tutor's `is_live`. That path is gone: see
+ * `hooks/use-presence.ts` and docs/DECISIONS.md — `pagehide` cannot distinguish
+ * a reload from an exit, and §3.1 means no student-facing read depended on it.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({
-  event: z.enum(["heartbeat", "exit"]).default("heartbeat"),
-});
-
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const profile = await requireApiUser();
-
-    let event: "heartbeat" | "exit" = "heartbeat";
-    try {
-      const raw = await request.text();
-      if (raw.trim()) {
-        const parsed = bodySchema.safeParse(JSON.parse(raw));
-        if (parsed.success) event = parsed.data.event;
-      }
-    } catch {
-      // Unparseable beacon payload — fall through as a heartbeat.
-    }
-
-    if (event === "exit") {
-      const wentOffline =
-        profile.role === "tutor" ? await clearTutorLiveOnExit(profile.id) : false;
-      return NextResponse.json({ ok: true, event, wentOffline });
-    }
-
     const { tutorTouched } = await touchPresence(profile.id, profile.role);
-    return NextResponse.json({ ok: true, event, tutorTouched });
+    return NextResponse.json({ ok: true, tutorTouched });
   } catch (err) {
     const authError = authErrorResponse(err);
     if (authError) return authError;

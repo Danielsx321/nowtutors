@@ -91,8 +91,10 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
 - **Heartbeat** — `POST /api/presence/heartbeat` (`requireApiUser()` first, identity from the
   session, never the body) and `usePresence()` mounted once in `AppShell`, so every authenticated
   area heartbeats and no public page does. Fires on mount, every 30s while visible, pauses on
-  `document.hidden`, fires immediately on visible. The `pagehide` `sendBeacon` sends
-  `{ event: 'exit' }`, which **clears a live tutor's `is_live` and does not touch `last_seen_at`**.
+  `document.hidden`, fires immediately on visible. It never writes `is_live` in either direction —
+  **there is no `pagehide` / `sendBeacon` handler**; one was built and removed before merge because
+  `pagehide` cannot tell a reload from an exit (see DECISIONS, "Same-PR revision"). Staleness is now
+  **two** defences, not three: the `live_tutors` view and the sweep.
 - **Go live** — `/tutor` now exists (it 404'd before) and hosts the "Available for instant sessions"
   toggle. The action re-checks role, approval, suspension and verified email server-side, and is
   **unrestricted by the tutor's calendar** — the scheduled collision is a Part 2 accept-time check.
@@ -113,12 +115,32 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
 - **Migration `0014` is NOT YET APPLIED to the database** at the time of writing — see the warning
   under "Env / toolchain gotchas". Applying it breaks the currently-deployed build until this PR
   merges and redeploys.
-- **The E2E is not in CI.** It needs a running app and a seeded database, and the only Supabase
-  project that exists is shared with production, so running it in CI would mutate live rows. Wiring
-  it up waits on a disposable test project. SPEC §15 amended to say so rather than implying it runs.
-- **A tutor who reloads `/tutor` while live comes back offline** and must re-toggle. `pagehide`
-  cannot distinguish a reload from leaving, and SPEC §7.5 says clean navigate-away goes offline.
-  Client-side navigation inside the app is unaffected. See DECISIONS.
+- **The E2E is not in CI, and has not yet completed a full local run.** It needs a running app and
+  a seeded database, and the only Supabase project that exists is shared with production, so running
+  it in CI would mutate live rows. Wiring it up waits on a disposable test project. SPEC §15 amended
+  to say so rather than implying it runs.
+  - *Local attempt, 2026-08-22:* it got as far as sign-in and stopped there — Supabase Auth returned
+    a failure over an intermittent link from this machine. Nothing about presence was reached. Two
+    things came out of the attempt and are fixed in the same commit: the test matched the tutor by
+    **display name** ("Tom Turner"), which never appears — the seeded `display_name` is `Tom`, so
+    every assertion would silently have been false; it now matches the **profile link/slug**. And
+    `signIn()` waited on the URL alone, so a rejected login burned the whole 5-minute timeout and
+    reported only "waiting for navigation"; it now races the error alert and fails in seconds with
+    the reason. Note `login()` returns "Invalid email or password" for bad credentials **and** for
+    an unreachable Supabase — deliberate anti-enumeration (§7.1) — so that message never means only
+    one thing.
+  - *What was verified instead:* the assertion the test exists to make was confirmed directly
+    against the running app — tutor `is_live = true` with a fresh `last_seen_at` is listed on
+    `/?live=1`; ageing `last_seen_at` one second past the threshold removes them from the page while
+    `is_live` **stays true** and **no sweep runs**. That is the §3.1 claim — the view alone does the
+    whole job — proven end to end through the real HTTP render, with no beacon in the picture.
+  - *Running it locally:* `pnpm db:seed`, start the dev server, then
+    `E2E_BASE_URL=http://localhost:3000 pnpm test:e2e`. Add `E2E_CHANNEL=chrome` on machines where
+    `playwright install` cannot reach the CDN (a VPN client blocks it here).
+- **Only the deliberate toggle-off clears `is_live` immediately.** Leaving `/tutor` — by link, tab
+  close, or losing the connection — stops the heartbeat and lets the `live_tutors` view age the
+  tutor out within the staleness window. This is the shape after the beacon removal; the earlier
+  revision's reload false-positive is gone. See DECISIONS and SPEC §7.5.
 - **`tests/unit/pending-payment-slots.test.ts` is slow (~10s) and times out under load** on the
   5-second default when the whole suite runs in one process. Pre-existing, unrelated to Part 1; it
   passes on its own. Worth a `testTimeout` bump on that file.
