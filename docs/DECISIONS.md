@@ -646,3 +646,54 @@ future reader doesn't try to "fix" those back to full width or `container-page` 
 
 SPEC §10.1's spacing/container paragraph was rewritten (not just amended) in the same commit as this
 entry, per the CLAUDE.md standing rule.
+
+## Phase 4 Part 1 — availability slot computation (`phase-4-part1-availability`)
+
+Scope: the availability tables (already landed in Phase 1 migration `0000`, matching §4.2 exactly —
+no new migration or columns needed this pass) and the **pure, DB-independent** slot computation
+`src/lib/availability/compute-slots.ts`, with Vitest coverage per §15. Explicitly **out of scope**
+(Part 2): booking creation, credit/ledger debit, pricing, and any UI. The design choices below were
+not pinned by the existing spec; each is now reflected in SPEC §4.2's "Slot computation semantics"
+block, per the CLAUDE.md standing rule.
+
+- **A slot is a discrete candidate start on a fixed grid**, not a free interval. Bookable iff
+  `[start, start + slot_duration)` fits entirely inside a tutor-local availability window. Candidate
+  starts step from **each window's own start** by `slot_step`. *Why:* §7.3 has the student pick a
+  slot *then* a duration from the fixed 30/60/90 menu; discrete starts are what the calendar renders
+  and what the "no off-by-one" test in §15 is about. Duration and step are **function parameters**
+  (defaults 60 / 30), not columns — the booking flow calls the function once per offered duration.
+  *How to apply:* Part 2's server action calls `computeSlots` per duration; no schema change.
+- **`now` is an explicit input**, not read from the clock inside the function. *Why:* purity and
+  testability — the cutoff tests pin a fixed `now`. *How to apply:* callers pass `new Date()`.
+- **Date range is read in the viewer's time zone; rules/exceptions expand per tutor-local date.**
+  *Why:* §7.3 renders the student's own calendar, while §4.2 stores rules in the tutor's zone. The
+  function scans tutor-local dates ±1 day around the range to cover a viewer-tz edge that lands
+  mid-day in the tutor's zone, then filters by the UTC range window.
+- **Exception semantics.** `is_available=false` blocks the whole tutor-local day (times ignored),
+  overriding rules; `is_available=true` **with both times** is a partial-day override that *replaces*
+  that day's rules (multiple such rows union); `is_available=true` with **null times is a no-op**
+  (rules apply). *Why:* §4.2 only spelled out the full-day block; the partial-override and no-op
+  cases needed pinning. The null-times "available" no-op avoids a meaningless "available but no
+  window" state.
+- **Overlap is half-open `[start, end)`.** Back-to-back bookings don't self-conflict and a slot
+  abutting a booking's end is bookable. *Why:* prevents the off-by-one that would either leak a
+  double-booked slot or drop a legitimately free one.
+- **Cutoffs are both inclusive.** Slot bookable at exactly `now + min_booking_notice_minutes`; the
+  horizon is a **rolling** `now + max_booking_days_ahead × 24h` (not a calendar-day boundary), slot
+  bookable at exactly the horizon. *Why:* a single, memorable rule; rolling matches "how far ahead
+  *from now*".
+- **Time-zone math uses the runtime IANA/ICU database via `Intl`, not `@date-fns/tz`.** *Why:*
+  CLAUDE.md forbids adding a dependency not in SPEC §2 without asking, and `Intl` is DST-correct out
+  of the box on Node 22. *How to apply:* `zonedWallToUtc` measures the zone offset at the target
+  instant and refines once across a transition; nonexistent spring-forward times resolve forward,
+  ambiguous fall-back times resolve to the first occurrence — acceptable for availability windows.
+- **Seeded `platform_settings` extracted to `src/db/platform-settings-defaults.ts`.** *Why:* §15
+  says the notice/horizon tests must use the real seeded values (120 / 7), not a hardcoded guess.
+  The seed and the DB-independent tests now import one pure constant set, so a retune can't silently
+  drift a test. *How to apply:* `seed.ts` imports `PLATFORM_SETTINGS`; tests read via
+  `seededSetting(key)`. Behaviour of the seed is unchanged.
+
+Tests: `tests/unit/availability.test.ts` — DST spring-forward and fall-back (tutor `America/New_York`,
+viewer `Africa/Lagos`), cross-tz rendering (viewer `Asia/Kolkata` +5:30), full-day block + partial
+override against an active rule, back-to-back bookings with the abutting-slot leak check, and the two
+cutoffs pinned to the seeded values. SPEC §4.2 was amended in the same commit as this entry.
