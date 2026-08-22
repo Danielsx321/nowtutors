@@ -78,7 +78,12 @@ export async function createScheduledBooking(
 
   const settings = await getBookingSettings();
   if (!settings.sessionDurations.includes(v.durationMinutes)) {
-    return { error: "Pick a session length of 30, 60, or 90 minutes." };
+    const options = settings.sessionDurations;
+    const list =
+      options.length > 1
+        ? `${options.slice(0, -1).join(", ")}, or ${options[options.length - 1]}`
+        : `${options[0]}`;
+    return { error: `Pick a session length of ${list} minutes.` };
   }
 
   const startAt = new Date(v.startAt);

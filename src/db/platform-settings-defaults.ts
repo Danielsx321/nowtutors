@@ -24,7 +24,7 @@ export const PLATFORM_SETTINGS: PlatformSetting[] = [
   { key: "min_withdrawal_usd", value: 30, description: "minimum withdrawal in USD; enforced server-side (§18)" },
   { key: "min_booking_notice_minutes", value: 120, description: "min notice before a slot (existing default, kept)" },
   { key: "max_booking_days_ahead", value: 7, description: "how far ahead students can book (§18)" },
-  { key: "session_durations", value: [30, 60, 90], description: "fixed duration menu, not tutor-configurable (§18)" },
+  { key: "session_durations", value: [30, 60, 90, 120], description: "fixed duration menu, not tutor-configurable (§18, amended Phase 6 pre-build)" },
   { key: "cancellation_enabled", value: false, description: "no user cancel path; admin force-cancel only (§7.3, §18)" },
   {
     // Real Bubble tiers. No "minutes" column: credits are a purchased currency, not a

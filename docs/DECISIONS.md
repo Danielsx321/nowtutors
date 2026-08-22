@@ -1080,3 +1080,73 @@ find, so it has to say why they were credited and that the credits are theirs.
 
 **Acceptance is SANDBOX ONLY.** Real-card testing stays deferred to Phase 10, along with the live
 webhook registration (RUNBOOK) — the sandbox webhook id does not work in live.
+
+## Phase 6 — pre-build decisions (2026-08-22)
+
+Five open questions blocking Phase 6 were settled by inspecting the live Bubble app directly
+(rather than by inference from the earlier, partly-guessed Phase 1 / §18 decisions). This is a
+**docs + one settings-default commit** — no migration. Where a decision requires a schema change,
+it is scoped to the pending Phase 6 Part 1 migration `0014` and explicitly not written here. SPEC
+§4.3, §4.7, §7.4, §7.5, and §18 item 1 were updated in the same commit (per the CLAUDE.md standing
+rule).
+
+- **Session durations become 30 / 60 / 90 / 120, not 30 / 60 / 90.** The live app offers all four
+  durations on both the instant popup and the scheduled booking popup. The three-value menu carried
+  from §18 would have silently dropped the 120-minute option at cutover — a live-inspection finding,
+  not a product change. `session_durations` in `src/db/platform-settings-defaults.ts` updated to
+  `[30, 60, 90, 120]`; `tests/unit/pricing.test.ts` extended to cover the fourth value. SPEC §18 item
+  1 and §4.7 amended. *No migration* — `session_durations` is a `platform_settings` value, not schema.
+- **`session_requests` gains `duration_minutes` and `price_credits`, pending migration `0014`.** The
+  student picks a duration when sending an instant request; the server computes price at insert via
+  `sessionPriceCredits()` and pins it on the request row, so the accept transaction charges exactly
+  what the student was quoted regardless of any `hourly_rate_credits` change in between. Both columns
+  integer, `not null`, server-authored — never taken from the client. SPEC §4.3, §7.4 amended now;
+  schema change deferred to `0014`.
+- **`session_request_status` gains `failed_payment`, pending migration `0014`.** The debit runs
+  inside the tutor's accept transaction. If the student's balance moved between request and accept,
+  the whole accept rolls back and the request goes terminal as `failed_payment` — not `expired`, not
+  `declined` — because an operator reading `session_requests` must be able to tell a refusal from a
+  payment failure. SPEC §4.3, §7.4 amended now; enum change deferred to `0014`.
+- **`min_instant_credits` and `max_instant_minutes` are confirmed dead and scheduled for real
+  deletion in migration `0014`.** Neither exists in the Bubble app; both were artifacts of the
+  abandoned authorization-hold model (Phase 1 decision, "Instant-session hold via the ledger",
+  above). The `platform_settings` *keys* were already removed by the §18 resolution, but §7.4's
+  validation line still read "student has >= min_instant_credits" — a stale leftover now replaced
+  with "student's balance >= price_credits for the chosen duration" (§7.4). Also marked for removal
+  in `0014`: `tutor_profiles.instant_rate_credits_per_minute` (column) and `instant_hold` /
+  `instant_release` / `instant_capture` (`credit_transaction_type` enum values) — both previously
+  "retained but unused" per the Phase 1 and §18 entries above, now confirmed as safe to actually drop
+  since the live app has no trace of a hold model. SPEC §4.1, §4.4, §4.7, §7.4 amended to mark
+  pending removal; the migration itself is not written in this commit.
+- **Scheduled-booking collision blocks at accept only, with no buffer.** The accept transaction
+  rejects if the tutor has a `confirmed` or `in_progress` **scheduled** booking starting before
+  `now() + duration_minutes`. This is an application-level guarded read inside the transaction, **not
+  a constraint** — `bookings_no_overlap` (§4.3) deliberately excludes instant bookings, which have no
+  time range. *Why no buffer:* Bubble has no such check at all, so inventing a gap would be adding a
+  rule that doesn't exist upstream. The go-live toggle stays unrestricted. SPEC §7.4 amended.
+
+**Also recorded from the same inspection:**
+
+- **Ending an instant session is unchanged from Bubble and from §18: no refunds on early exit,
+  hard stop at the booked duration, no grace period.** Credits are charged upfront regardless of how
+  much of the session is actually used. Bubble's mid-session "buy more credits" top-up popup is **not
+  ported** — under flat upfront billing there is nothing to run out of mid-session for that popup to
+  attach to. SPEC §7.4 now states this explicitly rather than leaving it implied.
+- **End-session does NOT clear `is_live`.** A tutor finishing a session is usually still available;
+  clearing `is_live` on session end would drop them off the live list silently. Presence is owned by
+  the heartbeat and the staleness sweep cron (§7.5), never by session lifecycle. Recorded as an
+  explicit non-behaviour in SPEC §7.5 because it's the kind of omission a later reader assumes is a
+  missing step rather than a deliberate boundary.
+- **Correction: the Bubble countdown ran on a 180-SECOND interval, not 180 milliseconds.** The
+  Phase-agnostic §18 resolution entry above (and the SPEC §7.4 text it produced) stated the interval
+  as 180 ms, implying a units bug that would end a 60-minute session in ~4 seconds. Direct inspection
+  of the live app shows the interval is 180 **seconds**, decrementing one credit per tick — i.e. the
+  withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a bug. This does not change
+  any built behaviour: elapsed time was already computed server-side from `started_at` and the
+  countdown was never going to be ported either way. The §18 entry above is left uncorrected
+  (append-only); SPEC §7.4 and PROGRESS.md's "Notes / non-bugs" section carry the corrected figure.
+- **Carry-forward: Bubble's flat duration÷3 pricing vs. the rebuild's per-tutor `hourly_rate_credits`
+  pricing needs a Phase 10 data migration and cutover comms.** Every existing tutor needs a rate set
+  before cutover, and every existing student will see prices change from the one flat platform rate
+  they're used to. Recorded in PROGRESS.md "Still open" rather than actioned here — it's a Phase 10
+  concern, not a Phase 6 blocker.

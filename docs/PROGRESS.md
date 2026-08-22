@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-22)
 
-**Phases 0–4 are complete and merged to `main`.**
+**Phases 0–5 are complete and merged to `main`.**
 
 - **Phase 0** — foundation scaffold (PR #1, `56cc101`).
 - **Phase 1** — data layer: 21 tables + 16 enums, 7 migrations, RLS, `live_tutors` /
@@ -132,12 +132,21 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   table or a stored snapshot, which is a design decision rather than a cheap add. Deferred.
 - **User Role option-set values** — confirm against Bubble (we assume student/tutor/admin).
 - **`credit_transaction_type` value check** — confirm the ledger enum values match the current build.
+- **Bubble→rebuild pricing model change needs a Phase 10 data migration and cutover comms.** Bubble
+  prices every session at duration ÷ 3 credits — one flat platform rate for all tutors. The rebuild
+  prices off each tutor's `hourly_rate_credits`. At cutover, every existing tutor needs a rate set and
+  every existing student sees prices change from the flat rate they're used to. See DECISIONS.md
+  Phase 6.
 
 ## Notes / non-bugs (do NOT re-investigate)
 
 - **Bubble drives session length from a client-side countdown** (status = `Completed` when
-  `credits_remaining <= 0`, then `endSession()`). The rebuild computes elapsed time **server-side
-  from `started_at`**. Not ported.
+  `credits_remaining <= 0`, then `endSession()`), decrementing one credit per tick on a **180-second**
+  interval — the withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a units bug.
+  (**Correction, Phase 6 pre-build, 2026-08-22:** an earlier pass had this at 180 *milliseconds*,
+  which would read as a bug ending a 60-minute session in ~4 seconds; live-app inspection confirmed
+  it's 180 seconds. See `DECISIONS.md` Phase 6.) Either way, the rebuild computes elapsed time
+  **server-side from `started_at`** and does not port the client countdown.
 - **Theo's blank avatar circle** is expected: the seed uploads a **1×1 transparent PNG** for
   `theo-chen` purely to prove the Storage → `next/image` pipeline. Not a rendering bug.
 - All other tutors show **initials** (no uploaded avatar) — also expected.

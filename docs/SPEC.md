@@ -207,7 +207,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | years_experience | integer |  |
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
-| instant_rate_credits_per_minute | integer **nullable** | retained but **unused**; instant price uses the same formula as scheduled — `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.4) |
+| instant_rate_credits_per_minute | integer **nullable** | unused; instant price uses the same formula as scheduled — `hourly_rate_credits × duration_minutes / 60`, rounded up (§7.4). **Pending removal in migration `0014`** (Phase 6 pre-build decision — neither this column nor a per-minute instant rate exists in the live Bubble app). |
 | accepts_instant | boolean default true |  |
 | approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
 | approval_note | text | admin-visible reason |
@@ -258,7 +258,7 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 
 **Slot computation semantics (Phase 4 Part 1 — pinned in `docs/DECISIONS.md`).** The pure function is `src/lib/availability/compute-slots.ts`; it takes plain data (rules, exceptions, bookings, a date range, tutor + viewer time zones, `now`, and the two cutoffs) and returns bookable slots as UTC instants. No DB access, so it is unit-testable per §15.
 
-- **Slot = a discrete candidate start on a fixed grid.** A slot is bookable iff `[start, start + slot_duration)` fits entirely inside one of that tutor-local day's availability windows. Candidate starts step from each window's own start by `slot_step` (defaults: duration 60 min, step 30 min); the booking flow (Part 2) calls the function once per offered duration (30/60/90). Duration and step are function parameters, not columns.
+- **Slot = a discrete candidate start on a fixed grid.** A slot is bookable iff `[start, start + slot_duration)` fits entirely inside one of that tutor-local day's availability windows. Candidate starts step from each window's own start by `slot_step` (defaults: duration 60 min, step 30 min); the booking flow (Part 2) calls the function once per offered duration (30/60/90/120). Duration and step are function parameters, not columns.
 - **Date range is read in the *viewer's* time zone** (the student browses their own calendar, §7.3); rules/exceptions are expanded per *tutor-local* calendar date and converted to UTC, so a DST transition in the tutor's zone moves the UTC instant of a fixed wall-clock slot without moving the wall clock the tutor set.
 - **Exceptions:** `is_available = false` blocks the whole tutor-local day (any times ignored) and overrides all rules; `is_available = true` **with both times set** is a partial-day override window that *replaces* that day's rules (multiple such rows union); `is_available = true` with null times is a no-op (rules still apply).
 - **Existing-booking overlap is half-open** `[start, end)`: back-to-back bookings do not self-conflict, and a slot that begins exactly when a booking ends is bookable (no off-by-one).
@@ -311,12 +311,26 @@ Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, sch
 | tutor_id | uuid FK |  |
 | subject_id | uuid FK | nullable |
 | message | text | optional note from student |
-| status | enum `pending` \| `accepted` \| `declined` \| `expired` \| `cancelled` |  |
+| duration_minutes | integer not null | student-chosen, from `session_durations` (Phase 6 pre-build) |
+| price_credits | integer not null | server-computed via `sessionPriceCredits()` at insert; pinned so accept charges exactly what was quoted (Phase 6 pre-build) |
+| status | enum `pending` \| `accepted` \| `declined` \| `expired` \| `cancelled` \| `failed_payment` | `failed_payment` added Phase 6 pre-build — see below |
 | booking_id | uuid FK → bookings.id | set on accept |
 | expires_at | timestamptz not null | `now() + 60 seconds` |
 | responded_at | timestamptz |  |
 
 Index `(tutor_id, status)`, `(status, expires_at)`. Realtime enabled on this table.
+
+**`duration_minutes` / `price_credits` (pending migration `0014`, Phase 6 Part 1).** The student
+picks a duration when sending an instant request; the server computes the price at insert via
+`sessionPriceCredits()` and pins both columns on the request row. Both are integer, `not null`, and
+**server-authored** — never taken from the client — so the accept transaction charges exactly what
+the student was quoted, even if `hourly_rate_credits` or settings change between request and accept.
+
+**`failed_payment` status (pending migration `0014`, Phase 6 Part 1).** The credit debit runs inside
+the tutor's accept transaction. If the student's balance moved between request and accept (e.g.
+spent elsewhere) such that the debit would fail, the whole accept rolls back and the request goes
+terminal as `failed_payment` — not `expired`, not `declined` — so an operator reading this table can
+tell a refusal from a payment failure.
 
 **`reviews`** — **DEFERRED (not built in Phase 1).** No Review type exists in the current Bubble build (Decision C). Ratings are denormalized scalars on `tutor_profiles` (`rating_avg`, `rating_count`) with nothing writing them yet. If reviews become a feature: `booking_id uuid unique FK, student_id, tutor_id, rating smallint check (rating between 1 and 5), comment text, is_published boolean default true`.
 
@@ -345,7 +359,7 @@ could be production, that is the bug, not the carve-out.
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: the old instant-session hold, Decision #3 — **now unused**; §18 made instant billing a single flat `booking_debit`, §7.4) |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `instant_hold`, `instant_release`, `instant_capture` (last three: the old instant-session hold, Decision #3 — **now unused**; §18 made instant billing a single flat `booking_debit`, §7.4. **Pending removal in migration `0014`** — Phase 6 pre-build decision, no such model exists in the live Bubble app) |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -418,7 +432,7 @@ instant_request_ttl_seconds  # default 60 (instant-request accept window)
 min_withdrawal_usd           # 30 — enforced server-side, not just the button
 min_booking_notice_minutes   # 120 (existing default, kept)
 max_booking_days_ahead       # 7
-session_durations            # [30, 60, 90] — fixed menu, not tutor-configurable
+session_durations            # [30, 60, 90, 120] — fixed menu, not tutor-configurable
 cancellation_enabled         # false — no user cancel path (§7.3)
 credit_packages              # jsonb array of buyable packages: credits + USD price, no minutes column
                              #   one entry carries is_direct_pay_basis: true — the direct-pay
@@ -602,7 +616,7 @@ Pagination: cursor-based, 24 per page.
 **Student side:**
 
 1. On `/tutors/[slug]`, a calendar shows the next 30 days. Available slots computed server-side (Section 4.2) and rendered **in the student's timezone**, with the tutor's timezone shown as a secondary label.
-2. Student picks slot + duration (30/60/90 — **[verify offered durations]**) + subject + optional note.
+2. Student picks slot + duration (30/60/90/120) + subject + optional note.
 3. Price = `hourly_rate_credits × duration_minutes / 60`, rounded up. This is the single pricing formula — the **same** formula prices instant sessions (§7.4). Credits are a purchased currency, not a unit of time; the tutor's `hourly_rate_credits` is authoritative for price.
 4. Payment choice:
    - **Credits** — if `wallet.credit_balance >= price`: create booking `confirmed`, debit ledger, done in one transaction.
@@ -636,19 +650,29 @@ This flow replaces the entire `has_live_request` polling mechanism.
 Student                          Server                           Tutor
    |                                |                                |
    | POST createSessionRequest      |                                |
+   | (chosen duration_minutes)      |                                |
    |------------------------------->|                                |
    |                                | validate: tutor in live_tutors,|
-   |                                | accepts_instant, student has   |
-   |                                | >= min_instant_credits,        |
+   |                                | accepts_instant, student's     |
+   |                                | balance >= price_credits for   |
+   |                                | the chosen duration,           |
    |                                | no existing pending request    |
+   |                                | price_credits =                |
+   |                                |   sessionPriceCredits()         |
    |                                | INSERT session_requests        |
-   |                                | (expires_at = now + 60s)       |
+   |                                | (duration_minutes, price_credits|
+   |                                |  pinned; expires_at = now+60s) |
    |                                |--- Realtime INSERT event ----->|
    | <-- waiting modal, 60s ------- |                                | incoming request modal
    |     countdown                  |                                | (name, subject, note, 60s ring)
    |                                |                                |
    |                                | <---- accept / decline --------|
    |                                | on accept, in one transaction: |
+   |                                |   debit price_credits (the     |
+   |                                |     PINNED quote, never        |
+   |                                |     re-derived) — on failure,  |
+   |                                |     rollback, status =         |
+   |                                |     failed_payment             |
    |                                |   status = accepted            |
    |                                |   INSERT bookings (instant,    |
    |                                |     in_progress, channel =     |
@@ -664,8 +688,15 @@ Rules:
 - A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest.
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
+- **Duration and price are decided at request time, not accept time (Phase 6 pre-build decision; pending migration `0014`).** The student picks a duration from `session_durations` (now **30 / 60 / 90 / 120**, §18 item 1) when sending the request; the server computes `price_credits` via `sessionPriceCredits()` and pins both `duration_minutes` and `price_credits` on the `session_requests` row (§4.3). The accept transaction charges exactly that pinned price — it never re-derives price from the tutor's current `hourly_rate_credits`, so a mid-flight rate change can't move the number the student already saw.
+- **Validation is a balance check against the quoted price, not a flat floor.** The old `min_instant_credits` check ("student has >= min_instant_credits") is gone — that setting and `max_instant_minutes` are artifacts of the abandoned hold model and don't exist in the live Bubble app (§4.7). The request-time check is simply: student's balance >= `price_credits` for the chosen duration.
+- **A mid-flight balance failure is a distinct terminal state.** The debit runs inside the tutor's accept transaction, atomic with the booking insert. If the student's balance moved between request and accept such that the pinned-price debit would fail, the whole accept rolls back and the request goes terminal as `failed_payment` (§4.3) — not `expired`, not `declined` — so an operator reading `session_requests` can tell a refusal from a payment failure.
 
-**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` stays nullable and **unused** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are now **unused** (retained in the enum — no schema change here). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decremented a `credits_remaining` field on a 180 ms client interval, a units bug that would end a 60-min session in ~4 s; not ported).
+**Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` is **pending removal in migration `0014`** (Phase 6 pre-build decision — §4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values are likewise **pending removal in migration `0014`**. See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decrements a `credits_remaining` field on a **180-second** client interval, one credit per tick — the withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a units bug; not ported regardless, since elapsed time is computed server-side).
+
+**Ending a session is unchanged from Bubble (Phase 6 pre-build decision).** Credits are charged upfront and **nothing is refunded on early exit by either party** — a student who leaves after 5 minutes of a paid 60-minute session, or a tutor who ends it early, gets no partial credit back. The session **hard-stops when the booked duration elapses**, with **no grace period**. Bubble's mid-session "buy more credits" top-up popup is **not ported**: under flat upfront billing there is nothing to run out of mid-session, so the popup has no equivalent state to attach to.
+
+**Scheduled-booking collision at accept, no buffer (Phase 6 pre-build decision).** The accept transaction additionally rejects if the tutor has a `confirmed` or `in_progress` **scheduled** booking starting before `now() + duration_minutes`. This is an application-level guarded read inside the accept transaction, **not a database constraint** — `bookings_no_overlap` (§4.3) deliberately excludes instant bookings, which have no time range to exclude against. There is **no buffer or gap** around the scheduled booking: the live Bubble app has no such check at all, so inventing a buffer would be adding a rule that doesn't exist upstream. The go-live toggle (§7.5) stays unrestricted by this check — a tutor can go live with a scheduled booking on the calendar; the collision is only enforced at accept.
 
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
@@ -674,6 +705,8 @@ Rules:
 **Heartbeat.** A `usePresence()` hook mounted in the authenticated layout `POST`s to `/api/presence/heartbeat` every 30 seconds while the tab is visible, and once immediately on mount. The route sets `profiles.last_seen_at = now()`, and for tutors also `tutor_profiles.last_seen_at = now()`. Pause on `document.hidden`, resume and fire immediately on visible.
 
 **Going live.** Tutor toggles "Available for instant sessions" on `/tutor`. Sets `is_live = true`, `live_mode = 'instant'`, `last_seen_at = now()`. Toggling off, or navigating away cleanly, sets `is_live = false`.
+
+**Ending a session does NOT clear `is_live` (explicit non-behaviour, Phase 6 pre-build decision).** A tutor who finishes an instant session is usually still available for another one; clearing `is_live` on session end would silently drop them off the live list. Presence is owned exclusively by the heartbeat and the staleness sweep cron below — never by session lifecycle. This is called out because a later reader implementing end-session will otherwise assume it's a missing step.
 
 **Staleness — three independent defences:**
 
@@ -1163,8 +1196,11 @@ SPEC sections each answer affects were updated in the **same commit** as this re
 CLAUDE.md standing rule. Original numbering is kept so existing cross-references still resolve.
 
 **Phase 1 (data model):**
-1. **Session durations** — fixed menu of **30 / 60 / 90 minutes**, not tutor-configurable
-   (`session_durations = [30, 60, 90]`).
+1. **Session durations** — fixed menu of **30 / 60 / 90 / 120 minutes**, not tutor-configurable
+   (`session_durations = [30, 60, 90, 120]`). **Amended (Phase 6 pre-build, 2026-08-22):** the live
+   Bubble app offers all four durations on both the instant and scheduled booking popups; the
+   three-value menu would have silently dropped the 120-minute option at cutover. See DECISIONS
+   Phase 6.
 2. **Reviews** — **dropped for v1** (no Review type in the current Bubble build; recorded in the
    Phase 1 DECISIONS). No `reviews` table; rating stays a denormalized scalar on `tutor_profiles`.
 3. **Broadcast chat** — broadcasts are **net-new** functionality beyond current parity (Phase 1
