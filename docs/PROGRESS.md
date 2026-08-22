@@ -2,9 +2,9 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-21)
+## Current state (2026-08-22)
 
-**Phases 0–3 are complete and merged to `main`.**
+**Phases 0–4 are complete and merged to `main`.**
 
 - **Phase 0** — foundation scaffold (PR #1, `56cc101`).
 - **Phase 1** — data layer: 21 tables + 16 enums, 7 migrations, RLS, `live_tutors` /
@@ -26,40 +26,20 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
   `platform-settings-defaults` extraction so seed and tests share one source of truth. The Phase 1
   migration already carried the `availability_rules`/`availability_exceptions` tables, so no new
   migration. SPEC §4.2 pins the slot-grid semantics. **Merged via PR #8 (`4fed575`).**
-- **Phase 4 Part 2 — scheduled booking flow (credits only)** — IN PROGRESS on
-  `phase-4-part2-booking-flow`: the ledger (`lib/credits/ledger.ts`), the booking-creation action
-  with server-side slot re-validation + price re-derivation + atomic debit, both sides' booking
-  list/detail pages, and the availability editor. Out of scope: cancellation/refunds, PayPal,
-  LessonSpace, instant sessions.
-
-## In flight — browse page restyle (PR #7, branch `feat/browse-page-ink-theme`, **not yet merged**)
-
-Visual-only work on top of Phase 3, ahead of Phase 4. Confirmed against `gh pr view 7` before
-writing this: **state OPEN, `mergedAt` null** — still awaiting Daniels' review in the browser.
-
-Went further than originally scoped, across three pushes to the same PR:
-
-- **Ink shell + full-bleed browse.** Public `Header`/`Footer` moved to the ink surface (`ink-900`,
-  plus a new `ink-1000` token for the footer, darker than the header — Bubble parity), the desktop
-  filters rail on `/` became a dark panel (`TutorFilters` gained a `surface: "light" | "ink"` prop;
-  the mobile drawer stays light), and `/` itself dropped its centered max-width box for a full-bleed
-  layout with the sidebar pinned left.
-- **Header/footer edge fix + centered nav.** `Header`/`Footer` still boxed themselves in
-  `container-page` even after `/`'s body went full-bleed, leaving a mismatched white margin; fixed
-  by dropping `container-page` from both and centering the header nav in a three-region
-  `grid-cols-[auto_1fr_auto]` layout instead of left-aligning it after the logo.
-- **Scope change — full-bleed everywhere, not just the browse page.** The original plan kept
-  `container-page` (1200px max-width) as the default for every page except `/`; that constraint was
-  reversed. `container-page` was removed from every remaining page-wrapper use — the `(auth)` layout
-  header (`/login`, `/signup`, `/forgot-password`, `/reset-password`), `/tutors/[slug]`,
-  `/dev/kitchen-sink`, and `AppShell`'s content panel (`/dashboard/favourites`, `/tutor/profile`,
-  `/admin/tutors`) — each replaced with `w-full` plus the same `px-4`/`md:px-6` edge gutter already
-  used by the header/footer/browse body. Every currently-built route is now full-bleed with a
-  consistent edge gutter, verified at 360px and 1440px. `/suspended` was **left out of scope**
-  (still boxed in `container-page`). Component-internal max-widths were kept intentionally —
-  `/tutor/profile`'s own card and `/onboarding`'s centered card are a form choosing its own width,
-  not a page-level box, and were not touched. `container-page` itself is untouched in `globals.css`.
-  SPEC §10.1 and `DECISIONS.md` were updated in the same commits as the code.
+- **Phase 4 Part 2 — scheduled booking flow (credits only)** — the ledger (`lib/credits/ledger.ts`),
+  the booking-creation action with server-side slot re-validation + price re-derivation + atomic
+  debit, both sides' booking list/detail pages, and the availability editor. Out of scope:
+  cancellation/refunds, PayPal, LessonSpace, instant sessions. **Merged via PR #9 (`03f33a5`).**
+- **Phase 5 Part 1 — PayPal orders, capture, webhook, credit packages** — the PayPal client
+  (`lib/paypal/client.ts`), credit-package lookup (`lib/credits/packages.ts`), and the three
+  money-path endpoints (`POST /api/paypal/orders`, `POST /api/paypal/orders/[orderId]/capture`,
+  `POST /api/webhooks/paypal`) built on `lib/paypal/settlement.ts`, which client capture and the
+  webhook both call so a race between the two is a no-op via the ledger's `(type, reference_id)`
+  unique index. **Code-complete on branch `phase-5-part1-paypal` (`15fc5bf`); PR #10 is OPEN,
+  awaiting review — not merged, not on `main`.** SPEC §7.6 and `DECISIONS.md` gained Part 1 sections
+  in the same commit, but only on that branch — `main`'s copies of those two docs do not yet
+  mention Phase 5. **Part 2 still owes:** `/dashboard/wallet` + transaction history, booking
+  direct-pay, and `/admin/payments`.
 
 ## What Phase 3 built
 
@@ -92,24 +72,6 @@ Went further than originally scoped, across three pushes to the same PR:
   `remotePatterns`, initials fallback. (This was the Bubble "photos not rendering" bug.)
 - **Live status derives from the `live_tutors` view, never `is_live`** (§3.1) — on the card and on
   the profile page alike.
-
-## Phase 4 is next — availability and scheduled bookings
-
-Do **not** start until told. Scope (SPEC §7.3, §4.2, §4.3):
-
-- **Availability rules + exceptions** — weekly rules editor and date exceptions (`/tutor/availability`).
-- **Slot computation** — server-side, in the student's timezone with the tutor's shown as secondary.
-  DST boundaries, cross-timezone and back-to-back bookings are non-negotiable unit coverage (§15).
-- **Scheduled bookings paid in credits** — price is
-  `ceil(hourly_rate_credits × duration_minutes / 60)` via `src/lib/credits/pricing.ts`, debited
-  through the ledger in the same transaction that creates the booking. Durations 30/60/90; at most
-  7 days ahead; 120 minutes' minimum notice.
-- **Booking lists and detail pages** for both sides.
-
-> **Cancellation and refunds are NOT in scope** (§18): there is **no cancellation path for either
-> party and no refunds** on the normal path (`cancellation_enabled = false`). The only unwind is an
-> **admin force-cancel with refund**. The `cancelled_by_*` / `no_show_*` booking statuses stay in the
-> enum but are admin- or cron-set only, never user-set. Do not build a user-facing cancel button.
 
 ## Still open — carry forward
 
