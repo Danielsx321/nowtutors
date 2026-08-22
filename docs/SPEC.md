@@ -349,7 +349,7 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 | provider_capture_id | text |  |
 | amount_usd | numeric(10,2) not null |  |
 | currency | text default 'USD' |  |
-| credits_granted | integer | for credit purchases |
+| credits_granted | integer | two meanings by `purpose` (Phase 5 Part 2): for `credit_purchase`, credits added to the wallet and kept; for `booking` (direct-pay), credits minted and debited in the same settlement transaction — net wallet effect zero, so this is **not** a balance the user holds |
 | purpose | enum `credit_purchase` \| `booking` |  |
 | booking_id | uuid FK | when purpose = booking |
 | status | enum `created` \| `approved` \| `captured` \| `failed` \| `refunded` |  |

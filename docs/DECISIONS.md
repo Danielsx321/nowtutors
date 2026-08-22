@@ -937,6 +937,15 @@ a USD amount. Reintroducing a conversion constant would have re-opened exactly w
   middle tier, so **direct-pay is deliberately dearer per credit than the largest package** and
   buying credits keeps its volume incentive — the lever if that needs retuning is *which* package
   carries the flag.
+- **`payments.credits_granted` now carries two meanings by `purpose`, and no migration was taken
+  for it.** For `credit_purchase` it is unchanged: credits added to the wallet and kept. For
+  `booking` (direct-pay) it is the amount minted and immediately debited in the same settlement
+  transaction — net wallet effect zero, so it is **not** a balance the user holds. *Why no
+  migration:* the column's existing type and semantics (an integer credit amount tied to this
+  payment) already fit the direct-pay case exactly — reusing it is a documentation change, not a
+  schema change, and splitting it into two columns would duplicate a value that is only ever read
+  once, at settlement, and interpreted by `purpose` either way. SPEC §4.4 states both meanings
+  explicitly rather than leaving the second one implicit in code.
 - **Zero or two flagged packages throws** (`DirectPayBasisError`), with no fallback tier and no
   first-match-wins. *Why:* a mispriced charge on the money path must surface as an error, not as a
   wrong amount (§3.3, no silent failures). The route lets it propagate rather than 400ing, because
