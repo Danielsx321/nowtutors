@@ -5,15 +5,18 @@ import { payments } from "@/db/schema";
 import { authErrorResponse, requireApiRole } from "@/lib/auth/api-guards";
 import {
   capturePayPalOrder,
-  captureIdFrom,
   getPayPalOrder,
   hasPayPalIssue,
-  isOrderCompleted,
   ORDER_ALREADY_CAPTURED,
   type PayPalOrder,
 } from "@/lib/paypal/orders";
+import { settleCaptureOutcome } from "@/lib/paypal/capture";
 import { PayPalApiError, PayPalConfigError } from "@/lib/paypal/client";
-import { markPaymentStatus, settleCapturedOrder } from "@/lib/paypal/fulfilment";
+import {
+  markPaymentStatus,
+  recordPendingCapture,
+  settleCapturedOrder,
+} from "@/lib/paypal/fulfilment";
 
 /**
  * `POST /api/paypal/orders/[orderId]/capture` — capture an approved order and
@@ -103,36 +106,15 @@ export async function POST(
     }
   }
 
-  if (!isOrderCompleted(order)) {
-    // Declined or still pending — never credit on anything but COMPLETED. A
-    // pending capture that later completes arrives on the webhook.
-    await markPaymentStatus({
-      providerOrderId: orderId,
-      providerCaptureId: captureIdFrom(order),
-      status: "failed",
-      rawPayload: order,
-    });
-    return NextResponse.json(
-      { error: "That payment wasn't completed.", paypalStatus: order.status ?? null },
-      { status: 409 },
-    );
-  }
-
-  const result = await settleCapturedOrder({
-    providerOrderId: orderId,
-    providerCaptureId: captureIdFrom(order),
-    rawPayload: order,
+  // Branch on PayPal's returned capture status (COMPLETED / PENDING / terminal).
+  // The pure decision — and, crucially, that a PENDING capture is persisted
+  // without moving `payments.status` — lives in `settleCaptureOutcome`, which is
+  // unit-tested. Never credit on anything but COMPLETED.
+  const outcome = await settleCaptureOutcome(orderId, order, {
+    settleCapturedOrder,
+    markPaymentStatus,
+    recordPendingCapture,
   });
 
-  if (result.status === "unknown_order") {
-    // Can't happen — we loaded the row above — but never claim success blindly.
-    return NextResponse.json({ error: "Payment not found." }, { status: 404 });
-  }
-
-  return NextResponse.json({
-    ok: true,
-    result: result.status,
-    credits: result.status === "captured_no_credit" ? 0 : result.credits,
-    ...(result.status === "credited" ? { balance: result.balanceAfter } : {}),
-  });
+  return NextResponse.json(outcome.body, { status: outcome.status });
 }

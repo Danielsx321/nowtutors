@@ -88,21 +88,3 @@ export function getPayPalOrder(orderId: string): Promise<PayPalOrder> {
     { method: "GET" },
   );
 }
-
-/** The capture id out of a capture/get-order response, if PayPal recorded one. */
-export function captureIdFrom(order: PayPalOrder): string | null {
-  for (const unit of order.purchase_units ?? []) {
-    for (const capture of unit.payments?.captures ?? []) {
-      if (typeof capture.id === "string" && capture.id) return capture.id;
-    }
-  }
-  return null;
-}
-
-/** True when the order is fully captured (i.e. the money is ours). */
-export function isOrderCompleted(order: PayPalOrder): boolean {
-  if (order.status === "COMPLETED") return true;
-  return (order.purchase_units ?? []).some((u) =>
-    (u.payments?.captures ?? []).some((c) => c.status === "COMPLETED"),
-  );
-}

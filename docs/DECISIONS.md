@@ -843,6 +843,27 @@ implementation note in the same commit.
   seeded tiers only when *every* row is unusable.
 - **Package ids are matched exactly** — no trimming, casing, or prefix matching — so `"starter "`
   is an error rather than a guess about which tier the buyer meant.
+- **The client capture is a three-way branch on PayPal's returned capture status, not
+  completed-or-not** (`settleCaptureOutcome`, `src/lib/paypal/capture.ts`). **COMPLETED** credits
+  through `settleCapture`; a **terminal** decline (DECLINED / FAILED / any non-recoverable status)
+  writes `payments.status = failed` and 409s; **PENDING** persists `provider_capture_id` and
+  `raw_payload` only and **does not write `payments.status` at all**, returning 202. *Why:* the old
+  code collapsed PENDING into `failed`, which is indistinguishable from a hard decline. A PENDING
+  capture (e.g. under review) can still complete, and settlement intentionally permits
+  `failed → captured` so a late `PAYMENT.CAPTURE.COMPLETED` still credits — but writing `failed`
+  loses the distinction a retried capture needs, and makes a genuinely-declined row look identically
+  recoverable. Leaving the status untouched on PENDING keeps the row recoverable by **either** the
+  webhook or a retried capture, with no false `failed` in between. *How to apply:* PENDING goes
+  through `recordPendingCapture` (`fulfilment.ts`), which locks the row and updates only the capture
+  id + payload — never the status. `settlement.ts` is untouched: its `failed → captured` path stays
+  as-is on purpose.
+- **The capture decision is pure and dependency-injected** (`settleCaptureOutcome(orderId, order,
+  deps)`), matching `handlePayPalWebhook`; the route file is the thin adapter that authenticates,
+  loads the payment, calls PayPal, and wires the real deps. *Why:* same constraint as the webhook —
+  the route imports `server-only` (transitively) and so cannot be imported by a unit test, so the
+  three-way branch (and the 202-on-PENDING guarantee) is testable only as a pure core. The pure
+  order-shape readers (`isOrderCompleted`, `isOrderPending`, `captureIdFrom`) moved from `orders.ts`
+  into `capture.ts` for the same reason — `orders.ts` carries `server-only`.
 
 **Not tested against live PayPal.** The unit tests cover package lookup, the client/webhook
 double-capture race, signature rejection, and DENIED/REFUNDED; none of them talk to PayPal. Sandbox

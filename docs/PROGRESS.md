@@ -75,16 +75,6 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Still open — carry forward
 
-- **⚠️ Production deploy returns a Vercel edge 404 on all routes.** Deployment `be218c5` is
-  **Ready / Production / Current** with all three domains attached (`nowtutors-brown.vercel.app` is
-  the project alias), the build log is clean with all **16 routes compiled**, and Deployment
-  Protection has been disabled. Vercel's own preview thumbnail also shows the 404. Since the build
-  succeeds and the alias is correct, requests are likely **not reaching the app** — middleware
-  (91.4 kB, runs on every route) or routing config is the first suspect. **Next step:** Runtime Logs
-  on that deployment, to see whether requests arrive at all and what they return. Local dev works;
-  **does not block Phase 4.**
-  - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
-    nowtutors.com at it.**
 - **Bump the GitHub action versions to `@v5`** (`actions/checkout`, `actions/setup-node`,
   `pnpm/action-setup` are on `@v4` and warn as deprecated Node-20 runtimes).
 - **Obsolete pricing remnants — one cleanup migration when Phase 6 opens.**
