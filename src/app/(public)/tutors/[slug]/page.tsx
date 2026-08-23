@@ -11,13 +11,14 @@ import {
   getWalletBalance,
 } from "@/db/queries/bookings";
 import { getViewer } from "@/lib/auth/guards";
+import { getBookingSettings, getInstantRequestTtlSeconds } from "@/lib/settings";
 import { BookingWidget, type BookingMode } from "@/components/features/booking/booking-widget";
+import { InstantRequestWidget } from "@/components/features/booking/instant-request-widget";
 import { Avatar } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { PriceTag } from "@/components/ui/price-tag";
 import { LivePill } from "@/components/ui/live-pill";
 import { SubjectChip } from "@/components/ui/subject-chip";
-import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { FavouriteHeart, type FavouriteMode } from "@/components/features/favourite-heart";
 
@@ -68,20 +69,29 @@ export default async function TutorProfilePage({
   if (!tutor) notFound();
 
   const isStudentViewer = viewer?.role === "student";
-  const [subjects, calendar, bookableSubjects, viewerProfile, walletBalance] =
-    await Promise.all([
-      getTutorSubjects(tutor.userId),
-      getPublicBookingCalendar(tutor.userId),
-      getBookableSubjects(tutor.userId),
-      viewer
-        ? db
-            .select({ timezone: profiles.timezone })
-            .from(profiles)
-            .where(eq(profiles.id, viewer.userId))
-            .limit(1)
-        : Promise.resolve([]),
-      isStudentViewer ? getWalletBalance(viewer.userId) : Promise.resolve(0),
-    ]);
+  const [
+    subjects,
+    calendar,
+    bookableSubjects,
+    viewerProfile,
+    walletBalance,
+    bookingSettings,
+    instantTtlSeconds,
+  ] = await Promise.all([
+    getTutorSubjects(tutor.userId),
+    getPublicBookingCalendar(tutor.userId),
+    getBookableSubjects(tutor.userId),
+    viewer
+      ? db
+          .select({ timezone: profiles.timezone })
+          .from(profiles)
+          .where(eq(profiles.id, viewer.userId))
+          .limit(1)
+      : Promise.resolve([]),
+    isStudentViewer ? getWalletBalance(viewer.userId) : Promise.resolve(0),
+    getBookingSettings(),
+    getInstantRequestTtlSeconds(),
+  ]);
 
   const bookingMode: BookingMode = !viewer
     ? "anon"
@@ -223,13 +233,32 @@ export default async function TutorProfilePage({
                 size="lg"
                 surface="ink"
               />
-              {canRequestNow && (
-                <Button className="w-full" disabled>
-                  Request now
-                </Button>
-              )}
             </CardContent>
           </Card>
+
+          {/* Instant session (SPEC §7.4). Shown only when the tutor is in the
+              live_tutors view AND accepts instant — the action re-checks both
+              server-side, so this is presentation and not the gate. Duration
+              and price are pinned on the request row at request time, so the
+              number on the button is exactly what an accept charges. */}
+          {canRequestNow && (
+            <Card>
+              <CardContent className="space-y-4 p-6">
+                <h2 className="text-h3 font-bold text-gray-700">Start now</h2>
+                <InstantRequestWidget
+                  tutorId={tutor.userId}
+                  tutorName={tutor.displayName ?? "This tutor"}
+                  hourlyRateCredits={tutor.hourlyRateCredits}
+                  durations={bookingSettings.sessionDurations}
+                  subjects={bookableSubjects}
+                  walletBalance={walletBalance}
+                  mode={bookingMode}
+                  loginHref={`/login?next=/tutors/${slug}`}
+                  ttlSeconds={instantTtlSeconds}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Scheduled booking (SPEC §7.3). Slots computed server-side, rendered
               in the student's timezone; the action re-validates + re-prices. */}

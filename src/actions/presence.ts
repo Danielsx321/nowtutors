@@ -32,7 +32,7 @@ const inputSchema = z.object({ live: z.boolean() });
  *
  * DELIBERATELY UNRESTRICTED by the tutor's calendar. A scheduled booking does
  * NOT block going live — the scheduled/instant collision is enforced at
- * **accept** (Phase 6 Part 2, §7.4), where the actual conflict exists. Checking
+ * **accept** (built in Phase 6 Part 2, §7.4), where the actual conflict exists. Checking
  * it here would drop a tutor off the live list for a booking that may never
  * collide with anything, and Bubble has no such check at all.
  */

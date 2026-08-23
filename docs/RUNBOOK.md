@@ -125,13 +125,15 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   **401** in `net._http_response`, not as a failed job; **503** means the deployment has no
   `CRON_SECRET` at all. Watch for a trailing space/newline when pasting — that is the usual cause
   of a 401 between otherwise "identical" values.
-  - ⚠️ **OPEN ITEM — this secret must be ROTATED before Phase 6 Part 2 ships.** The current value
+  - ⚠️ **OPEN ITEM — this secret must be ROTATED before the expire-requests job is SCHEDULED.**
+    (Phase 6 Part 2's *code* has shipped; nothing schedules the job until the snippet below is
+    run, so the gate is the schedule, not the merge.) The current value
     was exposed in plaintext (printed to a terminal and pasted between stores during setup), so it
     must be treated as compromised. Rotation means generating a new `openssl rand -hex 32` and
     updating **all three** stores — Vercel (then redeploy), `.env.local`, and the Vault
     `cron_secret` entry (via `vault.update_secret`, see the snippet) — in that order, then
-    re-verifying with a manual `net.http_post` invocation. This is not cosmetic: Phase 6 Part 2's
-    expire-requests job sits behind the **same** secret, so shipping it widens what a leaked
+    re-verifying with a manual `net.http_post` invocation. This is not cosmetic: the
+    expire-requests job sits behind the **same** secret, so scheduling it widens what a leaked
     `CRON_SECRET` can trigger from one tidy-up sweep to a job that mutates request state.
 - [x] **pg_cron + pg_net scheduling for `/api/cron/sweep-presence`** — Phase 6 Part 1.
   **Done 2026-08-23 on the shared dev/prod project `mipnoxlhurdbaahmvhhx`.** Run
@@ -163,12 +165,29 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
     `select … from vault.decrypted_secrets` subqueries, not a 64-char hex string.
   The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
   (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
-- [ ] ⚠️ **Rotate `CRON_SECRET` — BLOCKS Phase 6 Part 2.** The value set on 2026-08-23 was exposed
+- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done — and
+  gated on the `CRON_SECRET` rotation below; do not run this before rotating.** Run
+  `drizzle/snippets/pg_cron_expire_requests.sql` once per environment, as `postgres`, from the
+  Supabase SQL editor.
+  - **Run `pg_cron_sweep_presence.sql` first.** This snippet deliberately contains **only** the
+    `cron.schedule` call: the extensions and the two Vault secrets (`app_base_url`, `cron_secret`)
+    are created there and reused here. `vault.create_secret` **raises on a duplicate name**, so a
+    self-contained copy would fail on every environment already set up correctly.
+  - Schedule is `* * * * *` (§12) — a minute, not five: a 60-second request that sits `pending` for
+    five minutes is visibly wrong in the tutor's inbox even though nothing incorrect follows from it.
+  - Verify the same way as the sweep: `select jobid, jobname, schedule, active from cron.job;` then
+    `select status_code, content from net._http_response order by created desc limit 5;` — healthy
+    is `{"ok":true,"job":"expire-requests","expired":N,…}`. **401** = the Vault secret and Vercel's
+    `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
+  - Like the sweep, this job is **tidy-up, not correctness**: the accept transaction refuses (and
+    terminally expires) a request past its deadline on its own, and the "one pending request at a
+    time" read ignores rows past theirs, so an unscheduled job is not an outage.
+- [ ] ⚠️ **Rotate `CRON_SECRET` — BLOCKS scheduling `expire-requests`.** The value set on 2026-08-23 was exposed
   in plaintext during setup (printed to a terminal, pasted between stores) and must be treated as
   compromised. Generate a fresh `openssl rand -hex 32` and update **all three** stores —
   Vercel Production (**then redeploy**), `.env.local`, and the Supabase Vault `cron_secret` entry
   (`vault.update_secret`) — then re-verify with a manual `net.http_post` and confirm **200**.
-  Must be done **before Phase 6 Part 2 ships**: the expire-requests job will sit behind this same
+  Must be done **before `pg_cron_expire_requests.sql` is run**: that job sits behind this same
   secret, so a leaked value goes from triggering a harmless presence sweep to driving a job that
   mutates request state. See the `CRON_SECRET` item above.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;

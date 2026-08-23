@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { cronAuthFailure } from "@/lib/auth/api-guards";
 import { sweepStalePresence } from "@/db/queries/presence";
+import { expirePendingRequestsForTutors } from "@/db/queries/session-requests";
 
 /**
  * `GET /api/cron/sweep-presence` — the presence staleness sweep (SPEC §7.5
@@ -32,25 +34,30 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    // Fail closed. An unset secret must never mean "no auth required" — that
-    // would leave a public write endpoint on any environment missing the var.
-    console.error("[cron/sweep-presence] CRON_SECRET is not set");
-    return NextResponse.json({ error: "Cron is not configured." }, { status: 503 });
-  }
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  // Fail-closed bearer guard, shared with every other cron handler
+  // (`lib/auth/api-guards.ts`): an unset CRON_SECRET is a 503, never "no auth
+  // required". It was inlined here in Part 1 and was lifted out in Part 2 when
+  // expire-requests became the second handler needing exactly it.
+  const denied = cronAuthFailure(request, "sweep-presence");
+  if (denied) return denied;
 
   const startedAt = Date.now();
   try {
     const { sweptUserIds } = await sweepStalePresence();
 
-    // TODO(Phase 6 Part 2): expire pending session_requests past expires_at and
-    // mark the requests of a swept tutor `expired` (SPEC §12 sweep-presence,
-    // §7.4). Not here — session_requests has no writer until Part 2, so there is
-    // nothing to expire and a handler for it could not be tested.
+    // SPEC §7.4: "If the tutor's presence goes stale while a request is pending,
+    // the request expires immediately." Deliberately NOT gated on `expires_at` —
+    // a tutor who is gone will not answer, so their requests end now rather than
+    // making the student wait out a deadline that cannot be met. Requests that
+    // merely hit their own deadline are the expire-requests cron's job.
+    //
+    // Not in one transaction with the sweep above, and it does not need to be:
+    // if this statement failed, the tutor would be offline with requests still
+    // pending, and every one of them would be expired by expire-requests within
+    // a minute of its own deadline. The two sweeps are independently
+    // self-healing, which is the property that matters — not their atomicity.
+    const { expiredIds } = await expirePendingRequestsForTutors(sweptUserIds);
+
     // TODO(Phase 6 Part 3): ping the Agora token service to keep the Render
     // instance warm (SPEC §12), and end stale broadcasts. Both need the Agora
     // integration that lands in Part 3.
@@ -60,7 +67,7 @@ export async function GET(request: Request) {
       job: "sweep-presence",
       swept: sweptUserIds.length,
       sweptUserIds,
-      pendingRequestsExpired: null,
+      pendingRequestsExpired: expiredIds.length,
       durationMs: Date.now() - startedAt,
     };
     // §12: every cron handler logs a structured summary of what it changed.

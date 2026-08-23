@@ -21,12 +21,17 @@ import { expect, test, type Page } from "@playwright/test";
  * so this test now rests on the `live_tutors` view **alone** — which is the
  * strongest form of the assertion, not a weakened one.
  *
- * The second half of §15's path 3 — "and the request expires" — needs
- * `session_requests` to have a writer, which lands in Phase 6 Part 2. It is
- * stubbed as `test.fixme` below rather than quietly dropped.
+ * The second half of §15's path 3 — "and the request expires" — is the second
+ * test below, un-stubbed in Phase 6 Part 2 now that `session_requests` has a
+ * writer. It holds the same line: **nothing sweeps**. Neither
+ * `/api/cron/expire-requests` nor `/api/cron/sweep-presence` is called, so the
+ * request's death is the request path's own doing — the deadline is enforced
+ * where it is read, not by a job. A test that needed the cron would be asserting
+ * the cron, and §7.4 says correctness must not depend on it.
  */
 
 const TUTOR_EMAIL = process.env.E2E_TUTOR_EMAIL ?? "tutor1@nowtutors.dev";
+const STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL ?? "student1@nowtutors.dev";
 const TUTOR_PASSWORD = process.env.E2E_PASSWORD ?? "Password123!";
 /**
  * Seed slug for TUTOR_EMAIL (src/db/seed.ts). Membership is asserted against the
@@ -35,15 +40,21 @@ const TUTOR_PASSWORD = process.env.E2E_PASSWORD ?? "Password123!";
  * assertion false rather than failing loudly.
  */
 const TUTOR_SLUG = process.env.E2E_TUTOR_SLUG ?? "tom-turner";
+/** The seeded `display_name` for TUTOR_EMAIL — what the request UI addresses. */
+const TUTOR_DISPLAY_NAME = process.env.E2E_TUTOR_DISPLAY_NAME ?? "Tom";
 
 /** The live_tutors threshold (2 min) plus room for the poll interval. */
 const STALENESS_BUDGET_MS = 150_000;
 
 const SIGNIN_TIMEOUT_MS = 60_000;
 
-async function signIn(page: Page) {
+async function signIn(
+  page: Page,
+  email: string = TUTOR_EMAIL,
+  landing: RegExp = /\/tutor(\/|$)/,
+) {
   await page.goto("/login");
-  await page.getByLabel(/email/i).fill(TUTOR_EMAIL);
+  await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(TUTOR_PASSWORD);
   await page.getByRole("button", { name: /^log in$/i }).click();
 
@@ -52,7 +63,7 @@ async function signIn(page: Page) {
   // "waiting for navigation", which says nothing about why — the failure looks
   // like a presence bug when it is an environment problem.
   const landed = page
-    .waitForURL(/\/tutor(\/|$)/, { timeout: SIGNIN_TIMEOUT_MS })
+    .waitForURL(landing, { timeout: SIGNIN_TIMEOUT_MS })
     .then(() => "landed" as const);
   const rejected = page
     .getByRole("alert")
@@ -144,19 +155,133 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
     }
   });
 
-  test.fixme(
-    "the tutor's pending session request expires alongside them",
-    async () => {
-      // SPEC §15 path 3, second half. Deferred to **Phase 6 Part 2**: nothing
-      // writes `session_requests` yet (the student request flow, the Realtime
-      // subscription and the accept transaction are all Part 2), so there is no
-      // pending request to expire and no assertion to make that would not be
-      // asserting against a hand-inserted fixture.
+  test("the tutor's pending session request expires alongside them", async ({
+    browser,
+  }) => {
+    // SPEC §15 path 3, second half — the instant handshake's other end.
+    //
+    // The two assertions that matter are both about MONEY not moving and the
+    // student not being stranded: an unanswered request charges nothing, and it
+    // does not go on holding the student's one-pending-request slot forever
+    // (§7.4). Neither cron runs, so both are properties of the request path.
+    const tutorContext = await browser.newContext();
+    const tutorPage = await tutorContext.newPage();
+    const studentContext = await browser.newContext();
+    const studentPage = await studentContext.newPage();
+    let revivedContext: Awaited<ReturnType<typeof browser.newContext>> | null =
+      null;
+
+    try {
+      // 1. Tutor goes live.
+      await signIn(tutorPage);
+      const toggle = tutorPage.getByRole("switch", {
+        name: /available for instant sessions/i,
+      });
+      if ((await toggle.getAttribute("aria-checked")) !== "true") {
+        await toggle.click();
+      }
+      await expect(toggle).toHaveAttribute("aria-checked", "true");
+
+      // 2. Student signs in and notes what they have. Credits are the thing an
+      //    expired request must not touch, so the number is read BEFORE rather
+      //    than assumed from the seed.
+      await signIn(studentPage, STUDENT_EMAIL, /\/dashboard(\/|$)/);
+      const balanceBefore = await readWalletBalance(studentPage);
+
+      // 3. Student sends an instant request. "Start now" only renders for a
+      //    tutor the live_tutors view returns, so waiting for it also confirms
+      //    step 1 landed.
+      await sendInstantRequest(studentPage);
+      const waiting = studentPage.getByRole("dialog");
+      await expect(
+        waiting.getByText(new RegExp(`waiting for ${TUTOR_DISPLAY_NAME}`, "i")),
+      ).toBeVisible();
+
+      // 4. The tutor's browser dies mid-request. Offline first, so no in-flight
+      //    heartbeat can land afterwards and restart the staleness window.
+      //    Nothing signals the exit — there is no pagehide beacon.
+      await tutorContext.setOffline(true);
+      await tutorContext.close();
+
+      // 5. The student stops waiting, and is told plainly that nothing was
+      //    charged. The 60s ring is cosmetic, but it can only ever run out
+      //    unanswered: the server refuses an accept past expires_at, so a late
+      //    acceptance cannot contradict what the student was just shown.
+      await expect(waiting.getByText(/no answer/i)).toBeVisible({
+        timeout: 90_000,
+      });
+      await expect(waiting.getByText(/nothing was charged/i)).toBeVisible();
+      await waiting.getByRole("button", { name: /close/i }).click();
+
+      // 6. Nothing was charged, as a fact about the wallet rather than a
+      //    sentence in a modal. This is the assertion that would have caught a
+      //    debit-at-request-time regression.
+      expect(await readWalletBalance(studentPage)).toBe(balanceBefore);
+
+      // 7. The student is not stuck. A student may hold at most ONE pending
+      //    request (§7.4), so if the dead one were still counted as pending,
+      //    this second attempt would be refused with "You already have a
+      //    request waiting" — the expired row is what makes it succeed.
       //
-      // When Part 2 lands, the shape is: student sends a request to the live
-      // tutor → tutor's context dies offline as above → assert the request row
-      // reaches `expired` past `expires_at` (60s, `instant_request_ttl_seconds`)
-      // and that the student's UI stops waiting on it.
-    },
-  );
+      //    The tutor is brought back live in a fresh context first, because
+      //    createSessionRequest checks liveness BEFORE the pending-request rule
+      //    and an offline tutor would short-circuit past the thing under test.
+      revivedContext = await browser.newContext();
+      const revivedPage = await revivedContext.newPage();
+      await signIn(revivedPage);
+      const revivedToggle = revivedPage.getByRole("switch", {
+        name: /available for instant sessions/i,
+      });
+      if ((await revivedToggle.getAttribute("aria-checked")) !== "true") {
+        await revivedToggle.click();
+      }
+      await expect(revivedToggle).toHaveAttribute("aria-checked", "true");
+
+      await sendInstantRequest(studentPage);
+      await expect(
+        studentPage
+          .getByRole("alert")
+          .filter({ hasText: /already have a request waiting/i }),
+      ).toHaveCount(0);
+      await expect(
+        studentPage
+          .getByRole("dialog")
+          .getByText(new RegExp(`waiting for ${TUTOR_DISPLAY_NAME}`, "i")),
+      ).toBeVisible();
+    } finally {
+      await studentContext.close();
+      await revivedContext?.close().catch(() => {});
+      await tutorContext.close().catch(() => {});
+    }
+  });
 });
+
+/**
+ * The student's credit balance, read off `/dashboard/wallet`. The pill carries
+ * `aria-label="N credits"`, so this reads the accessible name rather than
+ * scraping formatted text.
+ */
+async function readWalletBalance(page: Page): Promise<number> {
+  await page.goto(`/dashboard/wallet?_t=${Date.now()}`);
+  const label = await page
+    .locator('[aria-label$="credits"]')
+    .first()
+    .getAttribute("aria-label");
+  const digits = (label ?? "").replace(/[^0-9]/g, "");
+  if (digits === "") throw new Error(`No credit balance found (aria-label: ${label})`);
+  return Number.parseInt(digits, 10);
+}
+
+/**
+ * Open the tutor's profile and send an instant request for the shortest offered
+ * duration. Cache-busted so a stale router cache cannot decide whether the
+ * "Start now" card is there.
+ */
+async function sendInstantRequest(page: Page): Promise<void> {
+  await page.goto(`/tutors/${TUTOR_SLUG}?_t=${Date.now()}`);
+  await expect(page.getByRole("heading", { name: /start now/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: /^30 min/ }).click();
+  await page.getByRole("button", { name: /^request now/i }).click();
+}
