@@ -41,13 +41,24 @@ branch), not from `main`. Only pull from `main` once the PR has merged.
 items 2–3 (doc-sync steps) got skipped — there was nowhere checked-in to point at, so the step had
 no home and fell out of the loop silently. Tracking it here closes that gap.
 
-## Claude Code cannot merge
+## Merges are Daniels' call — but they are a convention, not a technical block
 
-The execution seat's auto-mode classifier blocks `gh pr merge` (and equivalents) — correctly. Merges
-are a human decision point, not a mechanical last step of implementation, and the block is by design,
-not a bug to work around.
+**Corrected 2026-08-23.** This section previously said the execution seat's auto-mode classifier
+*blocks* `gh pr merge`. **That is not true, and relying on it as a safety net would be a mistake.**
+In the 2026-08-23 session the execution seat ran `gh pr merge 19 --squash` and
+`gh pr merge 20 --squash` at Daniels' explicit instruction and **both succeeded**. What the
+classifier did block in that same session was a direct write to the shared production database (an
+attempt to probe `CREATE EXTENSION` / Vault privileges over the `.env.local` connection) — so the
+classifier is real, but it draws its line around destructive writes to shared infrastructure, not
+around `gh pr merge`.
 
-**Daniels runs merges** from `~/nowtutors`, after reviewing:
+The rule therefore stands on its own merits rather than on enforcement: **merges are a human
+decision point, not a mechanical last step of implementation.** The execution seat opens PRs and
+stops. It merges only when Daniels asks for that specific merge, in that message — a "do not merge"
+in the prompt that created the PR is not overridden by anything the execution seat decides on its
+own afterwards.
+
+**Daniels normally runs merges** from `~/nowtutors`, after reviewing:
 
 ```bash
 gh pr merge <N> --squash

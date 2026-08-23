@@ -1279,3 +1279,67 @@ client-side navigation never fired `pagehide` in the first place. Leaving `/tuto
 tab close, or by pulling the plug — now stops the heartbeat and lets the view age the tutor out.
 SPEC §7.5 records the removal in place of the third defence so a later reader does not restore it as
 an oversight.
+
+## Test Supabase project — targeting and the safety guard (2026-08-23)
+
+Infrastructure, not product. Merged as PR #18 (scaffold) and PR #19 (wiring).
+
+- **A disposable project exists, and it is not a prod stand-in.** `nowtutors-test`, ref
+  `uietkphpfqaicbndunwt` (eu-west-3), credentials in gitignored `.env.test`. It exists so seeding and
+  E2E stop having to choose between writing to the project that serves production and not running at
+  all. Nothing deploys against it and it holds no data anyone should care about losing.
+
+- **Targeting is dedicated script variants, not a flag on the existing scripts.** Every db script has
+  a `:test` twin that loads `.env.test`; `drizzle-kit` variants pass
+  `--config=drizzle.config.test.ts`, and `tsx` variants require an explicit `--env=dev|test`
+  argument supplied by the pnpm script itself. *Why this shape:* the requirement was symmetric — a
+  normal `pnpm db:migrate` must not be able to reach test, **and** a test-targeted command must not
+  be able to reach dev. An env var like `DB_TARGET=test` fails the second half: it persists in a
+  shell, so the next unprefixed command in the same terminal silently inherits it. Two names that
+  each carry their own destination cannot be confused by leftover state. The `--env` argument is
+  **required, not defaulted** — running `tsx src/db/reset.ts` directly throws rather than quietly
+  picking dev, because a default is exactly the thing that turns a forgotten argument into a
+  destructive surprise.
+
+- **The guard compares against a hardcoded literal, not an env var.** `TEST_PROJECT_REF` in
+  `src/db/load-env.ts` is a string constant; every `:test` script aborts before doing anything if
+  the resolved connection string does not contain it. *Why not read it from `.env.test`:* **a guard
+  you can disable by forgetting to set a variable is not a guard.** The first version did read an
+  env var, and it failed exactly that way within a day — `.env.test` predated the variable, so the
+  guard threw "SUPABASE_TEST_PROJECT_REF is not set", which reads like a credentials problem. It
+  cost a wrong diagnosis: the real credentials were fine and the migration chain had never been
+  blocked. A guard whose absent configuration produces a *misleading* error is worse than one with
+  no configuration to absent. The ref is not a secret — it appears in every connection string the
+  guard inspects — so there is nothing gained by keeping it out of the repo, and the literal cannot
+  go unset. `tests/unit/load-env.test.ts` pins all three cases, including that the guard still
+  passes with `SUPABASE_TEST_PROJECT_REF` deleted from the environment.
+
+- **There is deliberately no dev/prod-capable `db:reset` variant.** `db:reset` (dev) predates this
+  work and stays; `db:reset:test` was added. Nothing was added that could drop `public` on a project
+  chosen at runtime.
+
+## `NODE_EXTRA_CA_CERTS` is set by a wrapper process, not by the env loader (2026-08-23)
+
+`scripts/with-ca-certs.mjs` wraps every `db:*` / `db:*:test` script, setting
+`NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` when the variable is unset and that file exists, then
+spawning the real command as a child process. Silent no-op otherwise. It never disables TLS
+verification.
+
+*Why it cannot live in `src/db/load-env.ts`, where it would naturally belong.* **Node reads
+`NODE_EXTRA_CA_CERTS` once at process startup, before any application code runs.** Assigning
+`process.env.NODE_EXTRA_CA_CERTS` from inside the already-running script has no effect on that
+process's TLS store — the certificates are loaded before `load-env.ts` gets control. The variable
+has to exist before the `tsx`/`drizzle-kit` process is spawned, so the only place the fix can work
+is a parent process that sets it and then spawns the child. This was checked rather than assumed:
+putting it in the env loader would have looked correct, changed nothing, and left the next person
+debugging a fix that was already "in place".
+
+*Why automate it at all.* Forgetting the prefix produces `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, which
+reads like a credentials or network failure and is neither — Node's bundled CA bundle is
+incomplete on this machine while the system store (`curl`) is fine. It cost a wrong diagnosis in the
+same session it was introduced. A documented step a human has to remember, whose failure mode
+misdirects, is a step worth removing.
+
+*Scope.* Only `db:*` scripts are wrapped. `pnpm build` / `pnpm dev` / bare `tsx` still need the
+manual export, and RUNBOOK keeps it as the documented fallback for machines whose CA bundle sits at
+a different path. An already-set value is never overridden.
