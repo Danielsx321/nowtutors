@@ -26,6 +26,13 @@ environment.
   **Action for prod / new machines:** set `DIRECT_URL` to the session pooler string
   (port 5432) from the Supabase dashboard → Connect.
 
+### Test Supabase project
+
+A disposable `nowtutors-test` Supabase project exists for local seeding and E2E runs, kept
+separate from dev/prod so it can be wiped freely. Its credentials live in `.env.test`
+(gitignored, never committed — see `.env.test.example` for the key list and comments on
+`DATABASE_URL`/`DIRECT_URL`). Project ref: **TBD**, to be filled in once wiring is done.
+
 ## Checklist (fill in as the build progresses)
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
