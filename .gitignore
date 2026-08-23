@@ -5,9 +5,14 @@ node_modules
 .next
 next-env.d.ts
 
-# env — ignore all env files but keep the committed template
+# env — ignore all env files but keep the committed templates
 .env*
 !.env.example
+!.env.test.example
+
+# explicit for clarity, already covered by .env* above
+.env.test
+.env.test.local
 
 # test / build output
 coverage
