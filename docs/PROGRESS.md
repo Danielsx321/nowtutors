@@ -4,9 +4,9 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-23)
 
-**Phases 0–5 and Phase 6 Part 1 are complete and merged to `main`. Phase 6 Part 2 is built and
-open for review on `phase-6-part2-session-requests`** — the instant-session handshake, its billing
-and the expiry cron; see "What Phase 6 Part 2 built" below. It needed **no migration**: Part 1's
+**Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
+Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
+PR #22 (`2d792de`)**; see "What Phase 6 Part 2 built" below. It needed **no migration**: Part 1's
 `0014` already carried every column and enum value it writes. Earlier that day two pieces of
 **infrastructure** Part 1 had left open were closed — a disposable test database, and the presence
 sweep actually being scheduled. See "2026-08-23 — test project, tooling, and the cron going live"
@@ -78,8 +78,8 @@ below.
   fails loudly in tests if ever reintroduced. **Merged via PR #13 (`003b992`).**
 - **Phase 6 Part 1 — presence + migration `0014`.** **Merged via PR #16 (`7b84841`).** See "What
   Phase 6 Part 1 built" below. PROGRESS was brought to true state for it in **PR #17 (`45511bd`)**.
-- **Phase 6 Part 2 — session-request handshake + billing.** **Open as
-  `phase-6-part2-session-requests`, not yet merged.** See "What Phase 6 Part 2 built" below.
+- **Phase 6 Part 2 — session-request handshake + billing.** **Merged via PR #22 (`2d792de`).**
+  See "What Phase 6 Part 2 built" below.
 - **Test project + tooling + cron scheduling (2026-08-23)** — **PR #18 (`eafe863`)**,
   **PR #19 (`b50b14f`)**, **PR #20 (`4b19bd6`)**. Infrastructure only, no product code. See the
   next section.
