@@ -211,7 +211,14 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
         timeout: 90_000,
       });
       await expect(waiting.getByText(/nothing was charged/i)).toBeVisible();
-      await waiting.getByRole("button", { name: /close/i }).click();
+      // Two controls in this dialog answer to the accessible name "Close": the
+      // outcome's own button and ModalContent's icon-only X. Only the former
+      // has text, which is what distinguishes them — and it is the one the
+      // student is actually being offered here.
+      await waiting
+        .getByRole("button", { name: /^close$/i })
+        .filter({ hasText: /close/i })
+        .click();
 
       // 6. Nothing was charged, as a fact about the wallet rather than a
       //    sentence in a modal. This is the assertion that would have caught a
@@ -282,6 +289,14 @@ async function sendInstantRequest(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: /start now/i })).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole("button", { name: /^30 min/ }).click();
+  // The profile renders TWO "Session length" groups — the instant widget's and
+  // the scheduled BookingWidget's — and both offer a "30 min" button, so a
+  // page-level getByRole matches two elements and dies in strict mode. Scope to
+  // the instant widget's own group by the id its <Label htmlFor> already points
+  // at. "Request now" needs no scoping: only the instant widget has one.
+  await page
+    .locator("#instant-duration")
+    .getByRole("button", { name: /^30 min/ })
+    .click();
   await page.getByRole("button", { name: /^request now/i }).click();
 }
