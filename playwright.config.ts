@@ -75,6 +75,14 @@ export default defineConfig({
         // against the database that serves production. A port clash is a loud,
         // correct failure; a silently wrong database is not.
         reuseExistingServer: false,
+        // Playwright pipes webServer STDERR only; stdout defaults to "ignore".
+        // That hides every `GET /login 200 in 120ms` line Next dev prints, which
+        // is precisely the evidence needed to tell an app failure from a dev
+        // server that has stopped answering — a distinction a run of this suite
+        // has already turned on once. Piping it costs nothing and keeps the
+        // server's own account of a failure in the run log.
+        stdout: "pipe",
+        stderr: "pipe",
         timeout: 120_000,
       },
 });
