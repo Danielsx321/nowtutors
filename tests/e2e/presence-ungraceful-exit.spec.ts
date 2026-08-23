@@ -88,6 +88,37 @@ async function signIn(
 }
 
 /**
+ * Put the tutor live — and make them ACTUALLY live, not merely flagged live.
+ *
+ * `is_live` is a stored flag; membership of `live_tutors` additionally requires a
+ * fresh `last_seen_at` (SPEC §3.1). A tutor whose browser died ungracefully — the
+ * exact state this suite is about, and the state a previous run of this suite
+ * leaves behind — keeps `is_live = true` with a stale `last_seen_at`. GoLiveToggle
+ * renders from that stored flag, so the switch shows CHECKED while `live_tutors`
+ * correctly excludes them.
+ *
+ * Skipping the click on an already-checked switch therefore leaves the tutor never
+ * actually live, and only the 30s heartbeat could rescue it — a race against this
+ * test's own 30s budget. Reading the switch as proof of liveness would be the very
+ * conflation of stored flag with derived status that §3.1 exists to forbid.
+ *
+ * So force a real off→on transition: only `setTutorLive(true)` writes
+ * `last_seen_at = now()` (src/db/queries/presence.ts), and that write is what
+ * membership actually depends on.
+ */
+async function goLive(page: Page): Promise<void> {
+  const toggle = page.getByRole("switch", {
+    name: /available for instant sessions/i,
+  });
+  if ((await toggle.getAttribute("aria-checked")) === "true") {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+  }
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+}
+
+/**
  * Is the tutor currently listed on the Live-now browse filter?
  *
  * `/tutors` 307s to `/` (the browse page) preserving the query string, so this
@@ -114,13 +145,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
     try {
       // 1. Tutor goes live.
       await signIn(tutorPage);
-      const toggle = tutorPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await toggle.getAttribute("aria-checked")) !== "true") {
-        await toggle.click();
-      }
-      await expect(toggle).toHaveAttribute("aria-checked", "true");
+      await goLive(tutorPage);
 
       // 2. They show up on the Live-now list.
       await expect
@@ -174,13 +199,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
     try {
       // 1. Tutor goes live.
       await signIn(tutorPage);
-      const toggle = tutorPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await toggle.getAttribute("aria-checked")) !== "true") {
-        await toggle.click();
-      }
-      await expect(toggle).toHaveAttribute("aria-checked", "true");
+      await goLive(tutorPage);
 
       // 2. Student signs in and notes what they have. Credits are the thing an
       //    expired request must not touch, so the number is read BEFORE rather
@@ -236,13 +255,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
       revivedContext = await browser.newContext();
       const revivedPage = await revivedContext.newPage();
       await signIn(revivedPage);
-      const revivedToggle = revivedPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await revivedToggle.getAttribute("aria-checked")) !== "true") {
-        await revivedToggle.click();
-      }
-      await expect(revivedToggle).toHaveAttribute("aria-checked", "true");
+      await goLive(revivedPage);
 
       await sendInstantRequest(studentPage);
       await expect(
