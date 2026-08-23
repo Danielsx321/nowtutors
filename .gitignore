@@ -30,3 +30,6 @@ test-results
 playwright-report
 blob-report
 .playwright
+
+# claude code — machine-local settings/permissions, not repo policy
+.claude/settings.local.json

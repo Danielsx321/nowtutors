@@ -83,6 +83,9 @@ below.
 - **Test project + tooling + cron scheduling (2026-08-23)** — **PR #18 (`eafe863`)**,
   **PR #19 (`b50b14f`)**, **PR #20 (`4b19bd6`)**. Infrastructure only, no product code. See the
   next section.
+- **Phase 6 E2E is green — SPEC §16's Phase 6 acceptance criterion is MET.** `tests/e2e/presence-ungraceful-exit.spec.ts`
+  passes both tests. **Merged via PR #25 (`f7b8a0a`).** See "Phase 6 E2E: getting to green (PR #25)"
+  below.
 
 ## 2026-08-23 — test project, tooling, and the cron going live
 
@@ -152,6 +155,52 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
 
+## Phase 6 E2E: getting to green (PR #25, 2026-08-23)
+
+**SPEC §16's Phase 6 acceptance criterion is MET.** `tests/e2e/presence-ungraceful-exit.spec.ts`
+passes both tests — `2.4m` and `2.6m`. Test 1's duration is the **real 2-minute staleness window
+elapsing**, not a shortcut or a mocked clock. **Merged via PR #25, `main` at `f7b8a0a`.** No test is
+skipped or marked `.fixme`, `retries: 0` is unchanged, and no assertion was weakened to get there —
+every fix either established a precondition for real or corrected a wrong assumption about the app.
+
+**This picks up work a PRIOR SESSION had already attempted and abandoned.** That session left
+uncommitted work on a never-pushed branch, `test/phase6-e2e-green` — the `.env.test` wiring in
+`playwright.config.ts` and `scripts/with-ca-certs.mjs`, plus two spec locator fixes. Rather than
+starting over, that work was **checkpointed as `8e93e14`** and built on. Noted here so nobody looks
+at this session's commit history and assumes it started from nothing.
+
+**The suite now runs against a PRODUCTION BUILD, not `next dev`.** `next build && next start`,
+through the same `--env-file` wrapper, on the disposable test Supabase project. See DECISIONS for
+why, and RUNBOOK for the exact command.
+
+Five causes were found and fixed, in the order hit:
+
+1. **Empty `ms-playwright` browser cache.** No browser had ever been installed; both tests failed at
+   launch in 2ms. `pnpm exec playwright install` itself failed with `SELF_SIGNED_CERT_IN_CHAIN`
+   downloading from `cdn.playwright.dev` — not interception (see RUNBOOK's CA entry) — fixed by
+   routing the install through `scripts/with-ca-certs.mjs`.
+2. **`GoLiveToggle` rendered `is_live` as if it were liveness, so the test's own go-live click was a
+   no-op.** The switch renders CHECKED from the stored `is_live` column; `live_tutors` membership
+   also needs a fresh `last_seen_at` (§3.1). A tutor left over from a prior run — `is_live = true`,
+   stale `last_seen_at` — rendered checked, so the setup's `if (!checked) click()` clicked nothing,
+   `last_seen_at` was never refreshed, and the tutor was never actually live. **This is the same
+   conflation §3.1 exists to forbid — the spec's own test setup had committed the mistake the spec is
+   there to catch, which is why the suite had never actually proven anything until this was fixed.**
+   Fixed by forcing a real off→on transition regardless of starting state.
+3. **The 120s webServer boot budget expired mid-compile on a healthy server.** Under `next dev`,
+   cold boot plus first-request compilation exceeded the timeout while nothing was actually broken.
+4. **`waitForURL` waited for a navigation event a Server Action redirect never emits.** The login
+   action redirects via the Next router, updating history client-side with no event Playwright
+   observes — a sign-in that had already landed on `/tutor` (confirmed via the trace: 303, RSC
+   fetch, heartbeats firing) still timed out. Fixed by polling the URL (`toHaveURL`) instead of
+   awaiting an event.
+5. **`goLive()` returned on optimistic UI before the server write landed.** `GoLiveToggle` flips
+   `aria-checked` the instant it's clicked, before the Server Action resolves — observed directly in
+   the server log, the tutor's profile was fetched **one second before** the go-live `POST` landed.
+   Fixed by waiting for the toast, which only renders from the action's resolved result;
+   `go-live-toggle.tsx` itself is untouched — its optimistic behaviour is a separate, open product
+   question (see "Still open" and DECISIONS).
+
 ## What Phase 6 Part 2 built
 
 **The instant-session handshake and its billing — not the room it lands in.**
@@ -219,9 +268,8 @@ Realtime publication entry this phase writes to.
   (`pending-payment-slots`, `slot-validation`) on Vitest's 5-second default timeout under parallel
   load; both pass on their own and reproduce the same way on `main`. Nothing about that is specific
   to this phase, but it does mean a green suite is machine-load-dependent — see "Still open".
-- **The E2E has still never had a green run** — the same carry-forward Part 1 left, now with a
-  second test in the file. Not run here (the phase prompt excluded it), and it needs the test project
-  seeded and Playwright pointed at it.
+- **~~The E2E has still never had a green run~~ — RESOLVED, PR #25.** See "Phase 6 E2E: getting to
+  green" above.
 - **⚠️ `CRON_SECRET` rotation is still open and now actually matters.** RUNBOOK flagged it as
   blocking Part 2 precisely because `expire-requests` sits behind the same secret. The route and the
   pg_cron snippet are written; **do not schedule the job until the secret is rotated.**
@@ -337,22 +385,31 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 - **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
   `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
   `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
-- **`tests/e2e/presence-ungraceful-exit.spec.ts` still needs a green run — now BOTH tests.** Part 2
-  added the request-expiry half beside Part 1's presence half; neither has ever completed a run.
-  **The seeding half is now unblocked** — the disposable test project (`uietkphpfqaicbndunwt`) exists
-  and `pnpm db:seed:test` populates it with verified counts, so the spec no longer has to choose
-  between seeding production and not running at all. What is still missing is the spec itself
-  actually passing end to end: it has **never** completed a run. The only local attempt (2026-08-22)
-  stopped at sign-in when Supabase Auth was unreachable over this machine's link, before reaching
-  any presence assertion — and that machine's Node CA problem, since fixed for db scripts by
-  `scripts/with-ca-certs.mjs`, is a plausible contributor worth re-testing first. Point Playwright
-  at the test project, get one green run, then consider it as a CI gate. Two real bugs in the spec
-  were found and fixed in PR #16 already: it matched the tutor by **display name** ("Tom Turner"),
-  which never appears — the seeded `display_name` is `Tom` — so every assertion would have
-  **silently passed as false** without ever exercising the intended path; and `signIn()` waited on
-  the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
-  "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
-  same shared-project reason, though it too now has a `:test` variant.)
+- **~~`tests/e2e/presence-ungraceful-exit.spec.ts` still needs a green run — now BOTH tests~~ —
+  RESOLVED, PR #25.** Both tests pass. See "Phase 6 E2E: getting to green" above for the five
+  causes found and fixed to get there, and DECISIONS for the production-build change. Kept here as
+  history: two real bugs in the spec were already found and fixed in PR #16 before this — it matched
+  the tutor by **display name** ("Tom Turner"), which never appears (the seeded `display_name` is
+  `Tom`), so every assertion would have **silently passed as false** without ever exercising the
+  intended path; and `signIn()` waited on the URL alone, so a rejected login burned the whole
+  5-minute timeout while reporting only "waiting for navigation" instead of the real cause. It is not
+  yet a CI gate — that remains a separate, not-yet-done step. (`db:verify-rls` remains local-only for
+  the same shared-project reason, though it too now has a `:test` variant.)
+- **Student `/dashboard` returns 404 on `main` — NOT YET FIXED, no decision taken.** SPEC §6's route
+  table specifies the page (stat cards, next session, recent tutors, wallet balance), but it was
+  never built — `src/app/(student)/dashboard/` has only `.gitkeep` and three subdirectories
+  (`bookings/`, `favourites/`, `wallet/`), no `page.tsx` at that level. Three call sites land a user
+  there: `src/lib/auth/guards.ts`'s `homeFor.student`, `src/actions/onboarding.ts` after onboarding
+  completes, and the "Dashboard" nav link — so every student who signs in or finishes onboarding
+  lands on a 404. **The E2E suite structurally cannot catch this**: `signIn()`'s assertion checks the
+  URL, which the 404 page satisfies just as well as a real dashboard would. Same false-pass species
+  as the earlier "Tom Turner" display-name bug above — a passing assertion that never exercised the
+  thing it was meant to prove.
+- **`GoLiveToggle` flips `aria-checked` optimistically, before the Server Action resolves — OPEN
+  question, not a settled decision.** The E2E now waits for the confirmation toast instead of trusting
+  the switch state (see "Phase 6 E2E: getting to green" above), so the test suite no longer depends
+  on this. Whether the component itself should stop flipping optimistically — and show a pending
+  state instead — is a separate product decision that has not been taken.
 - **CI `verify` does not run `pnpm build` — a known gap, and `pnpm build` is where production 404s
   surface.** The required `verify` check runs lint, typecheck and tests only, so a change that
   compiles under `tsc` but breaks the Next build passes CI and fails on deploy. The fix is already

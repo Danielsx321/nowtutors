@@ -41,24 +41,30 @@ branch), not from `main`. Only pull from `main` once the PR has merged.
 items 2–3 (doc-sync steps) got skipped — there was nowhere checked-in to point at, so the step had
 no home and fell out of the loop silently. Tracking it here closes that gap.
 
-## Merges are Daniels' call — but they are a convention, not a technical block
+## Merges are Daniels' call — the execution seat may now type the command, but does not decide
 
-**Corrected 2026-08-23.** This section previously said the execution seat's auto-mode classifier
-*blocks* `gh pr merge`. **That is not true, and relying on it as a safety net would be a mistake.**
-In the 2026-08-23 session the execution seat ran `gh pr merge 19 --squash` and
-`gh pr merge 20 --squash` at Daniels' explicit instruction and **both succeeded**. What the
-classifier did block in that same session was a direct write to the shared production database (an
-attempt to probe `CREATE EXTENSION` / Vault privileges over the `.env.local` connection) — so the
-classifier is real, but it draws its line around destructive writes to shared infrastructure, not
-around `gh pr merge`.
+**Amended 2026-08-23/24.** The execution seat **may EXECUTE `gh pr merge --squash`** on a PR whose
+`verify` check is green **and** which the advisory seat has explicitly approved. **It does not
+decide to merge.** What changed is who types the command, not who takes the decision — the actual
+judgment call (is this PR ready) still belongs entirely to the advisory seat, and still has to be
+given explicitly, in the message, for that specific PR. A "do not merge" in the prompt that created
+the PR is not overridden by anything the execution seat decides on its own afterwards, and silence
+is not approval — the execution seat opens a PR and stops unless told to merge that one.
 
-The rule therefore stands on its own merits rather than on enforcement: **merges are a human
-decision point, not a mechanical last step of implementation.** The execution seat opens PRs and
-stops. It merges only when Daniels asks for that specific merge, in that message — a "do not merge"
-in the prompt that created the PR is not overridden by anything the execution seat decides on its
-own afterwards.
+**A scoped permission now backs this**, rather than the classifier's judgment alone:
+`.claude/settings.local.json` (machine-local, gitignored) allows `Bash(gh pr merge:*)` specifically —
+not `gh` broadly, not `git push`. See DECISIONS.md for the full reasoning on both sides of that call.
 
-**Daniels normally runs merges** from `~/nowtutors`, after reviewing:
+*A caveat on the classifier itself, uncertain and worth flagging rather than asserting either way:*
+an earlier version of this section claimed the auto-mode classifier does not block `gh pr merge` at
+all. In the 2026-08-23/24 session, the classifier **did** block `gh pr merge 25 --squash` on first
+attempt — before the `Bash(gh pr merge:*)` permission rule existed — and the identical command
+succeeded immediately once that rule was added. Whether the classifier's behavior toward this
+specific command is permission-state-dependent, or something else changed between attempts, isn't
+established here. Don't rely on the classifier as a safety net either way; the explicit-approval
+convention above is what actually gates this, not the classifier's mood.
+
+**Daniels can still run merges manually** from `~/nowtutors`, after reviewing:
 
 ```bash
 gh pr merge <N> --squash
