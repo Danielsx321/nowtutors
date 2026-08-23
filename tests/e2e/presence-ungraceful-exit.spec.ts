@@ -46,7 +46,15 @@ const TUTOR_DISPLAY_NAME = process.env.E2E_TUTOR_DISPLAY_NAME ?? "Tom";
 /** The live_tutors threshold (2 min) plus room for the poll interval. */
 const STALENESS_BUDGET_MS = 150_000;
 
-const SIGNIN_TIMEOUT_MS = 60_000;
+/**
+ * Sign-in against a COMPILED server: one Supabase Auth round trip and a
+ * redirect, ordinarily a second or two. 60s was sized for a dev server that
+ * compiled `/login` and `/tutor` on the way through — against `next start` a
+ * budget that large would never fire, and a timeout that cannot fail is a trap
+ * for whoever reads it next. This is generous for the work being done and still
+ * fails while the cause is obvious.
+ */
+const SIGNIN_TIMEOUT_MS = 15_000;
 
 async function signIn(
   page: Page,

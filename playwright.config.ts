@@ -12,17 +12,31 @@ import { assertTestProjectRef } from "./src/db/load-env";
  * run `pnpm test:e2e`. Set `E2E_BASE_URL` to point at a deployment instead of
  * the local dev server.
  *
- * Pointing the dev server at the test project is the job of the `--env-file`
- * wrapper below: `next dev` loads `.env.local` (dev/prod) and has no flag to
- * load `.env.test` instead, so the values have to be in the environment before
- * Next starts. The same wrapper supplies NODE_EXTRA_CA_CERTS, without which
- * this machine's Node cannot complete the TLS handshake to Supabase Auth and
- * every sign-in fails as "Invalid email or password".
+ * The suite runs against a PRODUCTION BUILD, not `next dev`. Under `next dev`
+ * every route compiles on first request, and measured here that meant `GET /`
+ * in 73s, `POST /login` in 54s and `POST /tutor` in 38s — slower than the
+ * budgets any honest assertion can carry, so runs failed on compile latency
+ * while the app was correct. `next build && next start` moves that cost into a
+ * one-off build and serves in milliseconds.
+ *
+ * Pointing the app at the test project is the job of the `--env-file` wrapper
+ * below: Next loads `.env.local` (dev/prod) and has no flag to load `.env.test`
+ * instead, so the values have to be in the environment before Next starts. That
+ * matters twice over for a build — `NEXT_PUBLIC_*` is inlined into the client
+ * bundle at BUILD time, so the build itself has to run under the wrapper too,
+ * which is why it is inside the same command. The wrapper also supplies
+ * NODE_EXTRA_CA_CERTS, without which this machine's Node cannot complete the
+ * TLS handshake to Supabase and every sign-in fails as "Invalid email or
+ * password".
  *
  * `E2E_CHANNEL=chrome` runs against an installed system browser instead of
  * Playwright's bundled Chromium — the escape hatch for machines where
- * `playwright install` cannot reach the CDN (a VPN client on this one). Unset in
- * CI, which should use the pinned bundled build.
+ * `playwright install` cannot reach the CDN. On this one that download fails
+ * with SELF_SIGNED_CERT_IN_CHAIN, which is NOT interception: the CDN serves a
+ * genuine DigiCert chain that curl verifies, and Node's own bundled CA store is
+ * what cannot complete it. Running the install through `with-ca-certs.mjs`
+ * fixes it, and is the better answer than a system browser. Unset in CI, which
+ * should use the pinned bundled build.
  */
 
 const TEST_ENV_FILE = ".env.test";
@@ -67,7 +81,9 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: `node scripts/with-ca-certs.mjs --env-file=${TEST_ENV_FILE} pnpm dev`,
+        // Build AND serve inside one wrapped command, so the build inlines the
+        // test project's NEXT_PUBLIC_* values rather than .env.local's.
+        command: `node scripts/with-ca-certs.mjs --env-file=${TEST_ENV_FILE} sh -c 'pnpm build && pnpm start'`,
         url: "http://localhost:3000",
         // NOT reuseExistingServer. A `pnpm dev` already running on 3000 is
         // pointed at the DEV project, and reusing it would silently run the
@@ -83,11 +99,11 @@ export default defineConfig({
         // server's own account of a failure in the run log.
         stdout: "pipe",
         stderr: "pipe",
-        // A cold `next dev` on a dev machine needs ~60s just to reach Ready, and
-        // then compiles each route on first request — `/` alone has been measured
-        // at 56s and still unfinished. 120s expired mid-compile with the server
-        // perfectly healthy, which reads as a broken app and is not one. This is
-        // the boot budget only; it puts no slack in any assertion.
-        timeout: 300_000,
+        // Covers a full cold `next build` plus `next start`. MEASURED, not
+        // guessed: a cold build of this project on this machine took 273s, so
+        // this is that number with room for a slower one. It is the only budget
+        // here that is large on purpose, and it buys no slack for any assertion
+        // — once the server is up, requests are served in milliseconds.
+        timeout: 420_000,
       },
 });
