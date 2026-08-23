@@ -59,14 +59,17 @@ plain `db:reset:prod`/dev-and-prod-capable reset variant.
 landed in `public` (`profiles`, `tutor_profiles`, `bookings`, `wallets`,
 `credit_transactions`, etc.), no errors (only benign `DROP TRIGGER IF EXISTS
 ... does not exist, skipping` NOTICEs from later migrations dropping
-not-yet-created triggers). `pnpm db:seed:test` was **not** verified — it failed
-locally on this machine with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` from Node's
-`fetch` (used by `@supabase/supabase-js` for the admin-user-creation calls),
-reproducing even on a plain `fetch('https://supabase.com')`. `curl` to the same
-host succeeds, so this is this machine's Node TLS/CA trust store, not the
-test project, credentials, or the migration/seed code — needs to be fixed
-(or re-run from a machine with a working Node cert store) before the seed step
-can be verified.
+not-yet-created triggers). `pnpm db:seed:test` then completed and populated
+the test project: 11 profiles (1 admin, 8 tutors, 2 students), 8 tutor
+profiles, 26 subjects, 9 platform_settings rows, 2 favourites — confirmed by
+querying the test database directly, not just trusting the script's own log.
+
+Note: `db:seed:test` calls the Supabase Admin API via `@supabase/supabase-js`,
+which uses Node's `fetch`. On a machine where Node's own CA trust store is
+incomplete (symptom: `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, while `curl` to the
+same host works fine), run with `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or
+your platform's system CA bundle path) — this is a local Node/TLS environment
+quirk, unrelated to the test project, credentials, or migration/seed code.
 
 ## Checklist (fill in as the build progresses)
 
