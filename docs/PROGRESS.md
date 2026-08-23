@@ -4,10 +4,13 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-23)
 
-**Phases 0–5 and Phase 6 Part 1 are complete and merged to `main`.** The 2026-08-23 session added
-no product code: it closed two pieces of **infrastructure** Phase 6 Part 1 had left open — a
-disposable test database, and the presence sweep actually being scheduled. See "2026-08-23 —
-test project, tooling, and the cron going live" below.
+**Phases 0–5 and Phase 6 Part 1 are complete and merged to `main`. Phase 6 Part 2 is built and
+open for review on `phase-6-part2-session-requests`** — the instant-session handshake, its billing
+and the expiry cron; see "What Phase 6 Part 2 built" below. It needed **no migration**: Part 1's
+`0014` already carried every column and enum value it writes. Earlier that day two pieces of
+**infrastructure** Part 1 had left open were closed — a disposable test database, and the presence
+sweep actually being scheduled. See "2026-08-23 — test project, tooling, and the cron going live"
+below.
 
 - **Phase 0** — foundation scaffold (PR #1, `56cc101`).
 - **Phase 1** — data layer: 21 tables + 16 enums, 7 migrations, RLS, `live_tutors` /
@@ -75,6 +78,8 @@ test project, tooling, and the cron going live" below.
   fails loudly in tests if ever reintroduced. **Merged via PR #13 (`003b992`).**
 - **Phase 6 Part 1 — presence + migration `0014`.** **Merged via PR #16 (`7b84841`).** See "What
   Phase 6 Part 1 built" below. PROGRESS was brought to true state for it in **PR #17 (`45511bd`)**.
+- **Phase 6 Part 2 — session-request handshake + billing.** **Open as
+  `phase-6-part2-session-requests`, not yet merged.** See "What Phase 6 Part 2 built" below.
 - **Test project + tooling + cron scheduling (2026-08-23)** — **PR #18 (`eafe863`)**,
   **PR #19 (`b50b14f`)**, **PR #20 (`4b19bd6`)**. Infrastructure only, no product code. See the
   next section.
@@ -147,11 +152,86 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
 
+## What Phase 6 Part 2 built
+
+**The instant-session handshake and its billing — not the room it lands in.**
+`/session/[bookingId]`, the Agora client, `/api/agora/token`, end-session, `complete-sessions` and
+`tutor_earnings` are Part 3. Where Part 2 navigates into that route it carries a
+`TODO(Phase 6 Part 3)`; until Part 3 ships, an accepted request lands on a 404 with the booking
+already created, paid for and `in_progress`.
+
+**No migration.** `0014` (Part 1) already shipped every column, enum value, index, RLS policy and
+Realtime publication entry this phase writes to.
+
+- **Server actions** — `src/actions/session-requests.ts`: `createSessionRequest`,
+  `declineSessionRequest`, `acceptSessionRequest`, plus `getIncomingRequest` (the guarded read the
+  tutor's modal enriches from). Each re-checks role and identity server-side and returns a **typed
+  result**; nothing throws a string. `createSessionRequest` validates tutor liveness against the
+  **`live_tutors` view** (never `is_live`), `accepts_instant`, the duration against
+  `session_durations`, the subject against `tutor_subjects`, one-pending-request, and balance ≥
+  price — then computes `price_credits` with `sessionPriceCredits()` and **pins** it with
+  `duration_minutes` on the row. `expires_at` is `now() + instant_request_ttl_seconds` computed by
+  **Postgres**, not by the app server.
+- **The accept transaction** — `src/lib/session-requests/accept.ts` (pure, store-agnostic, the same
+  shape as `lib/paypal/settlement.ts`) with `src/db/queries/session-requests.ts` as the Drizzle
+  adapter. One transaction: lock the request `FOR UPDATE` → refuse-and-expire if past `expires_at` →
+  refuse if not `pending` → refuse on a colliding scheduled booking → debit the **pinned** price as a
+  single `booking_debit` → insert the `instant` / `in_progress` booking with
+  `agora_channel = session_{booking_id}` → mark accepted → auto-decline the tutor's other pending
+  requests. The booking id is generated in application code so the channel is known before the INSERT.
+- **`failed_payment` survives the rollback.** An insufficient balance rolls the whole accept back,
+  then a **separate statement** — conditional on the row still being `pending` — writes
+  `failed_payment`. Not `expired`, not `declined` (§4.3).
+- **The collision read is a real overlap.** SPEC §7.4 stated only `scheduled_start_at < now() +
+  duration_minutes`; `scheduled_end_at > now()` was added, because nothing sets `completed` until
+  Part 3 and the literal reading would have blocked every tutor with any past booking, forever. SPEC
+  §7.4 amended; see DECISIONS.
+- **Realtime, both directions** — `src/hooks/use-session-requests.ts`. Tutor: INSERT/UPDATE where
+  `tutor_id = me`, driving an incoming-request modal mounted in the `(tutor)` layout so a request
+  finds the tutor on any tutor page. Student: UPDATE on their own row, with a **distinct** message
+  for accepted / declined / expired / cancelled / `failed_payment`. Payloads are treated as
+  notifications — display data is read back through a guarded action.
+- **Student request UI** — `InstantRequestWidget` on `/tutors/[slug]`, replacing Part 1's disabled
+  "Request now" button with its own "Start now" card: duration picker **with the price against each
+  option**, optional subject, optional note, affordability warning, then a waiting modal with the
+  60-second ring. Both rings are **cosmetic** (`src/hooks/use-countdown.ts`) — they tick a deadline
+  already in hand and make no network call, so neither is the polling CLAUDE.md forbids.
+- **Cron** — `GET`/`POST /api/cron/expire-requests`, bearer-guarded (**503 when `CRON_SECRET` is
+  unset**), idempotent, structured counts. The guard itself moved to
+  `lib/auth/api-guards.ts#cronAuthFailure` and `sweep-presence` now calls it too. `sweep-presence`'s
+  `TODO(Phase 6 Part 2)` is filled in: a swept tutor's pending requests expire immediately and the
+  count is returned as `pendingRequestsExpired` (no longer `null`). Snippet:
+  `drizzle/snippets/pg_cron_expire_requests.sql`.
+- **Tests** — `tests/unit/session-request-accept.test.ts` (16 cases: the four refusal paths, all four
+  collision boundaries, the auto-decline, and the price-pinning property in both directions), and the
+  request-expiry half of `tests/e2e/presence-ungraceful-exit.spec.ts` is **un-`fixme`d** — it asserts
+  the wallet balance is unchanged after an unanswered request and that the dead request stops holding
+  the student's one-pending slot, **with neither cron running**.
+- **Docs in the same commit** — SPEC §4.3, §7.4, §7.5, §8, §12, §15; DECISIONS gained a Part 2
+  section; RUNBOOK gained the expire-requests scheduling step; PROGRESS is this section.
+
+### Phase 6 Part 2 — shipped state
+
+- **Nothing was run against the shared project.** No migration was needed and none was applied; no
+  seed, reset or verify script was run against `mipnoxlhurdbaahmvhhx` or against the test project.
+- **`pnpm lint`, `pnpm typecheck` and `pnpm test` are green** — 222 tests across 19 files, 16 of
+  them new. An earlier run of the same suite failed two **pre-existing** specs
+  (`pending-payment-slots`, `slot-validation`) on Vitest's 5-second default timeout under parallel
+  load; both pass on their own and reproduce the same way on `main`. Nothing about that is specific
+  to this phase, but it does mean a green suite is machine-load-dependent — see "Still open".
+- **The E2E has still never had a green run** — the same carry-forward Part 1 left, now with a
+  second test in the file. Not run here (the phase prompt excluded it), and it needs the test project
+  seeded and Playwright pointed at it.
+- **⚠️ `CRON_SECRET` rotation is still open and now actually matters.** RUNBOOK flagged it as
+  blocking Part 2 precisely because `expire-requests` sits behind the same secret. The route and the
+  pg_cron snippet are written; **do not schedule the job until the secret is rotated.**
+
 ## What Phase 6 Part 1 built
 
 **Presence and the schema cleanup only.** Session requests, Realtime, billing and the session room
-are Parts 2 and 3, and are absent rather than stubbed — where Part 1 code would otherwise reach into
-them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
+were Parts 2 and 3, and were absent rather than stubbed — where Part 1 code would otherwise reach
+into them it carried a `TODO(Phase 6 Part 2 / Part 3)`. The Part 2 half of those is now filled in
+(above); only the `TODO(Phase 6 Part 3)` markers remain.
 
 - **Migration `0014`** (`drizzle/0014_phase6_presence_cleanup.sql`, partly hand-written):
   `session_requests` gains `duration_minutes` + `price_credits` (both `integer NOT NULL`, **no
@@ -171,7 +251,8 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
   **two** defences, not three: the `live_tutors` view and the sweep.
 - **Go live** — `/tutor` now exists (it 404'd before) and hosts the "Available for instant sessions"
   toggle. The action re-checks role, approval, suspension and verified email server-side, and is
-  **unrestricted by the tutor's calendar** — the scheduled collision is a Part 2 accept-time check.
+  **unrestricted by the tutor's calendar** — the scheduled collision is an accept-time check, built
+  in Part 2.
 - **Sweep** — `GET`/`POST /api/cron/sweep-presence`, bearer-guarded (**503 when `CRON_SECRET` is
   unset**, never open), idempotent, returns structured counts. Work set derived from the
   `live_tutors` view, not from any threshold of its own. Scheduled by **Supabase pg_cron + pg_net**
@@ -180,7 +261,8 @@ them it carries a `TODO(Phase 6 Part 2 / Part 3)`.
 - **Tests** — `tests/unit/presence-staleness.test.ts` (7 cases: the boundary at exactly 2 minutes
   and either side, plus an anti-drift check that parses the interval literal out of `0014`) and
   `tests/e2e/presence-ungraceful-exit.spec.ts` (§15 path 3, presence half; the request-expiry half
-  is `test.fixme` for Part 2). Playwright added as a devDependency — it was already in SPEC §2.
+  was `test.fixme` here and was written in Part 2). Playwright added as a devDependency — it was
+  already in SPEC §2.
 - **Docs in the same commit** — SPEC §3.5, §4.1, §4.3, §4.4, §7.4, §7.5, §12, §15; DECISIONS gained
   a Part 1 section; RUNBOOK gained `CRON_SECRET` and the pg_cron setup step.
 
@@ -255,7 +337,8 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 - **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
   `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
   `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
-- **Phase 6 Part 1's E2E (`tests/e2e/presence-ungraceful-exit.spec.ts`) still needs a green run.**
+- **`tests/e2e/presence-ungraceful-exit.spec.ts` still needs a green run — now BOTH tests.** Part 2
+  added the request-expiry half beside Part 1's presence half; neither has ever completed a run.
   **The seeding half is now unblocked** — the disposable test project (`uietkphpfqaicbndunwt`) exists
   and `pnpm db:seed:test` populates it with verified counts, so the spec no longer has to choose
   between seeding production and not running at all. What is still missing is the spec itself
@@ -270,24 +353,30 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
   "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
   same shared-project reason, though it too now has a `:test` variant.)
-- **⚠️ `CRON_SECRET` must be ROTATED before Phase 6 Part 2 ships — blocking.** The secret is set and
+- **⚠️ `CRON_SECRET` must be ROTATED before the expire-requests job is SCHEDULED — still open.**
+  Part 2's code has shipped without it, which is safe: the route is written and bearer-guarded, but
+  nothing schedules it until someone runs `drizzle/snippets/pg_cron_expire_requests.sql`. **Do not
+  run that snippet before rotating.** The secret is set and
   working across all three stores (Supabase Vault `cron_secret`, Vercel Production, `.env.local`),
   but the value in use was **exposed in plaintext** during setup — printed to a terminal and pasted
   between stores — so it must be treated as compromised. Rotation is: generate a fresh
   `openssl rand -hex 32`, update Vercel (**then redeploy** — Vercel only applies env changes on a
   new deployment), `.env.local`, and the Vault entry via `vault.update_secret`, then re-verify with
-  a manual `net.http_post` and confirm **200**. *Why it blocks Part 2:* the expire-requests job will
-  sit behind this **same** secret, so a leaked value goes from triggering a harmless presence sweep
-  to driving a job that mutates request state. Tracked in RUNBOOK's checklist as its own open item.
+  a manual `net.http_post` and confirm **200**. *Why it blocks the schedule:* expire-requests sits
+  behind this **same** secret, so a leaked value goes from triggering a harmless presence sweep to
+  driving a job that mutates request state. Tracked in RUNBOOK's checklist as its own open item.
 - **CI `verify` does not run `pnpm build` — a known gap, and `pnpm build` is where production 404s
   surface.** The required `verify` check runs lint, typecheck and tests only, so a change that
   compiles under `tsc` but breaks the Next build passes CI and fails on deploy. The fix is already
   written and sitting in **PR #6 (`fix/ci-build-step`), which is still OPEN** and unrelated to
   everything this session touched — it predates it (2026-08-21). Either merge it or close it
   deliberately; leaving it open is the worst of both, because the gap stays and the fix looks handled.
-- **`tests/unit/pending-payment-slots.test.ts` is slow (~10s) and can time out on the 5-second
-  default when the whole suite runs in one process under load.** Unrelated to Phase 6. Worth a
-  `testTimeout` bump on that file.
+- **`tests/unit/pending-payment-slots.test.ts` and `tests/unit/slot-validation.test.ts` are slow and
+  can time out on Vitest's 5-second default when the whole suite runs in one process under load.**
+  Both pass on their own; both failed this way during the Phase 6 Part 2 run and reproduce the same
+  way on `main`. Unrelated to any phase. Worth a `testTimeout` bump on the two files (or globally)
+  — as it stands, a green suite is machine-load-dependent, which is exactly the kind of flake that
+  teaches people to re-run rather than read.
 - **Approval and rejection emails are `TODO(Phase 10)` hooks — nothing is sent.** The hooks are
   marked in `src/actions/admin-tutors.ts`; Resend wires in Phase 10.
 - **Tutor profile diff view not built.** The admin "Edited since review" tab flags the profile and

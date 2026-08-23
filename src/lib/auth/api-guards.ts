@@ -69,3 +69,29 @@ export function authErrorResponse(err: unknown): NextResponse | null {
   }
   return null;
 }
+
+/**
+ * The cron-route bearer guard (SPEC §12), shared by every `app/api/cron/*`
+ * handler. Returns a response to send when the caller is not the scheduler, or
+ * `null` when the job may run.
+ *
+ * **Fails closed on a missing secret.** An unset `CRON_SECRET` returns 503, not
+ * "no auth required" — otherwise an environment that simply forgot the variable
+ * would expose a public write endpoint, which is the failure mode most likely to
+ * go unnoticed because nothing errors.
+ *
+ * It lives here rather than being copy-pasted per handler because it is a
+ * security check with a fail-closed branch: two copies are two things to keep in
+ * step, and the one that drifts is the one nobody reads again.
+ */
+export function cronAuthFailure(request: Request, job: string): NextResponse | null {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.error(`[cron/${job}] CRON_SECRET is not set`);
+    return NextResponse.json({ error: "Cron is not configured." }, { status: 503 });
+  }
+  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  return null;
+}

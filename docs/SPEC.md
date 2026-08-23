@@ -332,11 +332,14 @@ the student was quoted, even if `hourly_rate_credits` or settings change between
 `0014` ships **no default** on either column: the table was empty, and a default would quietly cover
 for a caller that forgot to compute them.
 
-**`failed_payment` status (shipped in migration `0014`, Phase 6 Part 1).** The credit debit runs inside
-the tutor's accept transaction. If the student's balance moved between request and accept (e.g.
-spent elsewhere) such that the debit would fail, the whole accept rolls back and the request goes
-terminal as `failed_payment` — not `expired`, not `declined` — so an operator reading this table can
-tell a refusal from a payment failure.
+**`failed_payment` status (shipped in migration `0014`, Phase 6 Part 1; written by Part 2).** The
+credit debit runs inside the tutor's accept transaction. If the student's balance moved between
+request and accept (e.g. spent elsewhere) such that the debit would fail, the whole accept rolls back
+and the request goes terminal as `failed_payment` — not `expired`, not `declined` — so an operator
+reading this table can tell a refusal from a payment failure. **The status write is therefore a
+separate statement, issued after the rollback** and conditional on the row still being `pending`: a
+write inside the transaction would be rolled back with everything else, leaving the request looking
+untouched (§7.4).
 
 **`reviews`** — **DEFERRED (not built in Phase 1).** No Review type exists in the current Bubble build (Decision C). Ratings are denormalized scalars on `tutor_profiles` (`rating_avg`, `rating_count`) with nothing writing them yet. If reviews become a feature: `booking_id uuid unique FK, student_id, tutor_id, rating smallint check (rating between 1 and 5), comment text, is_published boolean default true`.
 
@@ -690,7 +693,7 @@ Student                          Server                           Tutor
 
 Rules:
 
-- **Expiry is enforced server-side.** The client countdown is cosmetic. Accepting an expired request fails with a clear error. A cron pass also sweeps `pending` rows past `expires_at` to `expired` every minute so dashboards stay clean.
+- **Expiry is enforced server-side.** The client countdown is cosmetic. Accepting an expired request fails with a clear error — and moves the row to `expired` there and then, so the student's waiting modal stops waiting immediately rather than at the next cron pass. A cron pass (`/api/cron/expire-requests`, §12, built in Part 2) also sweeps `pending` rows past `expires_at` to `expired` every minute so dashboards stay clean; nothing about correctness waits on it.
 - A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest.
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
@@ -702,7 +705,50 @@ Rules:
 
 **Ending a session is unchanged from Bubble (Phase 6 pre-build decision).** Credits are charged upfront and **nothing is refunded on early exit by either party** — a student who leaves after 5 minutes of a paid 60-minute session, or a tutor who ends it early, gets no partial credit back. The session **hard-stops when the booked duration elapses**, with **no grace period**. Bubble's mid-session "buy more credits" top-up popup is **not ported**: under flat upfront billing there is nothing to run out of mid-session, so the popup has no equivalent state to attach to.
 
-**Scheduled-booking collision at accept, no buffer (Phase 6 pre-build decision).** The accept transaction additionally rejects if the tutor has a `confirmed` or `in_progress` **scheduled** booking starting before `now() + duration_minutes`. This is an application-level guarded read inside the accept transaction, **not a database constraint** — `bookings_no_overlap` (§4.3) deliberately excludes instant bookings, which have no time range to exclude against. There is **no buffer or gap** around the scheduled booking: the live Bubble app has no such check at all, so inventing a buffer would be adding a rule that doesn't exist upstream. The go-live toggle (§7.5) stays unrestricted by this check — a tutor can go live with a scheduled booking on the calendar; the collision is only enforced at accept.
+**Scheduled-booking collision at accept, no buffer (Phase 6 pre-build decision; end-side condition added in Part 2).** The accept transaction additionally rejects if the tutor has a `confirmed` or `in_progress` **scheduled** booking whose range overlaps the instant session's `[now(), now() + duration_minutes)` — i.e. `scheduled_start_at < now() + duration_minutes` **AND** `scheduled_end_at > now()`. This is an application-level guarded read inside the accept transaction, **not a database constraint** — `bookings_no_overlap` (§4.3) deliberately excludes instant bookings, which have no time range to exclude against. There is **no buffer or gap** around the scheduled booking: the live Bubble app has no such check at all, so inventing a buffer would be adding a rule that doesn't exist upstream — back-to-back is allowed, and a booking starting exactly when the instant session ends does not collide. The go-live toggle (§7.5) stays unrestricted by this check — a tutor can go live with a scheduled booking on the calendar; the collision is only enforced at accept.
+
+> This line previously stated only the start-side half. Taken literally that blocks on **every** past booking still sitting `confirmed` — and none are `completed` yet, because the complete-sessions cron is Phase 6 Part 3 — which would leave a tutor permanently unable to accept an instant session. The `scheduled_end_at > now()` half is what the rule always meant; it is written down here because the half that was written down was the one that could be implemented wrongly. See `docs/DECISIONS.md`, Phase 6 Part 2.
+
+> **Part 2 implementation (Phase 6, `phase-6-part2-session-requests`).** The handshake above is
+> built end to end **except the room it lands in**: `/session/[bookingId]`, the Agora client,
+> `/api/agora/token`, end-session, `complete-sessions` and `tutor_earnings` are Part 3, and the
+> navigations below deliberately point at a route that does not exist yet (`TODO(Phase 6 Part 3)`
+> at each site).
+>
+> - **Three Server Actions** in `src/actions/session-requests.ts`, each re-checking role and
+>   identity server-side and each returning a **typed result** rather than throwing:
+>   `createSessionRequest`, `declineSessionRequest`, `acceptSessionRequest`.
+> - **`createSessionRequest`** validates, in order: caller is a student with a verified email; the
+>   tutor is **in the `live_tutors` view** (§3.1 — never `is_live`) and `accepts_instant`; the
+>   duration is a member of `session_durations`; the tutor teaches the chosen subject, when one was
+>   chosen; the student holds no other live pending request; and the balance covers the price. It
+>   then computes `price_credits` with `sessionPriceCredits()` and pins it with `duration_minutes`
+>   on the row. The client sends a tutor, an optional subject, an optional note and a duration —
+>   never a price, a deadline, or an identity.
+> - **`expires_at` is computed by Postgres** (`now() + make_interval(...)`), not by the app server,
+>   so the deadline is written against the same clock every later read and both crons compare it
+>   with. The window is `instant_request_ttl_seconds` from `platform_settings` (seeded **60**),
+>   coerced to a positive integer and defaulted rather than trusted.
+> - **A student's own stale `pending` row never blocks them.** The "one pending request at a time"
+>   read ignores rows past `expires_at`, and the write path expires them before the check — the same
+>   shape as §7.3 step 5's stale-hold sweep, and the reason the expiry cron is tidy-up rather than
+>   correctness.
+> - **The accept transaction's decisions live in a store-agnostic module**
+>   (`src/lib/session-requests/accept.ts`, the same shape as `lib/paypal/settlement.ts`), so all
+>   four refusal paths — expired, no-longer-pending, scheduled collision, and a balance that moved —
+>   are unit-tested without a live Postgres. `db/queries/session-requests.ts` is the Drizzle adapter.
+> - **The booking id is generated in application code** so `agora_channel = session_{booking_id}`
+>   can be written by the same INSERT that creates the row, rather than by a follow-up UPDATE.
+> - **The `failed_payment` write runs OUTSIDE the rolled-back transaction**, in its own statement
+>   conditional on the row still being `pending`. That ordering is the whole point: everything the
+>   accept did must roll back, and the record of *why* must not.
+> - **Realtime, both directions** (§8): the tutor's incoming-request modal is mounted in the tutor
+>   layout and subscribes to INSERT/UPDATE where `tutor_id = me`; the student's waiting modal
+>   subscribes to UPDATE on its own row and shows a **distinct** message for each of accepted,
+>   declined, expired, cancelled and `failed_payment`. Realtime payloads are treated as
+>   notifications, not as data — anything displayed is read back through a guarded Server Action.
+> - **The 60-second ring is cosmetic on both sides** and is the only `setInterval` added: it ticks a
+>   deadline already in hand and makes no network call, so it is not the polling CLAUDE.md forbids.
 
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
@@ -717,7 +763,7 @@ Rules:
 **Staleness — two independent defences** (three until Phase 6 Part 1; see below)**:**
 
 1. **The `live_tutors` view** filters on `last_seen_at` at read time. Students are protected even if everything else fails.
-2. **Cron sweep** every 5 minutes sets `is_live = false`, `live_mode = null` for every row still flagged `is_live` that the **`live_tutors` view does not return** — and expires their pending session requests. The sweep does **not** carry a threshold of its own: the view already defines what "still live" means (§3.1), so deriving the work set from it is what keeps "the view is the single definition of stale" literally true rather than merely intended. There is no `presence_stale_seconds` setting to disagree with the view — it was deleted in Phase 1 (§4.7, Decision #8), and an earlier draft of this line still described the sweep in terms of it. Because the view also requires `approval_status = 'approved'`, a tutor whose approval is revoked mid-session is swept offline too, which is the correct outcome. Built in Phase 6 Part 1 (`GET /api/cron/sweep-presence`); the request-expiry half arrives with `session_requests`' first writer in Part 2.
+2. **Cron sweep** every 5 minutes sets `is_live = false`, `live_mode = null` for every row still flagged `is_live` that the **`live_tutors` view does not return** — and expires their pending session requests. The sweep does **not** carry a threshold of its own: the view already defines what "still live" means (§3.1), so deriving the work set from it is what keeps "the view is the single definition of stale" literally true rather than merely intended. There is no `presence_stale_seconds` setting to disagree with the view — it was deleted in Phase 1 (§4.7, Decision #8), and an earlier draft of this line still described the sweep in terms of it. Because the view also requires `approval_status = 'approved'`, a tutor whose approval is revoked mid-session is swept offline too, which is the correct outcome. Built in Phase 6 Part 1 (`GET /api/cron/sweep-presence`); the request-expiry half landed in Part 2 — a swept tutor's `pending` requests are expired **immediately**, without waiting out their own 60 seconds, because a tutor who is gone is not going to answer. That statement is deliberately not in the same transaction as the sweep: if it failed, every one of those requests would still be expired by `expire-requests` within a minute of its own deadline, so the two sweeps are independently self-healing rather than jointly atomic.
 
 **A third defence — `navigator.sendBeacon` on `pagehide`, clearing `is_live` on the way out — was built in Phase 6 Part 1 and then removed before merge. Do not restore it.** `pagehide` cannot distinguish a page reload from a real exit, so it silently dropped a tutor offline every time they refreshed `/tutor`, while their own toggle still read "live" — a false positive with no upside, because §3.1 guarantees no student-facing read depends on that signal in the first place. The view already answers an ungraceful exit correctly at read time, and it cannot mistake a refresh for a departure. Removing the beacon costs no correctness; the only thing it changes is that a departed tutor's underlying row now waits for the staleness window or the sweep, which is exactly what §3.1 says the design must tolerate.
 
@@ -914,7 +960,9 @@ One Supabase Realtime client, subscriptions declared in hooks and cleaned up on 
 | Open thread | Messages page | `messages` INSERT where `conversation_id = current` |
 | Live tutors strip | Landing page (optional) | `tutor_profiles` UPDATE where `is_live` changed |
 
-**No `setInterval` polling anywhere in the codebase except the presence heartbeat.** That single exception is deliberate and documented.
+The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.ts`). Both subscribe through the browser Supabase client, so the socket carries the viewer's JWT and the `session_requests` RLS SELECT policy (participants only, `drizzle/0005`) decides what can reach them — the `filter` is a narrowing convenience, **not** the authorization. Payloads are treated as notifications: anything displayed to a person is read back through a guarded Server Action.
+
+**No `setInterval` polling anywhere in the codebase except the presence heartbeat.** That single exception is deliberate and documented. The instant-request countdown ring (§7.4) also ticks on a timer, and is **not** an exception to this: it renders a deadline already in hand and makes no network call, so nothing about it is polling.
 
 ---
 
@@ -1041,12 +1089,15 @@ All emails carry an unsubscribe link for non-transactional types, and honour a `
 could not honour any of the intervals below. `pg_cron` runs inside the same Postgres project as the
 data and calls each route over `pg_net` with the bearer header, so the routes stay ordinary HTTP
 handlers and nothing about them is Vercel-specific. Setup SQL:
-`drizzle/snippets/pg_cron_sweep_presence.sql`; per-environment steps in `docs/RUNBOOK.md`.
+`drizzle/snippets/pg_cron_sweep_presence.sql` and `drizzle/snippets/pg_cron_expire_requests.sql`
+(the second assumes the first has run — it reuses the same extensions and the same two Vault
+secrets, and `vault.create_secret` raises on a duplicate name); per-environment steps in
+`docs/RUNBOOK.md`.
 
 | Route | Schedule | Status |
 |---|---|---|
 | `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
-| `/api/cron/expire-requests` | `* * * * *` | Phase 6 Part 2 |
+| `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
 | `/api/cron/complete-sessions` | `*/15 * * * *` | Phase 6 Part 3 |
 | `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
@@ -1058,8 +1109,8 @@ variable is unset**, so a missing secret can never degrade into "no auth require
 log a structured summary of what it changed, and return counts. Each is also individually invocable
 from `/admin/settings` with a "run now" button for debugging.
 
-- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half; broadcasts, request expiry and the Agora warm-ping are marked `TODO(Phase 6 Part 2 / Part 3)` in the handler.
-- **expire-requests** — `session_requests` past `expires_at`.
+- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
+- **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`, releasing the slot.
 - **complete-sessions** — bookings past `scheduled_end_at + 30m` still `confirmed`/`in_progress` → `completed` (or `no_show_*` if one party never joined), create `tutor_earnings`.
 - **release-earnings** — `held` → `available` where `available_at <= now()`.
@@ -1144,7 +1195,7 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 **E2E (Playwright), the paths that lose money or trust:**
 1. Student signs up → buys credits (PayPal sandbox) → books a scheduled session → joins the classroom.
 2. Tutor goes live → student requests → tutor accepts → both land in the session → session ends → earnings appear.
-3. Tutor goes live → student requests → **tutor closes the browser** → assert the tutor disappears from the Live-now list (`/tutors?live=1` — the browse filter's actual parameter) within the staleness window **without the sweep running**, and the request expires. *This is the regression test for the original bug.* The presence half is built in Phase 6 Part 1 (`tests/e2e/presence-ungraceful-exit.spec.ts`); the request-expiry half is stubbed `test.fixme` until `session_requests` has a writer in Part 2. **Not yet in CI, but no longer blocked on infrastructure** — a disposable test Supabase project now exists (ref `uietkphpfqaicbndunwt`, wired via the `db:*:test` scripts; RUNBOOK "Test Supabase project"), so the spec can be seeded against a project that is not production. What remains is a green run of the spec itself (PROGRESS.md).
+3. Tutor goes live → student requests → **tutor closes the browser** → assert the tutor disappears from the Live-now list (`/tutors?live=1` — the browse filter's actual parameter) within the staleness window **without the sweep running**, and the request expires. *This is the regression test for the original bug.* The presence half is built in Phase 6 Part 1 (`tests/e2e/presence-ungraceful-exit.spec.ts`); the request-expiry half was un-stubbed in Part 2 as a second test in the same file, asserting that an unanswered request charges **nothing** (wallet balance read before and after, not just the modal's wording) and that it stops holding the student's one-pending-request slot — **with neither cron running**, so both are properties of the request path rather than of a job. **Not yet in CI, but no longer blocked on infrastructure** — a disposable test Supabase project now exists (ref `uietkphpfqaicbndunwt`, wired via the `db:*:test` scripts; RUNBOOK "Test Supabase project"), so the spec can be seeded against a project that is not production. What remains is a green run of the spec itself (PROGRESS.md).
 4. Tutor requests withdrawal → admin marks paid → balances reconcile.
 5. Student cancels inside and outside the free window → correct refund in both cases.
 

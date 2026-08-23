@@ -47,9 +47,9 @@ export async function touchPresence(
  * drizzle/0003 `tutor_presence_guard` trigger is the DB backstop, not the plan.
  *
  * UNRESTRICTED with respect to the tutor's calendar: a scheduled booking does
- * not block going live. That collision is enforced at **accept** (Phase 6 Part
- * 2, SPEC §7.4) — blocking here would take a tutor off the live list for a
- * booking they may well finish before anyone requests them.
+ * not block going live. That collision is enforced at **accept** (built in
+ * Phase 6 Part 2, SPEC §7.4) — blocking here would take a tutor off the live
+ * list for a booking they may well finish before anyone requests them.
  *
  * `live = false` here is the ONLY path that clears `is_live` immediately, and it
  * only ever runs from the tutor's own deliberate toggle-off. Nothing clears

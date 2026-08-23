@@ -58,6 +58,27 @@ export async function getBookingSettings(): Promise<BookingSettings> {
 }
 
 /**
+ * The instant-request accept window in seconds (SPEC §7.4, §4.3): a request's
+ * `expires_at` is `now() + this`. Read from `platform_settings`
+ * (`instant_request_ttl_seconds`, seeded 60) rather than hardcoded, because
+ * §13 keeps tunables in settings — but coerced to a sane positive integer and
+ * defaulted to the seeded value, so a garbage edit cannot mint a request that
+ * expires in the past or never.
+ *
+ * This is the COSMETIC countdown's source too. Expiry itself is enforced
+ * server-side against `expires_at` on every read and both crons; the client ring
+ * only renders the same number.
+ */
+export async function getInstantRequestTtlSeconds(): Promise<number> {
+  const s = await getSettings();
+  const seeded = seededSetting<number>("instant_request_ttl_seconds");
+  const value = s.instant_request_ttl_seconds;
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : seeded;
+}
+
+/**
  * The buyable credit packages (SPEC §4.7 / §18 item 7), read from
  * `platform_settings.credit_packages` and coerced by the pure parser. Falls back
  * to the seeded tiers only when the row is missing or every entry is malformed,

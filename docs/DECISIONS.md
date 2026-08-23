@@ -1280,6 +1280,147 @@ tab close, or by pulling the plug — now stops the heartbeat and lets the view 
 SPEC §7.5 records the removal in place of the third defence so a later reader does not restore it as
 an oversight.
 
+## Phase 6 Part 2 — session-request handshake + billing (`phase-6-part2-session-requests`, 2026-08-23)
+
+Scope was the handshake and the money: the two Realtime directions, the three Server Actions, the
+accept transaction, and the expiry cron. **The room is not in scope** — `/session/[bookingId]`, the
+Agora client, `/api/agora/token`, end-session, `complete-sessions` and `tutor_earnings` are Part 3,
+and where Part 2 code would reach into them it carries a `TODO(Phase 6 Part 3)` rather than a
+half-implementation. **No migration**: `0014` (Part 1) already shipped every column, enum value,
+index, RLS policy and Realtime publication entry this phase writes to.
+
+- **The scheduled-collision read gained an end-side condition the spec did not state, and the spec
+  was amended rather than the code contorted.** SPEC §7.4 said the accept "rejects if the tutor has a
+  `confirmed` or `in_progress` scheduled booking **starting before** `now() + duration_minutes`" —
+  the start-side half of an overlap test, with no lower bound. Implemented literally, **every past
+  booking blocks forever**: nothing sets `completed` yet (the complete-sessions cron is Part 3), so a
+  tutor's first ever scheduled booking would permanently disqualify them from instant sessions, and
+  the failure would look like the collision rule working. The guarded read is therefore a real
+  overlap — `scheduled_start_at < now() + duration_minutes AND scheduled_end_at > now()` — and §7.4
+  now says so. *Why amend rather than ask:* the two readings are not a product question with two
+  defensible answers; one of them makes the feature unusable on the first booking, and the rule's own
+  stated purpose ("the tutor is busy then") is only expressed by the other. **No buffer** either
+  side, per the pre-build decision: back-to-back is allowed and a booking starting exactly as the
+  instant session ends does not collide. `tests/unit/session-request-accept.test.ts` pins all four
+  boundary cases.
+
+- **The accept transaction's decisions live in a store-agnostic module; the SQL is an adapter.**
+  `lib/session-requests/accept.ts` drives an `AcceptStore`/`AcceptTx` interface exactly as
+  `lib/paypal/settlement.ts` drives a `PaymentStore`, with `db/queries/session-requests.ts` as the
+  Drizzle adapter. *Why:* the four ways an accept must **not** charge a student — expired,
+  no-longer-pending, calendar collision, balance moved — are the whole risk surface of this phase,
+  and the pooler and CI have no live Postgres to test them against (Phase 4 Part 2 decision). The
+  alternative, a single action wrapping `db.transaction`, would have left every one of them
+  verifiable only by hand against the shared project.
+
+- **`AcceptStore` owns `transaction()` rather than the function receiving an open one — because of
+  the `failed_payment` write.** SPEC §4.3 requires that a debit failure roll back the entire accept
+  **and** that the request end up terminal as `failed_payment`. Those two requirements point in
+  opposite directions: a status write inside the transaction is rolled back with everything else,
+  leaving the row looking untouched. So the module opens the transaction itself, catches
+  `InsufficientCreditsError` after it has rolled back, and then issues `markFailedPayment` as a
+  separate statement — conditional on the row still being `pending`, so it can never stomp a state
+  something else reached meanwhile. A test asserts the ledger, the wallet and the bookings list are
+  all untouched while the status is `failed_payment` and is neither `expired` nor `declined`.
+
+- **The booking id is generated in application code (`crypto.randomUUID()`), not by the database.**
+  `agora_channel` is `session_{booking_id}` (§4.3), which a single INSERT cannot express about its
+  own generated id. The alternatives were an INSERT … RETURNING followed by an UPDATE — two
+  statements and a window in which a booking exists with a null channel — or a generated column,
+  which is schema for a formatting rule. Generating the id first makes the channel known before the
+  row exists, so one statement writes a complete booking, and it lets the pure module compute and
+  return the channel rather than reading it back.
+
+- **An accept past the deadline moves the row to `expired` there and then.** SPEC §7.4 only requires
+  the accept to *fail*. Leaving the row `pending` for the cron would be leaving a lie in the table
+  for up to a minute — it is expired by the only clock that counts — and, more usefully, the student's
+  waiting modal is driven by Realtime UPDATEs on that row, so writing the true status immediately is
+  what lets them stop waiting now instead of at the next cron pass.
+
+- **A student's own stale `pending` row never blocks them, cron or no cron.** The "at most one
+  pending request" rule reads only rows with `expires_at > now()`, and the write path expires the
+  student's stale rows before checking. This is the same shape as `createScheduledBooking` expiring
+  the stale `pending_payment` holds it collides with (§7.3 step 5), and it is what keeps
+  `expire-requests` **tidy-up rather than correctness** — the claim §12 now makes explicitly. Without
+  it, a student whose tutor never answered would be locked out for up to a minute by a row everyone
+  agrees is dead.
+
+- **The swept tutor's requests expire immediately, and NOT in the sweep's transaction.** §7.4 says a
+  tutor going stale expires their pending requests; the sweep does that in a second statement rather
+  than one transaction with the presence update. *Why that is not a gap:* if the second statement
+  failed, those requests would still be expired by `expire-requests` within a minute of their own
+  deadline. The two sweeps are **independently self-healing**, which is worth more here than joint
+  atomicity — and joint atomicity would make a failure in the request half roll back the presence
+  half, which is the more visible of the two.
+
+- **`expires_at` is computed by Postgres, not by Node.** `now() + make_interval(secs => ttl)` in the
+  INSERT. The deadline is compared against `now()` by every later read and by both crons, so writing
+  it from the app server would make expiry depend on two clocks agreeing. The TTL itself is
+  `instant_request_ttl_seconds` from `platform_settings` (seeded 60, §4.7) rather than a literal —
+  coerced to a positive integer and defaulted to the seeded value, because a settings row edited to
+  `0` or `"60"` must not be able to mint a request that is born expired.
+
+- **The countdown ring's `setInterval` is not the polling CLAUDE.md forbids.** The rule ("no
+  `setInterval` polling anywhere except the presence heartbeat") is about asking the server for state
+  on a timer. Both rings tick a deadline the client already holds and make **no network call**; every
+  actual state change on those screens arrives over Realtime. Recorded because the rule reads
+  absolute, and the next person will otherwise either delete a ring the spec asks for (§7.4, §10.2's
+  ProgressRing exists for exactly this) or quietly widen the rule to cover something it never meant.
+  SPEC §8 now says the same thing where the rule is stated.
+
+- **Realtime payloads are notifications, not data.** The tutor's modal gets a row id from the INSERT
+  event and then reads the student's name, the subject, the note and the price back through a guarded
+  Server Action scoped to `tutor_id`. *Why not just render the payload:* the payload carries ids, not
+  display names, so rendering it would mean joining `profiles` and `subjects` in the browser — and
+  the browser is not where an authorization boundary belongs. Status transitions are the one thing
+  read straight off the payload, because a status is not a join and the row is already RLS-scoped to
+  the viewer.
+
+- **The tutor's subscription is mounted in the `(tutor)` layout, under the relaxed approval guard.**
+  §8 puts it in the tutor authenticated layout, which is also the layout that deliberately does
+  **not** enforce approval (or `/tutor/pending-approval` would redirect-loop). That is safe rather
+  than an oversight: only tutors the `live_tutors` view returns can be sent a request at all, and the
+  view requires `approval_status = 'approved'`, so an unapproved tutor's subscription simply never
+  fires. Mounting it on `/tutor` instead would have meant a tutor sitting on their availability
+  editor never saw a request arrive.
+
+- **The cron bearer guard was lifted out of the handler into `lib/auth/api-guards.ts`.** Part 1
+  inlined it in `sweep-presence`; Part 2 made it the second handler needing exactly it, so it became
+  `cronAuthFailure(request, job)` and both call it. *Why not copy it, as the phase prompt suggested:*
+  it is a security check with a **fail-closed** branch (unset `CRON_SECRET` → 503, never "no auth
+  required"), and two copies of a fail-closed branch are two things to keep in step — the one that
+  drifts is the one nobody opens again. Behaviour is unchanged and the log prefix still names the job.
+
+- **`/api/cron/expire-requests` answers to GET and POST**, for the same reason `sweep-presence` does:
+  §12 and the Vercel-cron convention make it a GET, `pg_net`'s documented call is `net.http_post`,
+  and leaving either verb silently 405-ing would be a trap. Its pg_cron snippet
+  (`drizzle/snippets/pg_cron_expire_requests.sql`) deliberately **omits** the extension and Vault
+  steps and points at the sweep-presence snippet for them: `vault.create_secret` raises on a
+  duplicate name, so a self-contained copy would fail on every environment that is already set up
+  correctly.
+
+- **A student's request note becomes the booking's `student_notes`.** `session_requests.message` is
+  "what I want help with" and `bookings.student_notes` is the same field one row later (§4.3), so the
+  accept carries it across rather than dropping it — otherwise the tutor's context vanishes the
+  moment they accept.
+
+- **The `/tutors/[slug]` "Request now" button became its own white card rather than a control on the
+  ink price card.** The Part 1 placeholder was a disabled button on the ink surface; the real widget
+  is a duration picker, a subject select, a note field and an affordability warning, none of which
+  have ink-surface treatments (§10.1 keeps purple off ink). It sits beside "Book a session" as
+  "Start now", which also makes the instant/scheduled pair read as two ways to buy the same thing.
+
+### Not built, deliberately
+
+- **No cancel-my-request action for the student.** The `cancelled` status exists in the enum and the
+  waiting modal renders a message for it, but nothing writes it in Part 2. §7.4 does not ask for one,
+  and the request dies on its own in 60 seconds — a cancel button would be a second write path into a
+  terminal state for a window that short. The modal handles the status because Realtime can deliver
+  it (an admin, or a later phase, could set it), not because Part 2 produces it.
+- **No tutor request inbox page.** Requests arrive as a modal wherever the tutor is; a list view of
+  60-second-lived rows would be stale by the time it rendered. `/tutor` stays the thin overview Part 1
+  made it.
+
 ## Test Supabase project — targeting and the safety guard (2026-08-23)
 
 Infrastructure, not product. Merged as PR #18 (scaffold) and PR #19 (wiring).
