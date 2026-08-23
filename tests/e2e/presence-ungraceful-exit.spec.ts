@@ -46,7 +46,22 @@ const TUTOR_DISPLAY_NAME = process.env.E2E_TUTOR_DISPLAY_NAME ?? "Tom";
 /** The live_tutors threshold (2 min) plus room for the poll interval. */
 const STALENESS_BUDGET_MS = 150_000;
 
-const SIGNIN_TIMEOUT_MS = 60_000;
+/**
+ * Sign-in against a COMPILED server: one Supabase Auth round trip and a
+ * redirect, ordinarily a second or two. 60s was sized for a dev server that
+ * compiled `/login` and `/tutor` on the way through — against `next start` a
+ * budget that large would never fire, and a timeout that cannot fail is a trap
+ * for whoever reads it next. This is generous for the work being done and still
+ * fails while the cause is obvious.
+ */
+const SIGNIN_TIMEOUT_MS = 15_000;
+
+/**
+ * How long to wait for the go-live Server Action to confirm itself via its
+ * toast. One UPDATE against the test project on a compiled server; sized like
+ * SIGNIN_TIMEOUT_MS and for the same reason.
+ */
+const TOGGLE_CONFIRM_TIMEOUT_MS = 15_000;
 
 async function signIn(
   page: Page,
@@ -62,8 +77,14 @@ async function signIn(
   // means a rejected sign-in burns the ENTIRE test timeout and then reports
   // "waiting for navigation", which says nothing about why — the failure looks
   // like a presence bug when it is an environment problem.
-  const landed = page
-    .waitForURL(landing, { timeout: SIGNIN_TIMEOUT_MS })
+  // `toHaveURL` POLLS the URL; `waitForURL` waits for a navigation EVENT. The
+  // login Server Action redirects via the Next router, which updates history
+  // client-side without a navigation Playwright reports — so `waitForURL` sat
+  // through a sign-in that had already landed on /tutor (303, RSC fetch, shell
+  // mounted, heartbeats firing) and failed it at 60s. Polling observes the URL
+  // that is actually there. Same regex, same timeout, same meaning.
+  const landed = expect(page)
+    .toHaveURL(landing, { timeout: SIGNIN_TIMEOUT_MS })
     .then(() => "landed" as const);
   const rejected = page
     .getByRole("alert")
@@ -85,6 +106,53 @@ async function signIn(
         "for the fixture, and confirm the app can reach Supabase.",
     );
   }
+}
+
+/**
+ * Put the tutor live — and make them ACTUALLY live, not merely flagged live.
+ *
+ * `is_live` is a stored flag; membership of `live_tutors` additionally requires a
+ * fresh `last_seen_at` (SPEC §3.1). A tutor whose browser died ungracefully — the
+ * exact state this suite is about, and the state a previous run of this suite
+ * leaves behind — keeps `is_live = true` with a stale `last_seen_at`. GoLiveToggle
+ * renders from that stored flag, so the switch shows CHECKED while `live_tutors`
+ * correctly excludes them.
+ *
+ * Skipping the click on an already-checked switch therefore leaves the tutor never
+ * actually live, and only the 30s heartbeat could rescue it — a race against this
+ * test's own 30s budget. Reading the switch as proof of liveness would be the very
+ * conflation of stored flag with derived status that §3.1 exists to forbid.
+ *
+ * So force a real off→on transition: only `setTutorLive(true)` writes
+ * `last_seen_at = now()` (src/db/queries/presence.ts), and that write is what
+ * membership actually depends on.
+ *
+ * And wait for the TOAST, not for `aria-checked`. GoLiveToggle is optimistic:
+ * it flips `live` the instant it is clicked and only reconciles when the Server
+ * Action resolves, so `aria-checked` becomes "true" while the database write is
+ * still in flight. Returning on it let the caller race ahead of the write —
+ * observed directly, with the tutor's profile fetched one second BEFORE the
+ * go-live POST landed, so "Start now" was correctly absent and the test failed
+ * on a state it had itself outrun. The toast is only ever rendered from the
+ * action's resolved result, which makes it the first signal that the write is
+ * real. No sleep: the assertion polls, so it costs nothing when the server is
+ * quick and still fails loudly when the write genuinely does not land.
+ */
+async function goLive(page: Page): Promise<void> {
+  const toggle = page.getByRole("switch", {
+    name: /available for instant sessions/i,
+  });
+  if ((await toggle.getAttribute("aria-checked")) === "true") {
+    await toggle.click();
+    await expect(page.getByText(/offline for instant sessions/i)).toBeVisible({
+      timeout: TOGGLE_CONFIRM_TIMEOUT_MS,
+    });
+  }
+  await toggle.click();
+  await expect(
+    page.getByText(/can request an instant session/i),
+  ).toBeVisible({ timeout: TOGGLE_CONFIRM_TIMEOUT_MS });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
 }
 
 /**
@@ -114,13 +182,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
     try {
       // 1. Tutor goes live.
       await signIn(tutorPage);
-      const toggle = tutorPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await toggle.getAttribute("aria-checked")) !== "true") {
-        await toggle.click();
-      }
-      await expect(toggle).toHaveAttribute("aria-checked", "true");
+      await goLive(tutorPage);
 
       // 2. They show up on the Live-now list.
       await expect
@@ -174,13 +236,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
     try {
       // 1. Tutor goes live.
       await signIn(tutorPage);
-      const toggle = tutorPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await toggle.getAttribute("aria-checked")) !== "true") {
-        await toggle.click();
-      }
-      await expect(toggle).toHaveAttribute("aria-checked", "true");
+      await goLive(tutorPage);
 
       // 2. Student signs in and notes what they have. Credits are the thing an
       //    expired request must not touch, so the number is read BEFORE rather
@@ -211,7 +267,14 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
         timeout: 90_000,
       });
       await expect(waiting.getByText(/nothing was charged/i)).toBeVisible();
-      await waiting.getByRole("button", { name: /close/i }).click();
+      // Two controls in this dialog answer to the accessible name "Close": the
+      // outcome's own button and ModalContent's icon-only X. Only the former
+      // has text, which is what distinguishes them — and it is the one the
+      // student is actually being offered here.
+      await waiting
+        .getByRole("button", { name: /^close$/i })
+        .filter({ hasText: /close/i })
+        .click();
 
       // 6. Nothing was charged, as a fact about the wallet rather than a
       //    sentence in a modal. This is the assertion that would have caught a
@@ -229,13 +292,7 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
       revivedContext = await browser.newContext();
       const revivedPage = await revivedContext.newPage();
       await signIn(revivedPage);
-      const revivedToggle = revivedPage.getByRole("switch", {
-        name: /available for instant sessions/i,
-      });
-      if ((await revivedToggle.getAttribute("aria-checked")) !== "true") {
-        await revivedToggle.click();
-      }
-      await expect(revivedToggle).toHaveAttribute("aria-checked", "true");
+      await goLive(revivedPage);
 
       await sendInstantRequest(studentPage);
       await expect(
@@ -282,6 +339,14 @@ async function sendInstantRequest(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: /start now/i })).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole("button", { name: /^30 min/ }).click();
+  // The profile renders TWO "Session length" groups — the instant widget's and
+  // the scheduled BookingWidget's — and both offer a "30 min" button, so a
+  // page-level getByRole matches two elements and dies in strict mode. Scope to
+  // the instant widget's own group by the id its <Label htmlFor> already points
+  // at. "Request now" needs no scoping: only the instant widget has one.
+  await page
+    .locator("#instant-duration")
+    .getByRole("button", { name: /^30 min/ })
+    .click();
   await page.getByRole("button", { name: /^request now/i }).click();
 }
