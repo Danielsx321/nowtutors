@@ -54,6 +54,15 @@ destructive if the resolved connection string doesn't contain that literal.
 schemas on the test project only (guarded as above). There is deliberately no
 plain `db:reset:prod`/dev-and-prod-capable reset variant.
 
+**No cron on the test project — and none is needed.** The pg_cron + pg_net
+`sweep-presence` job is scheduled **only** on the shared dev/prod project
+(`mipnoxlhurdbaahmvhhx`); the test project has no `cron.job` entries, no
+`pg_cron`/`pg_net` extensions, and no Vault secrets. It exists for seeding and
+E2E runs, which drive presence explicitly rather than relying on a background
+sweep — and the sweep is tidy-up, not correctness (the `live_tutors` view
+filters stale rows at read time, SPEC §3.1). Scheduling one here would also
+mean a second job POSTing at the production URL. Do not add one.
+
 **Verified end-to-end (2026-08-23):** `pnpm db:migrate:test` applied the full
 0000→0014 migration chain from an empty test database cleanly — 25 tables
 landed in `public` (`profiles`, `tutor_profiles`, `bookings`, `wallets`,
@@ -102,24 +111,66 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
     the production `PAYPAL_WEBHOOK_ID`, and set `PAYPAL_ENV=live` with the live client id/secret.
     No code change — but it is **not** just flipping `PAYPAL_ENV`.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
-- [ ] **`CRON_SECRET`** set in Vercel (per environment) **and** in local `.env.local` — Phase 6
-  Part 1. Currently **blank in `.env.local`**, so `/api/cron/sweep-presence` answers **503** locally
-  until it is filled. As with the PayPal vars, Vercel and `.env.local` are unrelated stores: set
-  both. The value must be byte-identical to the `cron_secret` Vault entry used by pg_cron below —
-  a mismatch shows up as a **401** in `net._http_response`, not as a failed job.
-- [ ] **pg_cron + pg_net scheduling for `/api/cron/sweep-presence`** — Phase 6 Part 1. Run
+- [x] **`CRON_SECRET`** set in Vercel (per environment) **and** in local `.env.local` — Phase 6
+  Part 1. **Done 2026-08-23.** The value now lives in **three** stores that must stay byte-identical:
+  1. **Supabase Vault** — secret name **`cron_secret`** (dev/prod project `mipnoxlhurdbaahmvhhx`).
+     This is what pg_cron reads at call time; read it back with
+     `select name, length(decrypted_secret) from vault.decrypted_secrets where name = 'cron_secret';`
+     (expect length 64 — it is an `openssl rand -hex 32` value).
+  2. **Vercel** → Project → Settings → Environment Variables → Production. Vercel only applies an
+     env-var change on a **new deployment**; setting the variable alone leaves the running
+     deployment on the old value.
+  3. **`.env.local`** for local runs.
+  As with the PayPal vars these are unrelated stores: set all three. A mismatch shows up as a
+  **401** in `net._http_response`, not as a failed job; **503** means the deployment has no
+  `CRON_SECRET` at all. Watch for a trailing space/newline when pasting — that is the usual cause
+  of a 401 between otherwise "identical" values.
+  - ⚠️ **OPEN ITEM — this secret must be ROTATED before Phase 6 Part 2 ships.** The current value
+    was exposed in plaintext (printed to a terminal and pasted between stores during setup), so it
+    must be treated as compromised. Rotation means generating a new `openssl rand -hex 32` and
+    updating **all three** stores — Vercel (then redeploy), `.env.local`, and the Vault
+    `cron_secret` entry (via `vault.update_secret`, see the snippet) — in that order, then
+    re-verifying with a manual `net.http_post` invocation. This is not cosmetic: Phase 6 Part 2's
+    expire-requests job sits behind the **same** secret, so shipping it widens what a leaked
+    `CRON_SECRET` can trigger from one tidy-up sweep to a job that mutates request state.
+- [x] **pg_cron + pg_net scheduling for `/api/cron/sweep-presence`** — Phase 6 Part 1.
+  **Done 2026-08-23 on the shared dev/prod project `mipnoxlhurdbaahmvhhx`.** Run
   `drizzle/snippets/pg_cron_sweep_presence.sql` **once per environment**, as `postgres`, from the
-  Supabase SQL editor (it is not a migration — see the snippet's header for why). Steps:
+  Supabase SQL editor (it is not a migration — see the snippet's header for why). Every step needs
+  the elevated `postgres` role the SQL editor uses: `create extension` and the Vault writes need
+  privileges the **migration connection does not have**, so this cannot be automated through
+  `drizzle-kit`/`tsx`. Steps:
   1. `create extension` for `pg_cron` (schema `pg_catalog`) and `pg_net` (schema `extensions`).
   2. `vault.create_secret` for `app_base_url` (no trailing slash) and `cron_secret`.
+     `vault.create_secret` **raises on a duplicate name** — check `vault.secrets` first and use
+     `vault.update_secret` to change an existing value.
   3. `cron.schedule('sweep-presence', '*/5 * * * *', …)` — the snippet unschedules first, so
      re-running it updates the job rather than duplicating it.
   4. Verify: `select jobid, jobname, schedule, active from cron.job;` then, after five minutes,
      `select status_code, content from net._http_response order by created desc limit 5;` —
      a healthy run returns `{"ok":true,"job":"sweep-presence","swept":N,…}`. **401** = the Vault
      secret and Vercel's `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
+  - **Verified 2026-08-23:** job scheduled and **active** (`jobid` 1, schedule `*/5 * * * *`); a
+    manual `net.http_post` invocation returned **200** with `{"ok":true,…}`, confirming the Vault
+    `cron_secret` and Vercel's `CRON_SECRET` agree.
+  - **Target URL:** `https://nowtutors-brown.vercel.app` — the production deployment, stored in
+    Vault as `app_base_url`. Not localhost, not a preview URL. (Note `nowtutors.vercel.app`,
+    without `-brown`, belongs to an unrelated third party — see the DNS item below.)
+  - **The job definition reads both secrets from `vault.decrypted_secrets` at call time and never
+    inlines them.** `cron.job.command` is readable by anyone with database access, so a literal
+    token there would leak the only thing guarding a write endpoint. Re-check after any edit with
+    `select command from cron.job where jobname = 'sweep-presence';` — it must show the
+    `select … from vault.decrypted_secrets` subqueries, not a 64-char hex string.
   The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
   (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
+- [ ] ⚠️ **Rotate `CRON_SECRET` — BLOCKS Phase 6 Part 2.** The value set on 2026-08-23 was exposed
+  in plaintext during setup (printed to a terminal, pasted between stores) and must be treated as
+  compromised. Generate a fresh `openssl rand -hex 32` and update **all three** stores —
+  Vercel Production (**then redeploy**), `.env.local`, and the Supabase Vault `cron_secret` entry
+  (`vault.update_secret`) — then re-verify with a manual `net.http_post` and confirm **200**.
+  Must be done **before Phase 6 Part 2 ships**: the expire-requests job will sit behind this same
+  secret, so a leaked value goes from triggering a harmless presence sweep to driving a job that
+  mutates request state. See the `CRON_SECRET` item above.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).
