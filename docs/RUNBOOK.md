@@ -135,9 +135,19 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
 - Package manager: **pnpm** (`corepack` or `npm i -g pnpm`).
 - Copy `.env.example` → `.env.local` and fill values.
 - `pnpm install` → `pnpm db:migrate` → `pnpm dev`.
-- If Node rejects TLS chains on this machine (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`
-  during `pnpm`/`npm`), export `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem`. This is a
-  local-machine quirk only; CI and Vercel are unaffected.
+- All `db:*`/`db:*:test` scripts run through `scripts/with-ca-certs.mjs`, which
+  automatically sets `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` for that command
+  when the var isn't already set and that file exists — the fix for
+  `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (Node's own CA bundle missing an issuer
+  cert that the system trust store, e.g. `curl`, already has) is now automatic
+  for both dev and test db scripts. It's a silent no-op on machines that don't
+  need it (this cannot live in `src/db/load-env.ts` — `NODE_EXTRA_CA_CERTS` is
+  read by Node once at process startup, before any application code runs, so
+  it must be set before the `tsx`/`drizzle-kit` process is even spawned).
+  **Fallback:** if your system CA bundle is at a different path, export
+  `NODE_EXTRA_CA_CERTS=<path-to-your-bundle>` yourself before running the
+  script — an already-set value is left untouched. This is a local-machine
+  quirk only; CI and Vercel are unaffected.
 
 ## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
 
