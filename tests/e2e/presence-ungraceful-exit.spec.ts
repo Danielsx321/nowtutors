@@ -62,8 +62,14 @@ async function signIn(
   // means a rejected sign-in burns the ENTIRE test timeout and then reports
   // "waiting for navigation", which says nothing about why — the failure looks
   // like a presence bug when it is an environment problem.
-  const landed = page
-    .waitForURL(landing, { timeout: SIGNIN_TIMEOUT_MS })
+  // `toHaveURL` POLLS the URL; `waitForURL` waits for a navigation EVENT. The
+  // login Server Action redirects via the Next router, which updates history
+  // client-side without a navigation Playwright reports — so `waitForURL` sat
+  // through a sign-in that had already landed on /tutor (303, RSC fetch, shell
+  // mounted, heartbeats firing) and failed it at 60s. Polling observes the URL
+  // that is actually there. Same regex, same timeout, same meaning.
+  const landed = expect(page)
+    .toHaveURL(landing, { timeout: SIGNIN_TIMEOUT_MS })
     .then(() => "landed" as const);
   const rejected = page
     .getByRole("alert")
