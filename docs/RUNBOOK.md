@@ -31,7 +31,42 @@ environment.
 A disposable `nowtutors-test` Supabase project exists for local seeding and E2E runs, kept
 separate from dev/prod so it can be wiped freely. Its credentials live in `.env.test`
 (gitignored, never committed — see `.env.test.example` for the key list and comments on
-`DATABASE_URL`/`DIRECT_URL`). Project ref: **TBD**, to be filled in once wiring is done.
+`DATABASE_URL`/`DIRECT_URL`). **Project ref: `uietkphpfqaicbndunwt`.**
+
+**Targeting mechanism:** every db script has a `:test` pnpm variant
+(`db:migrate:test`, `db:reset:test`, `db:seed:test`, `db:verify-rls:test`,
+`db:generate:test`) that loads `.env.test` instead of `.env.local`. This is the
+*only* switch — there is no env-var flag a command can be run with by accident.
+Concretely:
+- `drizzle-kit` scripts point at a separate `drizzle.config.test.ts` via
+  `--config=drizzle.config.test.ts`.
+- `tsx`-run scripts (`reset.ts`, `seed.ts`, `verify-rls.ts`) require an explicit
+  `--env=dev|test` argument, supplied only by the pnpm script itself — running
+  the file directly without it throws.
+
+**Hard guard:** the test project ref (`uietkphpfqaicbndunwt`) is **hardcoded** as
+`TEST_PROJECT_REF` in `src/db/load-env.ts`, not read from an env var — a guard
+that a forgotten/unset variable can silently disable is not a guard. Every
+`:test` script/config aborts with a readable error before doing anything
+destructive if the resolved connection string doesn't contain that literal.
+
+**Reset:** `pnpm db:reset:test` drops and recreates the `public`/`drizzle`
+schemas on the test project only (guarded as above). There is deliberately no
+plain `db:reset:prod`/dev-and-prod-capable reset variant.
+
+**Verified end-to-end (2026-08-23):** `pnpm db:migrate:test` applied the full
+0000→0014 migration chain from an empty test database cleanly — 25 tables
+landed in `public` (`profiles`, `tutor_profiles`, `bookings`, `wallets`,
+`credit_transactions`, etc.), no errors (only benign `DROP TRIGGER IF EXISTS
+... does not exist, skipping` NOTICEs from later migrations dropping
+not-yet-created triggers). `pnpm db:seed:test` was **not** verified — it failed
+locally on this machine with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` from Node's
+`fetch` (used by `@supabase/supabase-js` for the admin-user-creation calls),
+reproducing even on a plain `fetch('https://supabase.com')`. `curl` to the same
+host succeeds, so this is this machine's Node TLS/CA trust store, not the
+test project, credentials, or the migration/seed code — needs to be fixed
+(or re-run from a machine with a working Node cert store) before the seed step
+can be verified.
 
 ## Checklist (fill in as the build progresses)
 

@@ -1,14 +1,18 @@
-import { config } from "dotenv";
-config({ path: ".env.local" });
+import { loadDbEnv, assertTestProjectRef } from "./load-env";
+const dbEnv = loadDbEnv();
 
 import postgres from "postgres";
 import { sessionPoolerUrl } from "./session-url";
 
-// DEV-ONLY. Drops the drizzle migration-tracking schema and the entire public
-// schema, then recreates public with the grants Supabase's API roles need. Used
-// to prove migrations apply cleanly from an empty database (Phase 1 acceptance).
+// Drops the drizzle migration-tracking schema and the entire public schema,
+// then recreates public with the grants Supabase's API roles need. Used to
+// prove migrations apply cleanly from an empty database (Phase 1 acceptance).
+// Run via `pnpm db:reset` (dev) or `pnpm db:reset:test` (disposable test
+// project) — never invoke this file directly.
 async function main() {
-  const sql = postgres(sessionPoolerUrl(), {
+  const url = sessionPoolerUrl();
+  if (dbEnv === "test") assertTestProjectRef(url);
+  const sql = postgres(url, {
     prepare: false,
     ssl: "require",
     max: 1,

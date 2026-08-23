@@ -1,5 +1,5 @@
-import { config } from "dotenv";
-config({ path: ".env.local" });
+import { loadDbEnv, assertTestProjectRef } from "./load-env";
+const dbEnv = loadDbEnv();
 
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
@@ -8,11 +8,14 @@ import { splitEarnings } from "../lib/credits/fees";
 import { sessionPriceCredits } from "../lib/credits/pricing";
 import { PLATFORM_SETTINGS } from "./platform-settings-defaults";
 
-// DEV seed (idempotent). Creates auth users via the admin API — the signup
+// Seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
 // wallets, subjects, settings, availability, favourites, and sample bookings.
 // Canonical 26-subject list + languages from the Bubble option sets (Phase 3).
 // platform_settings + credit_packages carry the resolved SPEC §18 values (see docs/DECISIONS.md).
+// Run via `pnpm db:seed` (dev) or `pnpm db:seed:test` — never invoke this file directly.
+
+if (dbEnv === "test") assertTestProjectRef(sessionPoolerUrl());
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
