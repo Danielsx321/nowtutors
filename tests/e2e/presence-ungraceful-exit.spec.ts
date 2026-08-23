@@ -56,6 +56,13 @@ const STALENESS_BUDGET_MS = 150_000;
  */
 const SIGNIN_TIMEOUT_MS = 15_000;
 
+/**
+ * How long to wait for the go-live Server Action to confirm itself via its
+ * toast. One UPDATE against the test project on a compiled server; sized like
+ * SIGNIN_TIMEOUT_MS and for the same reason.
+ */
+const TOGGLE_CONFIRM_TIMEOUT_MS = 15_000;
+
 async function signIn(
   page: Page,
   email: string = TUTOR_EMAIL,
@@ -119,6 +126,17 @@ async function signIn(
  * So force a real off→on transition: only `setTutorLive(true)` writes
  * `last_seen_at = now()` (src/db/queries/presence.ts), and that write is what
  * membership actually depends on.
+ *
+ * And wait for the TOAST, not for `aria-checked`. GoLiveToggle is optimistic:
+ * it flips `live` the instant it is clicked and only reconciles when the Server
+ * Action resolves, so `aria-checked` becomes "true" while the database write is
+ * still in flight. Returning on it let the caller race ahead of the write —
+ * observed directly, with the tutor's profile fetched one second BEFORE the
+ * go-live POST landed, so "Start now" was correctly absent and the test failed
+ * on a state it had itself outrun. The toast is only ever rendered from the
+ * action's resolved result, which makes it the first signal that the write is
+ * real. No sleep: the assertion polls, so it costs nothing when the server is
+ * quick and still fails loudly when the write genuinely does not land.
  */
 async function goLive(page: Page): Promise<void> {
   const toggle = page.getByRole("switch", {
@@ -126,9 +144,14 @@ async function goLive(page: Page): Promise<void> {
   });
   if ((await toggle.getAttribute("aria-checked")) === "true") {
     await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByText(/offline for instant sessions/i)).toBeVisible({
+      timeout: TOGGLE_CONFIRM_TIMEOUT_MS,
+    });
   }
   await toggle.click();
+  await expect(
+    page.getByText(/can request an instant session/i),
+  ).toBeVisible({ timeout: TOGGLE_CONFIRM_TIMEOUT_MS });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
 }
 
