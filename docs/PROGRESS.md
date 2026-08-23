@@ -353,18 +353,6 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
   "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
   same shared-project reason, though it too now has a `:test` variant.)
-- **⚠️ `CRON_SECRET` must be ROTATED before the expire-requests job is SCHEDULED — still open.**
-  Part 2's code has shipped without it, which is safe: the route is written and bearer-guarded, but
-  nothing schedules it until someone runs `drizzle/snippets/pg_cron_expire_requests.sql`. **Do not
-  run that snippet before rotating.** The secret is set and
-  working across all three stores (Supabase Vault `cron_secret`, Vercel Production, `.env.local`),
-  but the value in use was **exposed in plaintext** during setup — printed to a terminal and pasted
-  between stores — so it must be treated as compromised. Rotation is: generate a fresh
-  `openssl rand -hex 32`, update Vercel (**then redeploy** — Vercel only applies env changes on a
-  new deployment), `.env.local`, and the Vault entry via `vault.update_secret`, then re-verify with
-  a manual `net.http_post` and confirm **200**. *Why it blocks the schedule:* expire-requests sits
-  behind this **same** secret, so a leaked value goes from triggering a harmless presence sweep to
-  driving a job that mutates request state. Tracked in RUNBOOK's checklist as its own open item.
 - **CI `verify` does not run `pnpm build` — a known gap, and `pnpm build` is where production 404s
   surface.** The required `verify` check runs lint, typecheck and tests only, so a change that
   compiles under `tsc` but breaks the Next build passes CI and fails on deploy. The fix is already

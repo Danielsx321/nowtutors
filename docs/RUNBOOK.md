@@ -125,16 +125,13 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   **401** in `net._http_response`, not as a failed job; **503** means the deployment has no
   `CRON_SECRET` at all. Watch for a trailing space/newline when pasting — that is the usual cause
   of a 401 between otherwise "identical" values.
-  - ⚠️ **OPEN ITEM — this secret must be ROTATED before the expire-requests job is SCHEDULED.**
-    (Phase 6 Part 2's *code* has shipped; nothing schedules the job until the snippet below is
-    run, so the gate is the schedule, not the merge.) The current value
-    was exposed in plaintext (printed to a terminal and pasted between stores during setup), so it
-    must be treated as compromised. Rotation means generating a new `openssl rand -hex 32` and
-    updating **all three** stores — Vercel (then redeploy), `.env.local`, and the Vault
-    `cron_secret` entry (via `vault.update_secret`, see the snippet) — in that order, then
-    re-verifying with a manual `net.http_post` invocation. This is not cosmetic: the
-    expire-requests job sits behind the **same** secret, so scheduling it widens what a leaked
-    `CRON_SECRET` can trigger from one tidy-up sweep to a job that mutates request state.
+  - **Rotated and verified 2026-08-23.** The original value was exposed in plaintext (printed to a
+    terminal and pasted between stores during setup) and was treated as compromised. A fresh
+    `openssl rand -hex 32` was generated and applied to all three stores — Vercel (redeployed),
+    `.env.local`, and the Vault `cron_secret` entry (via `vault.update_secret`) — then confirmed
+    live: a bearer-token call to `/api/cron/sweep-presence` using the `.env.local` value returned
+    **200**, the Vault `cron_secret` length is still 64, and `cron.job` / `net._http_response` show
+    the scheduled sweep succeeding against the new value.
 - [x] **pg_cron + pg_net scheduling for `/api/cron/sweep-presence`** — Phase 6 Part 1.
   **Done 2026-08-23 on the shared dev/prod project `mipnoxlhurdbaahmvhhx`.** Run
   `drizzle/snippets/pg_cron_sweep_presence.sql` **once per environment**, as `postgres`, from the
@@ -165,8 +162,7 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
     `select … from vault.decrypted_secrets` subqueries, not a 64-char hex string.
   The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
   (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
-- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done — and
-  gated on the `CRON_SECRET` rotation below; do not run this before rotating.** Run
+- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done.** Run
   `drizzle/snippets/pg_cron_expire_requests.sql` once per environment, as `postgres`, from the
   Supabase SQL editor.
   - **Run `pg_cron_sweep_presence.sql` first.** This snippet deliberately contains **only** the
@@ -182,14 +178,11 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   - Like the sweep, this job is **tidy-up, not correctness**: the accept transaction refuses (and
     terminally expires) a request past its deadline on its own, and the "one pending request at a
     time" read ignores rows past theirs, so an unscheduled job is not an outage.
-- [ ] ⚠️ **Rotate `CRON_SECRET` — BLOCKS scheduling `expire-requests`.** The value set on 2026-08-23 was exposed
-  in plaintext during setup (printed to a terminal, pasted between stores) and must be treated as
-  compromised. Generate a fresh `openssl rand -hex 32` and update **all three** stores —
-  Vercel Production (**then redeploy**), `.env.local`, and the Supabase Vault `cron_secret` entry
-  (`vault.update_secret`) — then re-verify with a manual `net.http_post` and confirm **200**.
-  Must be done **before `pg_cron_expire_requests.sql` is run**: that job sits behind this same
-  secret, so a leaked value goes from triggering a harmless presence sweep to driving a job that
-  mutates request state. See the `CRON_SECRET` item above.
+- [x] **`CRON_SECRET` rotated.** The value set on 2026-08-23 during initial setup was exposed in
+  plaintext (printed to a terminal, pasted between stores) and has been rotated and verified
+  2026-08-23 across all three stores. See the `CRON_SECRET` item above for detail. This only
+  clears the rotation gate — scheduling `pg_cron_expire_requests.sql` is still a separate,
+  not-yet-done action (above).
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).
