@@ -1,11 +1,13 @@
-import { config } from "dotenv";
-config({ path: ".env.local" });
+import { loadDbEnv } from "./load-env";
+loadDbEnv();
 
 import { createClient } from "@supabase/supabase-js";
 
 // Phase 1 acceptance: prove RLS denies cross-user reads with the anon key (and a
-// signed-in user), and allows the intended public reads. DEV/local only — needs
-// the anon key and the seeded users. Exits non-zero on any failed assertion.
+// signed-in user), and allows the intended public reads. Needs the anon key and
+// the seeded users. Exits non-zero on any failed assertion.
+// Run via `pnpm db:verify-rls` (dev) or `pnpm db:verify-rls:test` — never invoke
+// this file directly.
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;

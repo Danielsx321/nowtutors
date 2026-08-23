@@ -31,7 +31,45 @@ environment.
 A disposable `nowtutors-test` Supabase project exists for local seeding and E2E runs, kept
 separate from dev/prod so it can be wiped freely. Its credentials live in `.env.test`
 (gitignored, never committed — see `.env.test.example` for the key list and comments on
-`DATABASE_URL`/`DIRECT_URL`). Project ref: **TBD**, to be filled in once wiring is done.
+`DATABASE_URL`/`DIRECT_URL`). **Project ref: `uietkphpfqaicbndunwt`.**
+
+**Targeting mechanism:** every db script has a `:test` pnpm variant
+(`db:migrate:test`, `db:reset:test`, `db:seed:test`, `db:verify-rls:test`,
+`db:generate:test`) that loads `.env.test` instead of `.env.local`. This is the
+*only* switch — there is no env-var flag a command can be run with by accident.
+Concretely:
+- `drizzle-kit` scripts point at a separate `drizzle.config.test.ts` via
+  `--config=drizzle.config.test.ts`.
+- `tsx`-run scripts (`reset.ts`, `seed.ts`, `verify-rls.ts`) require an explicit
+  `--env=dev|test` argument, supplied only by the pnpm script itself — running
+  the file directly without it throws.
+
+**Hard guard:** the test project ref (`uietkphpfqaicbndunwt`) is **hardcoded** as
+`TEST_PROJECT_REF` in `src/db/load-env.ts`, not read from an env var — a guard
+that a forgotten/unset variable can silently disable is not a guard. Every
+`:test` script/config aborts with a readable error before doing anything
+destructive if the resolved connection string doesn't contain that literal.
+
+**Reset:** `pnpm db:reset:test` drops and recreates the `public`/`drizzle`
+schemas on the test project only (guarded as above). There is deliberately no
+plain `db:reset:prod`/dev-and-prod-capable reset variant.
+
+**Verified end-to-end (2026-08-23):** `pnpm db:migrate:test` applied the full
+0000→0014 migration chain from an empty test database cleanly — 25 tables
+landed in `public` (`profiles`, `tutor_profiles`, `bookings`, `wallets`,
+`credit_transactions`, etc.), no errors (only benign `DROP TRIGGER IF EXISTS
+... does not exist, skipping` NOTICEs from later migrations dropping
+not-yet-created triggers). `pnpm db:seed:test` then completed and populated
+the test project: 11 profiles (1 admin, 8 tutors, 2 students), 8 tutor
+profiles, 26 subjects, 9 platform_settings rows, 2 favourites — confirmed by
+querying the test database directly, not just trusting the script's own log.
+
+Note: `db:seed:test` calls the Supabase Admin API via `@supabase/supabase-js`,
+which uses Node's `fetch`. On a machine where Node's own CA trust store is
+incomplete (symptom: `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, while `curl` to the
+same host works fine), run with `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or
+your platform's system CA bundle path) — this is a local Node/TLS environment
+quirk, unrelated to the test project, credentials, or migration/seed code.
 
 ## Checklist (fill in as the build progresses)
 
@@ -97,9 +135,19 @@ separate from dev/prod so it can be wiped freely. Its credentials live in `.env.
 - Package manager: **pnpm** (`corepack` or `npm i -g pnpm`).
 - Copy `.env.example` → `.env.local` and fill values.
 - `pnpm install` → `pnpm db:migrate` → `pnpm dev`.
-- If Node rejects TLS chains on this machine (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`
-  during `pnpm`/`npm`), export `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem`. This is a
-  local-machine quirk only; CI and Vercel are unaffected.
+- All `db:*`/`db:*:test` scripts run through `scripts/with-ca-certs.mjs`, which
+  automatically sets `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` for that command
+  when the var isn't already set and that file exists — the fix for
+  `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (Node's own CA bundle missing an issuer
+  cert that the system trust store, e.g. `curl`, already has) is now automatic
+  for both dev and test db scripts. It's a silent no-op on machines that don't
+  need it (this cannot live in `src/db/load-env.ts` — `NODE_EXTRA_CA_CERTS` is
+  read by Node once at process startup, before any application code runs, so
+  it must be set before the `tsx`/`drizzle-kit` process is even spawned).
+  **Fallback:** if your system CA bundle is at a different path, export
+  `NODE_EXTRA_CA_CERTS=<path-to-your-bundle>` yourself before running the
+  script — an already-set value is left untouched. This is a local-machine
+  quirk only; CI and Vercel are unaffected.
 
 ## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
 
