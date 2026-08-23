@@ -83,6 +83,11 @@ export default defineConfig({
         // server's own account of a failure in the run log.
         stdout: "pipe",
         stderr: "pipe",
-        timeout: 120_000,
+        // A cold `next dev` on a dev machine needs ~60s just to reach Ready, and
+        // then compiles each route on first request — `/` alone has been measured
+        // at 56s and still unfinished. 120s expired mid-compile with the server
+        // perfectly healthy, which reads as a broken app and is not one. This is
+        // the boot budget only; it puts no slack in any assertion.
+        timeout: 300_000,
       },
 });
