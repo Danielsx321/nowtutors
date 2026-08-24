@@ -1485,6 +1485,67 @@ misdirects, is a step worth removing.
 manual export, and RUNBOOK keeps it as the documented fallback for machines whose CA bundle sits at
 a different path. An already-set value is never overridden.
 
+## Phase 6 E2E: production build, not `next dev` (PR #25, 2026-08-23)
+
+`tests/e2e/presence-ungraceful-exit.spec.ts` runs against a **compiled production build**
+(`next build && next start`), not the dev server it had always run against before.
+
+*Why.* Under `next dev`, every route compiles on first request rather than ahead of time. Measured
+directly from the piped server log during a real run: `GET /` in 73s, `POST /login` in 54s, `GET
+/login` in 37s. That is not a slow test — it is a slow **server**, and every timeout in the spec had
+been set (or inflated) to survive it. A timeout sized to survive compilation latency is not a real
+budget; it is latency wearing a budget's clothes, and it hides genuine regressions behind the same
+number that was papering over the compiler. Post-change, on a compiled server, sign-in dropped from
+60s to **15s** and can genuinely fire if sign-in breaks; the `webServer` boot timeout is **420s**
+against a **measured** 273s cold build (not a guess), because a `next build` really does take that
+long once and the suite must survive it once per run.
+
+*What this does NOT change.* `reuseExistingServer` stays `false` — see the entry below on why that
+matters even more with a build in the command.
+
+## Phase 6 E2E: build and serve share ONE wrapped command (PR #25, 2026-08-23)
+
+`playwright.config.ts`'s `webServer.command` is
+`node scripts/with-ca-certs.mjs --env-file=.env.test sh -c 'pnpm build && pnpm start'` — a single
+wrapped invocation, not a build step followed by a separately-wrapped serve step.
+
+*This is the load-bearing reason, not a convenience.* `NEXT_PUBLIC_*` environment variables are
+**inlined into the client JavaScript bundle at build time** — they do not exist at request time the
+way server-only env vars do. If the build ran outside the `--env-file` wrapper (e.g. a bare `pnpm
+build` before a wrapped `pnpm start`), it would read `.env.local` — the **dev/prod** Supabase
+project — and bake those `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` values directly
+into the client bundle. The server-side wrapper on `pnpm start` would then be pointing the *server*
+at the test project while the *browser* — driven by Playwright, running the actual assertions — was
+still talking to the dev/prod project's Supabase Auth and REST endpoints, because that's what got
+compiled into the JS it downloaded.
+
+**The suite would have gone green while driving a real browser against production**, and nothing in
+the existing guards would have caught it: `assertTestProjectRef` (`src/db/load-env.ts`) reads
+`.env.test` off disk and checks the *file*, not what actually got compiled into the bundle — a build
+run against the wrong file would pass that check while shipping the wrong project entirely. This is
+the reason both steps live inside one wrapped command rather than two independently-correct-looking
+ones: correctness here depends on the *same* environment being present for both steps, not on each
+step individually being pointed somewhere valid.
+
+## Claude Code may execute `gh pr merge` (2026-08-23/24)
+
+**Both positions, recorded.** The advisory position was that Claude Code executing `gh pr merge`
+removes the last human gate on the one shared, hard-to-reverse action in this workflow — merging to
+`main` is visible to everyone and not cleanly undone the way a bad commit on a feature branch is.
+Daniels overruled that position as an accepted trade: the friction of typing the merge command
+himself on every PR was worth removing, and the actual decision to merge — reviewing the PR, judging
+it ready — still happens before the instruction is given, same as before. See WORKFLOW.md's amended
+merge rule: what changed is who types the command, not who decides to merge.
+
+**The grant is scoped, not blanket.** `.claude/settings.local.json` allows exactly
+`Bash(gh pr merge:*)` — not `gh` broadly, and explicitly not `git push`. Executing a merge on an
+explicitly-approved, green PR is a different risk than being able to run arbitrary `gh` subcommands
+or push directly to `main`, and the permission grant is written to reflect only the former.
+
+**The file is machine-local and gitignored** — `.claude/settings.local.json` lives outside the repo's
+own policy (`.claude/settings.json`, tracked and shared) precisely because this is one operator's
+tooling permission on one machine, not a rule every clone of this repo should inherit.
+
 ## Production 404 root cause, carried forward from the closed PR #6 (2026-08-24)
 
 This text is carried forward verbatim from PR #6 (`fix/ci-build-step`), which was closed unmerged

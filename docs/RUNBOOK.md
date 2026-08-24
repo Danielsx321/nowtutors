@@ -86,11 +86,46 @@ profiles, 26 subjects, 9 platform_settings rows, 2 favourites — confirmed by
 querying the test database directly, not just trusting the script's own log.
 
 Note: `db:seed:test` calls the Supabase Admin API via `@supabase/supabase-js`,
-which uses Node's `fetch`. On a machine where Node's own CA trust store is
-incomplete (symptom: `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, while `curl` to the
-same host works fine), run with `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or
-your platform's system CA bundle path) — this is a local Node/TLS environment
-quirk, unrelated to the test project, credentials, or migration/seed code.
+which uses Node's `fetch` — one of the two symptoms of the machine-wide CA
+issue below. See "Node's CA trust store" for the full picture; the short
+version is `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` fixes it and this is
+unrelated to the test project, credentials, or migration/seed code.
+
+### Node's CA trust store does not complete chains the system bundle does
+
+**This is a machine-wide property, not a Supabase quirk.** On this machine,
+Node's own bundled CA trust store fails to complete TLS chains that the
+system bundle at `/etc/ssl/cert.pem` (and therefore `curl`) completes without
+issue. It affects **any** Node process reaching the network over HTTPS, not
+just calls to Supabase.
+
+**Two symptoms observed so far, one fix:**
+- `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` — Node `fetch` against `*.supabase.co`
+  (the Supabase Admin API and Auth).
+- `SELF_SIGNED_CERT_IN_CHAIN` — `pnpm exec playwright install` downloading
+  browsers from `cdn.playwright.dev`.
+
+**Both hosts were verified to serve genuine certificate chains** — `curl -v`
+against each returns `ssl_verify_result=0` (verified, not bypassed), and the
+chains resolve to real public CAs: Google Trust Services for `supabase.co`,
+DigiCert for `cdn.playwright.dev`. **This is explicitly NOT TLS interception
+and NOT a VPN** — that hypothesis was investigated and disproved (no proxy env
+vars set, no active VPN tunnel interface, `scutil --proxy` empty, genuine
+chain presented) — so if a future symptom on a third host looks like this,
+don't re-open that investigation; go straight to `NODE_EXTRA_CA_CERTS`.
+
+**The fix, one variable:** `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or your
+platform's system CA bundle path), set **before** the Node process starts —
+Node reads it once at startup, so it cannot be set from inside an
+already-running script.
+
+- **`db:*` / `db:*:test` scripts:** automatic, via `scripts/with-ca-certs.mjs` (below).
+- **`pnpm build` / `pnpm dev` / bare `tsx`:** not wrapped — export it manually.
+- **`pnpm exec playwright install`:** not wrapped — run it as
+  `node scripts/with-ca-certs.mjs pnpm exec playwright install` on a fresh
+  clone. The bare command fails on this machine.
+- **`pnpm test:e2e`:** wrapped internally — the `webServer.command` in
+  `playwright.config.ts` runs through `scripts/with-ca-certs.mjs`.
 
 ## Checklist (fill in as the build progresses)
 
@@ -230,6 +265,29 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   `NODE_EXTRA_CA_CERTS=<path-to-your-bundle>` yourself before running the
   script — an already-set value is left untouched. This is a local-machine
   quirk only; CI and Vercel are unaffected.
+
+### Running the E2E suite
+
+`pnpm test:e2e` boots its **own production build** and serves it —
+`playwright.config.ts`'s `webServer.command` runs
+`node scripts/with-ca-certs.mjs --env-file=.env.test sh -c 'pnpm build && pnpm start'`,
+so the CA fix and the test-project env are both applied automatically; no
+manual export needed for this command specifically.
+
+- **`reuseExistingServer` is `false`, deliberately.** A stray `pnpm dev`
+  already running on `:3000` is pointed at the dev/prod project — reusing it
+  would silently run the whole suite (presence writes, session requests,
+  wallet reads) against the database that serves production. A port clash is
+  a loud, correct failure; a silently wrong database is not. If the suite
+  reports the port is busy, find and stop whatever is listening on it before
+  retrying — do not relax this setting.
+- **Requires the test project seeded first:** `pnpm db:seed:test` (see "Test
+  Supabase project" above). The suite drives real sign-ins against
+  `tutor1@nowtutors.dev` / `student1@nowtutors.dev`.
+- **Why a production build and not `next dev`:** under `next dev` every route
+  compiles on first request, which inflated every timeout in the spec into
+  latency cover rather than a real budget. See `playwright.config.ts`'s own
+  header comment for the measured numbers.
 
 ## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
 
