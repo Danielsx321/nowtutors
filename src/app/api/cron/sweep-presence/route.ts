@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cronAuthFailure } from "@/lib/auth/api-guards";
 import { sweepStalePresence } from "@/db/queries/presence";
 import { expirePendingRequestsForTutors } from "@/db/queries/session-requests";
+import { pingTokenService } from "@/lib/agora/token-service";
 
 /**
  * `GET /api/cron/sweep-presence` — the presence staleness sweep (SPEC §7.5
@@ -58,9 +59,20 @@ export async function GET(request: Request) {
     // self-healing, which is the property that matters — not their atomicity.
     const { expiredIds } = await expirePendingRequestsForTutors(sweptUserIds);
 
-    // TODO(Phase 6 Part 3): ping the Agora token service to keep the Render
-    // instance warm (SPEC §12), and end stale broadcasts. Both need the Agora
-    // integration that lands in Part 3.
+    // SPEC §9 cold-start note, §12: the token service runs on Render's free
+    // tier, which sleeps, and the first request after idle takes 30-50 seconds.
+    // That cost lands on whoever joins a session first — the worst possible
+    // place for it, since the student and tutor have just agreed to talk *now*.
+    // One cheap GET on the sweep's cadence keeps the instance awake.
+    //
+    // Same independence as the expiry sweep above: this is not in a transaction
+    // with anything, it cannot fail the job, and a miss costs one slow join
+    // rather than a wrong outcome. `pingTokenService` never throws, so there is
+    // no try/catch here to imply otherwise.
+    const agoraPing = await pingTokenService();
+
+    // TODO(Phase 9): end stale broadcasts here — the host going offline should
+    // close the broadcast the same way it expires their pending requests.
 
     const summary = {
       ok: true as const,
@@ -68,6 +80,7 @@ export async function GET(request: Request) {
       swept: sweptUserIds.length,
       sweptUserIds,
       pendingRequestsExpired: expiredIds.length,
+      agoraWarmPing: agoraPing,
       durationMs: Date.now() - startedAt,
     };
     // §12: every cron handler logs a structured summary of what it changed.

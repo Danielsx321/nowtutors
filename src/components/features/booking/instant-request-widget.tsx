@@ -97,8 +97,8 @@ export function InstantRequestWidget({
   );
 
   // Accepted: the booking exists and is already `in_progress` with its channel
-  // set, so this navigation is the handshake completing.
-  // TODO(Phase 6 Part 3): /session/[bookingId] itself — the Agora room — is Part 3.
+  // set, so this navigation is the handshake completing — into the room built in
+  // Phase 6 Part 3A.
   React.useEffect(() => {
     if (outcome?.status === "accepted" && outcome.bookingId) {
       router.push(`/session/${outcome.bookingId}`);

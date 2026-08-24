@@ -2,7 +2,15 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-23)
+## Current state (2026-08-24)
+
+**Phase 6 Part 3A — the session room shell and the Agora join — is built and in review
+(`feat/phase6-part3a-session-room`), not merged.** See "What Phase 6 Part 3A built" below. It needed
+**no migration**: `0014` already carried `agora_channel`, `started_at`, `student_joined_at` and
+`tutor_joined_at`. Two things in the build brief were **overridden after escalation** and both
+matter — the student now receives a `publisher` token rather than a `subscriber` one, and
+`started_at` is set when **both** parties are present rather than on first arrival (a billing bug if
+built as briefed). Both are in `DECISIONS.md` under "Phase 6 Part 3A".
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -151,6 +159,67 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
 - Run by hand from the Supabase SQL editor as `postgres`: `create extension` and the Vault writes
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
+
+## What Phase 6 Part 3A built
+
+**The room the Part 2 handshake lands in, and the join path into it — not the controls.** The
+elapsed timer, credits consumed/earned, mute and camera toggles, screen share, chat, end-session and
+the hard stop are Part 3B; `tutor_earnings` and the completion cron are Part 3C. They are **absent
+rather than stubbed** — an inert control that looks live is worse than one that is not there.
+
+**No migration, no RLS change, nothing in `lib/credits/`, no LessonSpace.**
+
+- **`POST /api/agora/token`** — takes `{ bookingId }` and returns
+  `{ token, uid, appId, channel, expiresAt, isTutor }`. `requireApiUser()` first; participation,
+  booking state and role are one pure decision in `lib/agora/session-access.ts`. A booking that does
+  not exist and one the caller is not part of return the **same 404**. Config failure → 503, token
+  service failure or timeout → 502; neither throws.
+- **Both participants get a `publisher` token** (SPEC §9 step 2). The media split — tutor publishes
+  camera + microphone, student publishes microphone only — is enforced in `lib/agora/client.ts`. A
+  subscriber token for the student would forbid the audio the design requires, and works in Bubble
+  only because Agora's co-host authentication is off for the project.
+- **Role and identity are derived server-side.** No request field feeds them. This is the real
+  improvement over Bubble, which compares profile ids in browser JavaScript.
+- **`lib/agora/client.ts`** — `SessionClient`, dynamic-importing the SDK (it does not tolerate SSR).
+  Constructed synchronously so a React effect can dispose it **mid-join**; every `await` inside
+  `join()` re-checks a disposed flag and tears down what it already created. `stop()` then
+  `close()` on every local track — `close()` is what turns the camera light off. Exposes `join` and
+  `leave` only; the §9 toggles are Part 3B.
+- **`/session/[bookingId]`** in a new **`(session)` route group** — the one authenticated area both
+  roles enter, so it cannot sit under `(student)` or `(tutor)` without a `requireRole` redirecting
+  half the room away. The layout guards signed-in + onboarded + not suspended; the page checks
+  participation; the token route checks it again.
+- **First-join writes** — one idempotent `UPDATE` in `db/queries/sessions.ts`, run from the token
+  route (mirroring §7.7 step 4). Backfills `agora_channel` if null, stamps the arriving party's
+  `*_joined_at`, and sets `started_at` **only on the write that makes both non-null** (§4.3). It
+  references the target row rather than a CTE, so a concurrent join re-evaluates against the locked
+  row instead of writing back a stale null. Status untouched — instant bookings are already
+  `in_progress` from the accept transaction.
+- **Warm ping** — `cron/sweep-presence` now GETs the token service's `/ping` and reports it in the
+  job summary. Never throws, cannot fail the sweep.
+- **SPEC §9 corrected.** Its "confirmed against the live app" note claimed Bubble's client-side role
+  choice was "the same publisher/subscriber split this section already specifies". Step 2 specifies
+  no split, and a client-chosen role is what §9 exists to prevent. That sentence is what created the
+  contradiction the build brief inherited.
+
+### Phase 6 Part 3A — shipped state
+
+- **Nothing was run against the shared project.** No migration, seed, reset or verify script touched
+  `mipnoxlhurdbaahmvhhx` or the test project. `db:verify-rls` was **deliberately not run**: this
+  phase changes no policy, and the script makes a material edit to seeded rows in the project that
+  also serves production.
+- **`pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` are green** — 244 tests across 21
+  files, 22 of them new (`agora-session-access`, `agora-token-contract`). The build confirms the SDK
+  stays out of the shared bundle: `/session/[bookingId]` is 7.75 kB against a 185 kB baseline.
+- **One dependency added**: `agora-rtc-sdk-ng@4.24.7`, which SPEC §2 already pins.
+- **Not verified end to end.** Two live participants in one channel has not been exercised — it
+  needs two authenticated browsers, real devices and a booking in `in_progress`. The `started_at`
+  rule is enforced in SQL and the unit suite runs without a database, so **it has no automated
+  test**; "both join, `started_at` written once, refresh does not move it" is worth an E2E or
+  test-project pass when Part 3B makes the clock observable.
+- **The token service cold start is real and measured**: a probe during this build took **22s** on
+  the first request. The route allows 45s with `maxDuration = 60`; the warm ping is what keeps that
+  path cold-start-free in practice.
 
 ## What Phase 6 Part 2 built
 
