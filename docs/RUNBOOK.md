@@ -50,6 +50,18 @@ that a forgotten/unset variable can silently disable is not a guard. Every
 `:test` script/config aborts with a readable error before doing anything
 destructive if the resolved connection string doesn't contain that literal.
 
+**DB-backed test lane:** `pnpm test:db:test` runs `tests/integration/**` against this project via
+`vitest.integration.config.ts` — currently the `stampSessionJoin` concurrency suite (SPEC §15). It
+connects on the **session pooler** (`sessionPoolerUrl()`, :5432), not the :6543 transaction pooler,
+because it holds transactions open while a second connection blocks on a row lock. `.env.test` is
+loaded by the same `scripts/with-ca-certs.mjs --env-file=` wrapper the E2E lane uses, and
+`assertTestProjectRef` runs twice — once at config load against the file, once against the string
+actually being connected with. It creates one `bookings` row per test and deletes it in teardown;
+it does **not** seed, so run `pnpm db:seed:test` first if the project is empty. **It is not in CI and
+must not be added** — the runner has no Postgres and no `.env.test`, so it would fail the required
+`verify` check for missing infrastructure. `pnpm test` (the DB-free unit lane) cannot pick these
+files up: the two configs' `include` globs are disjoint.
+
 **Reset:** `pnpm db:reset:test` drops and recreates the `public`/`drizzle`
 schemas on the test project only (guarded as above). There is deliberately no
 plain `db:reset:prod`/dev-and-prod-capable reset variant.

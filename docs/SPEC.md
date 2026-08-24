@@ -1313,6 +1313,27 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 - Presence staleness — the `live_tutors` boundary at exactly the threshold.
 - Filter composition — every combination of set/unset filters produces the intended SQL.
 
+**DB-backed integration (Vitest against the test Supabase project), non-negotiable coverage:**
+
+A rule enforced *in SQL* cannot be unit-tested — the unit suite above runs without a database by
+design, and no fake reproduces how Postgres re-evaluates a blocked `UPDATE` under READ COMMITTED.
+Anything whose correctness is a concurrency property of the statement itself belongs here instead.
+
+- **`stampSessionJoin` — the `started_at` write (§4.3, §7.4).** Four properties, driven on **two
+  separate connections in two separate transactions** so the second genuinely blocks on the first's
+  row lock and re-evaluates on release: (1) sequential both-party join records the **second**
+  arrival's moment, not the first's; (2) a concurrent join writes `started_at` **exactly once** and
+  leaves **neither** `student_joined_at` nor `tutor_joined_at` null; (3) a lone participant never
+  starts the clock; (4) re-stamping either party afterwards — a refresh, or token renewal — moves
+  nothing. Awaiting one call and then the other does not satisfy this and must not be written that
+  way: it passes against a known-broken implementation.
+
+**Run with `pnpm test:db:test`; it targets the disposable test project only, guarded by the
+hardcoded `TEST_PROJECT_REF` (RUNBOOK, "Test Supabase project"). It is deliberately NOT part of the
+CI `verify` job** — the runner has no Postgres and no `.env.test`, so including it would fail the
+required check for missing infrastructure rather than for a broken assertion. It is a local gate,
+run before changing a column whose semantics are enforced in SQL.
+
 **E2E (Playwright), the paths that lose money or trust:**
 1. Student signs up → buys credits (PayPal sandbox) → books a scheduled session → joins the classroom.
 2. Tutor goes live → student requests → tutor accepts → both land in the session → session ends → earnings appear.

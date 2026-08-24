@@ -17,15 +17,28 @@ build brief were **overridden after escalation** and both matter — the student
 present rather than on first arrival (a billing bug if built as briefed). Both are in `DECISIONS.md`
 under "Phase 6 Part 3A".
 
-**⚠️ Next: Phase 6 Part 3B (end-session, elapsed-time hard stop, `in_progress` → `completed`) is
-BLOCKED on a known gap, not just "next in line."** Part 3A's `started_at` concurrency properties
-(written once, both-participants-present gating, no CTE race) are verified by code inspection and
-confirmed in PR review, but have **zero automated test coverage** — the unit suite runs without a
-database, and two live participants racing to join has never been exercised end to end. Part 3B
-computes elapsed time and the hard-stop timer **from this exact column**, so building it on top of
-unverified concurrency behaviour risks a timer built on a race nobody has actually watched fail or
-succeed. Stand up that coverage (an E2E or test-project pass simulating two joins) **before** starting
-Part 3B. See "Phase 6 Part 3A — shipped state" below for the original note this sharpens.
+**✅ The gap that was blocking Phase 6 Part 3B is CLOSED.** Part 3A's `started_at` concurrency
+properties now have automated coverage: `tests/integration/session-join-concurrency.test.ts`, run by
+**`pnpm test:db:test`** against the disposable test project, drives the shipped `stampSessionJoin` on
+**two real connections in two real transactions** and asserts all four properties — the second
+stamp's moment is what `started_at` records (not the first's), a genuine row-lock race writes it
+exactly once with neither `*_joined_at` pushed back to null, a lone participant never starts the
+clock, and re-stamping after the fact moves nothing. **The suite was proved capable of failing**: the
+`UPDATE` was temporarily rewritten into the CTE form (DECISIONS, Part 3A item 3), exactly the
+concurrent test failed with the predicted damage, and the shipped version was restored green. No
+shipped behaviour changed. **The lane is deliberately NOT in CI** — the runner has no Postgres and no
+`.env.test`, so adding it would fail the required `verify` check for missing infrastructure rather
+than for a broken assertion. `pnpm test` (the DB-free unit lane) is unaffected: 244 tests, 21 files,
+still green, and its `tests/unit/**` glob cannot pick these files up. See "Phase 6 Part 3A — shipped
+state" below and DECISIONS, "Phase 6 Part 3A — `started_at` concurrency coverage".
+
+**Part 3B is therefore unblocked, with one thing to fix on the way in.** Drizzle's raw `execute()`
+returns `timestamptz` as a **string**, not the `Date` that `JoinStamp` declares. Latent today
+(`/api/agora/token` reads only `agoraChannel`), but Part 3B computes elapsed time from `startedAt`
+and `.getTime()` on a string throws. Found during this pass and **deliberately not fixed** — it is a
+shipped-behaviour change, and this pass made none. Fix it in Part 3B. **What remains unverified is
+the Agora media path, not the SQL**: two live participants in one channel still needs two
+authenticated browsers and real devices, and that is a §15 E2E concern rather than a Part 3B blocker.
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -235,14 +248,15 @@ rather than stubbed** — an inert control that looks live is worse than one tha
   files, 22 of them new (`agora-session-access`, `agora-token-contract`). The build confirms the SDK
   stays out of the shared bundle: `/session/[bookingId]` is 7.75 kB against a 185 kB baseline.
 - **One dependency added**: `agora-rtc-sdk-ng@4.24.7`, which SPEC §2 already pins.
-- **⚠️ KNOWN GAP, blocking Part 3B — not verified end to end.** Two live participants in one channel
-  has never been exercised — it needs two authenticated browsers, real devices and a booking in
-  `in_progress`. The `started_at` concurrency properties (written once, both-participants-present
-  gating, no CTE race) are verified by code inspection and confirmed via PR review only; the unit
-  suite runs without a database, so **there is no automated test**. "Both join, `started_at` written
-  once, refresh does not move it" needs an E2E or test-project pass **before** Part 3B starts, not
-  alongside it — Part 3B computes elapsed time and the hard-stop timer from this exact column, so an
-  unverified race here becomes an unverified timer there.
+- **~~KNOWN GAP, blocking Part 3B~~ — the SQL half is CLOSED (2026-08-24, `test:db:test`).** The
+  `started_at` concurrency properties are no longer code-inspection-only: all four are asserted in
+  `tests/integration/session-join-concurrency.test.ts` against the shipped statement, on two real
+  connections whose contention is confirmed via `pg_blocking_pids` before anything is asserted. The
+  suite was falsified against the CTE draft first — see the top of this file and DECISIONS.
+  **What is still open is the Agora media path**, which is a different claim: two live participants
+  publishing in one channel needs two authenticated browsers and real devices, and has never been
+  exercised. That belongs to the §15 E2E paths, and it does **not** block Part 3B — Part 3B's timer
+  reads the column, which is now covered.
 - **The token service cold start is real and measured**: a probe during this build took **22s** on
   the first request. The route allows 45s with `maxDuration = 60`; the warm ping is what keeps that
   path cold-start-free in practice.
@@ -508,10 +522,16 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   were already carried forward into `main` (present today); its stale `PROGRESS.md` edits were
   discarded rather than reconciled, since PROGRESS had moved on substantially across those 19
   commits.
-- **Known gap, blocking Phase 6 Part 3B — `started_at` concurrency has no automated test.** See
-  "Phase 6 Part 3A — shipped state" above. Code-inspected and PR-reviewed only; no E2E or
-  test-project run has ever exercised two participants racing to join. Stand this up before Part 3B
-  builds the elapsed-time hard-stop timer on top of it.
+- **~~Known gap, blocking Phase 6 Part 3B — `started_at` concurrency has no automated test~~ — DONE
+  (2026-08-24).** `pnpm test:db:test` →
+  `tests/integration/session-join-concurrency.test.ts`, four assertions against the shipped
+  `stampSessionJoin` on two contending connections, proved capable of failing against the CTE draft.
+  **Not in CI and must not be added** — no Postgres and no `.env.test` on the runner; it would fail
+  the required `verify` check for infrastructure reasons. Run it by hand before changing `started_at`
+  or anything computed from it. Two carry-forwards, neither blocking Part 3B: the **Agora media
+  path** (two live browsers in one channel) is still unexercised and belongs to the §15 E2E paths,
+  and `JoinStamp`'s timestamps are **strings at runtime despite being typed `Date`** — fix that in
+  Part 3B, which is the pass that actually reads them.
 - **Google OAuth — code-verified correct, but NON-FUNCTIONAL in this environment.** The full auth
   audit — the fourth of the four 2026-08-24 investigation passes alongside the Bubble parity checks
   (see "Bubble live-app investigation" above), but scoped to **our own** auth code rather than
