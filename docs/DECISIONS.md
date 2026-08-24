@@ -1825,13 +1825,150 @@ less than no suite, because it converts "unverified" into "verified" without doi
 apply:* when a test exists to rule out one specific defect, reintroduce that defect once and watch
 it fail before believing the green.
 
-### Found, not fixed — a type-vs-runtime mismatch Part 3B will hit
+### Found, not fixed here — a type-vs-runtime mismatch on the timestamps
 
-Drizzle's raw `execute()` returns `timestamptz` as a **string**, not a `Date`, because it disables
-postgres-js's type parsers and relies on column mappers a raw `sql` query does not have. `JoinStamp`
-declares `Date | null` for `studentJoinedAt` / `tutorJoinedAt` / `startedAt`; at runtime all three
-are strings like `2026-08-24 10:48:18.051472+00`. It is **latent today** — `/api/agora/token` reads
-only `agoraChannel` — and was therefore left alone here, since this pass changes no shipped
-behaviour. **Part 3B computes elapsed time from `startedAt`, and `.getTime()` on a string throws.**
-Fix it there, in the pass that has a reason to touch the column. The test normalises both shapes
-(`toEpochMicros`) rather than asserting a `Date`, so it will keep passing either way.
+`stampSessionJoin` returns `studentJoinedAt` / `tutorJoinedAt` / `startedAt` declared as
+`Date | null`, and at runtime they were **strings**. Left alone in this pass, which changed no
+shipped behaviour, and recorded for Part 3B.
+
+**Superseded** — probed and fixed in the next section, "`stampSessionJoin`'s timestamps —
+probed, then fixed at the boundary". Read that one for what was actually established; this
+paragraph is kept only so the record of what PR #32 knew at the time stays intact.
+
+## `stampSessionJoin`'s timestamps — probed, then fixed at the boundary (`fix/join-stamp-timestamptz`, 2026-08-24)
+
+Stacked on PR #32. `stampSessionJoin`'s **SQL statement is byte-identical** to what #32 merged —
+verified by diffing the `sql` block against `757ef8e` — so DECISIONS items 2 and 3 of the Part 3A
+section (both-parties-present gating, one statement referencing the target row rather than a CTE)
+are untouched. The signature is still `(bookingId, userId)`. No Part 3B logic.
+
+### 1. The claim was re-probed before anything was changed
+
+PR #32's read-only verification marked the *runtime* half of the timestamptz claim UNCLEAR: it
+rested on a single earlier probe, the integration test's normaliser accepted both shapes so the
+green suite did not discriminate, and nothing re-checked it. This project has already had to
+reverse one belief carried as established fact, so the behaviour was established first.
+
+Probed against the test project on **the production path** — the real `@/db` singleton, no mock,
+which is what `/api/agora/token` and Part 3B actually call:
+
+| after the second stamp | `typeof` | `constructor` | raw value |
+|---|---|---|---|
+| `studentJoinedAt` | `string` | `String` | `2026-08-24 11:18:56.765661+00` |
+| `tutorJoinedAt` | `string` | `String` | `2026-08-24 11:18:57.085553+00` |
+| `startedAt` | `string` | `String` | `2026-08-24 11:18:57.085553+00` |
+
+and `typeof startedAt.getTime` was `undefined` — so `.getTime()` threw, on the column the hard stop
+is computed from.
+
+**The control matters more than the conclusion**, because it is what bounds the defect:
+
+| access path | connection | result |
+|---|---|---|
+| `db.execute` (raw ``sql``) | `DATABASE_URL`, :6543 transaction pooler | **`string`** |
+| `tx.execute` (raw ``sql``) | session pooler, :5432 | **`string`** |
+| `db.select({ bookings.startedAt })` (query builder) | — | **`Date`** — `2026-08-24T11:18:57.085Z` |
+| `.returning({ bookings.startedAt })` | — | **`Date`** — identical to select |
+
+Three things that settles: it is not a test-harness artifact (unmocked singleton), it is not a
+pooler artifact (both poolers agree), and it is **specific to raw `execute()`** — the builder and
+`.returning()` decode the same column correctly.
+
+*Why it matters:* "recorded in DECISIONS" is not the same as "true", and the cost of re-probing is
+minutes against a billing column. *How to apply:* when a doc claim is about runtime behaviour and
+the suite would be green either way, re-establish it before you build on it.
+
+### 2. The mechanism is a plausible account, NOT a verified claim
+
+PR #32 stated the cause as "drizzle disables postgres-js's type parsers and relies on column mappers
+a raw `sql` query does not have." The observed behaviour is entirely consistent with that, and the
+builder-vs-raw split above is the kind of evidence it predicts — **but what was verified is the
+behaviour, not drizzle's internals.** No one read drizzle's source or stepped its decode path. Treat
+the explanation as a working account that correctly predicts what to expect, and the table above as
+the actual evidence. *How to apply:* separate "what we measured" from "why we think it happens" in
+the log, so a later reader knows which one is safe to build on.
+
+### 3. Fixed at the query boundary, not by widening the type
+
+`toDate` in `db/queries/sessions.ts` converts the three columns on the way out, so the returned
+`JoinStamp` really carries `Date`s. Deliberately **not** solved by widening `JoinStamp` to
+`Date | string`: that moves a billing-critical coercion into every future consumer, and Part 3B
+would inherit it. One conversion, one place.
+
+Details worth knowing before touching it:
+
+- Sub-millisecond precision is dropped — `.085553+00` → `.085Z` — **floored, not rounded, exactly as
+  the query builder floors it**. Verified both ways, which is what lets a value read through
+  `toDate` and the same value read through the builder compare equal. Part 3B's timer works in
+  seconds; this is far below its resolution.
+- A `Date` passes through untouched, so if a later drizzle release decodes raw `execute()` the way
+  the builder already does, this becomes a no-op rather than a second bug.
+- A value carrying **no UTC offset throws** rather than parsing. `Date` would read it as local time,
+  and a billing clock silently shifted by the server's timezone is worse than a loud failure.
+  Unreachable in practice — `timestamptz` always prints an offset — which is the point: it stays
+  unreachable loudly.
+- The `db.execute` generic now claims `string | Date | null` rather than `Date | null`. That generic
+  is an assertion about untyped driver output; claiming the weaker shape is what makes `toDate` the
+  thing that decides, instead of a cast that quietly disagrees with runtime. **The previous generic
+  was the actual defect** — the SQL was always right.
+
+**This changes a shipped return type's runtime value.** Part 3B reads `startedAt` and will now get a
+real `Date`.
+
+### 4. The exhaustive raw-`execute` survey — one defect, and it was this one
+
+Because the builder and `.returning()` decode correctly, the defect surface is raw `execute()` call
+sites plus ``sql`` fragments whose value is read back into JS. Every one in `src/`, with a verdict —
+the clean ones listed too, so a later reader can tell "checked and clear" from "never looked at":
+
+| site | shape | verdict |
+|---|---|---|
+| `db/queries/sessions.ts:175` `stampSessionJoin` | raw `execute()` returning three timestamps | **THE DEFECT — fixed here.** The only raw `execute()` in all of `src/` |
+| `db/queries/presence.ts:121` | ``sql`` predicate in a WHERE | clean — boolean consumed by SQL, never returned |
+| `db/queries/session-requests.ts:110, 250, 272` | ``sql`` predicates | clean — same |
+| `db/queries/session-requests.ts:201` `expiresAt: sql\`now() + make_interval(…)\`` | ``sql`` as a SET expression, read back via `.returning({ sessionRequests.expiresAt })` at :203 | clean — **closest call in the codebase**, and probed: `.returning({ col })` decodes to a real `Date`, same as select |
+| `db/queries/session-requests.ts:219, 245, 268, 293, 397, 405, 417, 447` | `updatedAt`/`respondedAt`/`status` SET expressions | clean — write-side only, never read back through the fragment |
+| `db/queries/admin-tutors.ts:89, 90` | ``sql`` predicates | clean |
+| `db/queries/tutors.ts:89` | ``sql`` predicate | clean |
+| `lib/tutors/filters.ts:139–141` | ``sql`` predicate (subject EXISTS) | clean |
+| `lib/paypal/fulfilment.ts:77, 95` | `updatedAt: sql\`now()\`` SET | clean — **money path**, write-side only |
+| `lib/credits/ledger.ts:245` | `updatedAt: sql\`now()\`` SET | clean — **money path**, write-side only |
+
+**No money-path site is affected**, so nothing there was touched. `src/db/queries/favourites.ts`,
+`bookings.ts`, `availability.ts`, `admin-payments.ts`, `wallet.ts` and `tutor-profile.ts` contain no
+``sql`` fragments at all.
+
+### 5. The test normaliser was tightened, not left permissive
+
+`toEpochMicros` accepted `Date | string` — correct while the bug existed, wrong the moment it was
+fixed: a suite that still tolerates the broken shape stays green if the conversion is reverted, on
+the column that decides what a student is billed. Replaced with `epochMs`, which **throws on a
+string** naming the regression, plus explicit `toBeInstanceOf(Date)` assertions on all three fields.
+
+`readJoinColumns` now reads through the **query builder** rather than raw `execute()`. That is not
+cosmetic: the builder decodes via drizzle's column mapper, a different mechanism from the boundary
+conversion under test, so every comparison is between two independently-decoded values. If `toDate`
+drifted, the read would disagree with it instead of sharing its mistake.
+
+Proved by reverting: with `toDate` temporarily removed, **all four tests failed** with
+`Expected a Date from the code under test, got string ("2026-08-24 12:05:28.817371+00")`. Restored
+and green.
+
+### 6. Teardown closes what exists and stays silent about what does not
+
+PR #32's verification found `afterAll` throwing `TypeError: Cannot read properties of undefined
+(reading 'end')` whenever `beforeAll` aborted — and the abort that matters is **the safety guard
+refusing a non-test connection string**, where all three handles stay undefined.
+
+The timing is the whole problem. A guard abort is the one failure whose message must be readable
+instantly, and a `TypeError` stacked on top of "refusing to run against a non-test project" is how a
+*working* guard gets misdiagnosed as a broken test — and then "fixed" by someone weakening it.
+Teardown now iterates only connections actually opened and swallows close failures; `afterEach`
+likewise skips a fixture that was never created.
+
+Reproduced deliberately with a non-test connection string exported. Before: the guard's error
+followed by `TypeError: Cannot read properties of undefined (reading 'end')`, two errors. After: the
+guard's error alone, `[1/1]`.
+
+*Why it matters:* a safety mechanism is only as good as the legibility of its refusal. *How to
+apply:* teardown must tolerate a setup that stopped halfway, or it will bury the reason it stopped.

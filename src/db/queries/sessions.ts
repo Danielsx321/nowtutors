@@ -111,6 +111,54 @@ export async function getSessionRoomView(
   };
 }
 
+/**
+ * Postgres timestamp text → `Date`, at the one boundary that produces it.
+ *
+ * Drizzle's raw `execute()` hands `timestamptz` back as the text Postgres
+ * printed — `2026-08-24 11:18:57.085553+00` — not a `Date`. The query builder
+ * and `.returning()` both decode the same column into a real `Date`; only the
+ * raw path does not (all three probed against the test project, 2026-08-24 —
+ * see docs/DECISIONS.md for the control table).
+ *
+ * `JoinStamp` is this module's public shape and it promises `Date`, so the
+ * conversion belongs here, **once**. It is deliberately not solved by widening
+ * `JoinStamp` to `Date | string`: `started_at` is the clock Part 3B's hard stop
+ * measures against, and a coercion repeated at every consumer is a coercion one
+ * consumer eventually gets wrong — on the column that decides what a student is
+ * billed.
+ *
+ * Sub-millisecond precision is dropped, exactly as the query builder drops it
+ * (`.085553+00` → `.085Z` both ways, floored not rounded), so a value read
+ * through here and the same value read through the builder compare equal.
+ *
+ * A `Date` passes through untouched: if a future drizzle release decodes raw
+ * `execute()` the way the builder already does, this becomes a no-op rather
+ * than a second bug.
+ */
+function toDate(value: string | Date | null): Date | null {
+  if (value === null) return null;
+  if (value instanceof Date) return value;
+
+  // `timestamptz` always prints an offset. Requiring one is what stops a
+  // hypothetical offset-less value from being silently read as local time —
+  // which `Date` would do happily, and which would be a wrong billing clock
+  // rather than a loud failure.
+  if (!/(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value)) {
+    throw new Error(
+      `Timestamp from Postgres carries no UTC offset: ${JSON.stringify(value)}`,
+    );
+  }
+  // Postgres prints `YYYY-MM-DD HH:MM:SS[.ffffff]+HH`; `Date` needs the `T`
+  // separator and a two-part offset.
+  const parsed = new Date(value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `Unparseable timestamp from Postgres: ${JSON.stringify(value)}`,
+    );
+  }
+  return parsed;
+}
+
 export interface JoinStamp {
   agoraChannel: string | null;
   studentJoinedAt: Date | null;
@@ -165,6 +213,11 @@ export interface JoinStamp {
  * Does not touch `status`. Instant bookings are inserted `in_progress` by the
  * accept transaction (§7.4) — there is no earlier state to advance from, and a
  * booking that is not already `in_progress` fails the WHERE instead.
+ *
+ * The three timestamps are normalised through {@link toDate} on the way out, so
+ * the returned `JoinStamp` really does carry `Date`s. Callers — Part 3B's
+ * elapsed-time computation above all — can use them as dates without a
+ * per-consumer coercion.
  */
 export async function stampSessionJoin(
   bookingId: string,
@@ -172,11 +225,15 @@ export async function stampSessionJoin(
 ): Promise<JoinStamp | null> {
   const channel = sessionChannel(bookingId);
 
+  // `string | Date` rather than `Date`: this generic is an assertion about
+  // untyped driver output, and the raw path currently yields text. Claiming the
+  // weaker shape is what makes `toDate` below the thing that decides, instead of
+  // a cast that silently disagrees with runtime.
   const rows = await db.execute<{
     agora_channel: string | null;
-    student_joined_at: Date | null;
-    tutor_joined_at: Date | null;
-    started_at: Date | null;
+    student_joined_at: string | Date | null;
+    tutor_joined_at: string | Date | null;
+    started_at: string | Date | null;
   }>(sql`
     update bookings b
        set agora_channel     = coalesce(b.agora_channel, ${channel}),
@@ -205,8 +262,8 @@ export async function stampSessionJoin(
   if (!row) return null;
   return {
     agoraChannel: row.agora_channel,
-    studentJoinedAt: row.student_joined_at,
-    tutorJoinedAt: row.tutor_joined_at,
-    startedAt: row.started_at,
+    studentJoinedAt: toDate(row.student_joined_at),
+    tutorJoinedAt: toDate(row.tutor_joined_at),
+    startedAt: toDate(row.started_at),
   };
 }

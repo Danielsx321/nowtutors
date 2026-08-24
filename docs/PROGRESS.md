@@ -32,13 +32,31 @@ than for a broken assertion. `pnpm test` (the DB-free unit lane) is unaffected: 
 still green, and its `tests/unit/**` glob cannot pick these files up. See "Phase 6 Part 3A — shipped
 state" below and DECISIONS, "Phase 6 Part 3A — `started_at` concurrency coverage".
 
-**Part 3B is therefore unblocked, with one thing to fix on the way in.** Drizzle's raw `execute()`
-returns `timestamptz` as a **string**, not the `Date` that `JoinStamp` declares. Latent today
-(`/api/agora/token` reads only `agoraChannel`), but Part 3B computes elapsed time from `startedAt`
-and `.getTime()` on a string throws. Found during this pass and **deliberately not fixed** — it is a
-shipped-behaviour change, and this pass made none. Fix it in Part 3B. **What remains unverified is
-the Agora media path, not the SQL**: two live participants in one channel still needs two
-authenticated browsers and real devices, and that is a §15 E2E concern rather than a Part 3B blocker.
+**Part 3B is unblocked, and the timestamptz defect PR #32 recorded is now FIXED** (2026-08-24,
+`fix/join-stamp-timestamptz`, stacked on #32). PR #32's read-only verification had marked the
+*runtime* half of that claim UNCLEAR — it rested on one probe and the test's normaliser accepted
+both shapes, so the green suite did not discriminate. It was re-probed on the **production path**
+(the real `@/db` singleton, unmocked) before anything was changed, and confirmed: all three of
+`studentJoinedAt` / `tutorJoinedAt` / `startedAt` came back `typeof=string`, e.g.
+`2026-08-24 11:18:57.085553+00`, with `typeof startedAt.getTime === "undefined"`. The control is
+what bounds it — raw `execute()` yields text on **both** poolers, while the query builder and
+`.returning()` decode the same column into a real `Date`. So the defect was specific to raw
+`execute()`, and `stampSessionJoin` held the only one in all of `src/`.
+
+**Fixed at the query boundary** (`toDate` in `db/queries/sessions.ts`), not by widening `JoinStamp`
+to `Date | string` — that would push a billing-critical coercion onto every future consumer and
+Part 3B would inherit it. **This changes a shipped return type's runtime value: Part 3B reads
+`startedAt` and now gets a real `Date`.** The `UPDATE` statement is byte-identical to what #29
+shipped and #32 tested, so the both-parties gating and the no-CTE property are untouched.
+
+**Why it stayed latent through Part 3A review:** `/api/agora/token` reads `stamp.agoraChannel` and
+nothing else — `agora_channel` is `text`, so it is a string by nature and correct either way. The
+one field the only consumer touches is the one field that was never wrong; the three that were wrong
+had no reader at all.
+
+**What remains unverified is the Agora media path, not the SQL**: two live participants in one
+channel still needs two authenticated browsers and real devices, and that is a §15 E2E concern
+rather than a Part 3B blocker.
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -530,8 +548,11 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the required `verify` check for infrastructure reasons. Run it by hand before changing `started_at`
   or anything computed from it. Two carry-forwards, neither blocking Part 3B: the **Agora media
   path** (two live browsers in one channel) is still unexercised and belongs to the §15 E2E paths,
-  and `JoinStamp`'s timestamps are **strings at runtime despite being typed `Date`** — fix that in
-  Part 3B, which is the pass that actually reads them.
+  and ~~`JoinStamp`'s timestamps are **strings at runtime despite being typed `Date`**~~ — **DONE**,
+  re-probed and fixed at the query boundary (see the top of this file and DECISIONS,
+  "`stampSessionJoin`'s timestamps — probed, then fixed at the boundary"). The integration lane's
+  normaliser was tightened to reject a string, so a reverted conversion now fails loudly instead of
+  staying green.
 - **Google OAuth — code-verified correct, but NON-FUNCTIONAL in this environment.** The full auth
   audit — the fourth of the four 2026-08-24 investigation passes alongside the Bubble parity checks
   (see "Bubble live-app investigation" above), but scoped to **our own** auth code rather than
