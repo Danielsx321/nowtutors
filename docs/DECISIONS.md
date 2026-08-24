@@ -1525,3 +1525,105 @@ so the build — in CI and on Vercel — has a live network dependency on `fonts
 can fail for reasons unrelated to the code; on this machine that fetch fails locally with
 `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` because of the local Node trust store, and
 `node scripts/with-ca-certs.mjs pnpm build` is the local workaround.
+
+---
+
+## Bubble live-app investigation — findings and six decisions (2026-08-24)
+
+A four-part, read-only investigation of the live Bubble app (`nowtutors.com`) established how the
+product actually behaves, correcting some earlier inferences and confirming others. Two items below
+are **findings** (what was observed) and six are **decisions** (what the rebuild does about it) —
+kept visibly distinct rather than folded together, since a finding records a fact about Bubble and a
+decision records a choice this SPEC makes. SPEC §3.1, §7.4, §7.7, §7.11, §9, and §18 item 8 were
+updated in the same commit (per the CLAUDE.md standing rule).
+
+### Finding A — the session room is Agora, two-way; confirms the Phase 6/7 split
+
+Corrects an earlier wrong reading in this project ("Agora is broadcast-only"), recorded here so it
+is not re-derived. `live_session_room` (content type `Booking`) runs the Agora Web SDK in `rtc` mode:
+the tutor publishes video + audio, the student publishes audio only, and both subscribe to the
+other. Channel name is the booking's `agora_channel` field, set at booking creation as the literal
+string `"channel_"` concatenated with the tutor's `UserProfile` id — one channel per tutor, not per
+booking. Tokens come from `https://agora-token-service-3irp.onrender.com` at
+`/rtc/{channel}/{role}/uid/0/?expiry=3600` — the same token server this rebuild reuses — with role
+(`publisher` / `subscriber`) chosen client-side by comparing the current user's profile id to the
+booking's tutor profile id. `live_classroom` separately hosts a subscriber-only preview of the
+tutor's broadcast, on a channel keyed to the tutor's profile id, shown only when the tutor is live —
+a broadcast preview widget, not a session. `Lessonspace` is used for scheduled bookings only, via
+`POST /v2/spaces/launch/` passing only booking id, display name, and a leader boolean — no duration,
+expiry, or time limit. **Consequence:** SPEC's split (Phase 6 Agora room, Phase 7 Lessonspace) is
+correct and is now confirmed by the live app rather than inferred. SPEC §7.4, §7.7, §9 amended with
+confirming notes; `agora_channel = session_{booking_id}` (§4.3, per-booking rather than per-tutor)
+is unchanged — a deliberate, safer departure from Bubble's scheme, not something this finding
+overrides.
+
+### Finding B — no request/accept flow exists in Bubble
+
+Bookings are created immediately on payment. There is no request data type, no accept step, no
+expiry, no timeout. The tutor is pulled into the room by a `has_live_request` boolean on the `User`
+record, polled by a 10-second interval on the index page, which then redirects the tutor; the flag
+is cleared when the tutor lands in the room. **Consequence:** this rebuild's request/accept model
+(`session_requests`, §7.4) has **no Bubble counterpart** — it is this rebuild's own design. The rule
+that Bubble is ground truth for UX behaviour does not apply here, because there is no Bubble
+behaviour to match. SPEC §7.4 amended with a note to this effect, so a future session does not go
+looking for a Bubble flow to reconcile against.
+
+### Decision 1 — replace the credit burn model
+
+Bubble sets a booking's `credits_remaining` to a **flat bracket by duration** — 10/20/30/40 credits
+for 30/60/90/120 minutes — which ignores the tutor's hourly rate entirely, so every tutor costs the
+same in credits. A browser-side interval then decrements `credits_remaining` by 1 every 180 seconds
+and ends the session at zero — the withdrawn "1 credit = 3 minutes" rule (Phase 6 pre-build entry,
+above), still live and still governing session termination today. **Decided:** the rebuild does not
+reproduce any of this. Credits are charged once at booking via `sessionPriceCredits()`
+(`src/lib/credits/pricing.ts`) — `Math.ceil(hourlyRateCredits × durationMinutes / 60)`. No burn
+clock, no `credits_remaining` field, no client-side metering; duration is enforced server-side from
+`started_at`. The flat bracket is a pricing defect in the live app, not a model worth preserving.
+SPEC §7.4 amended with a confirming note — this was already the built behaviour; the investigation
+confirms it rather than changing it.
+
+### Decision 2 — the client-side burn is a live revenue leak
+
+Because metering runs in the browser, closing the tab stops the meter while the session room stays
+open — the student continues being tutored without being charged. Recorded as an observed property
+of the live app. This rebuild's server-side hard stop from `bookings.started_at` removes it by
+construction, not by patching the symptom. SPEC §7.4 amended alongside Decision 1.
+
+### Decision 3 — tutor earnings are paid before the session happens
+
+Bubble increments the tutor's `total_earnings` at booking creation, unconditionally, on all three
+booking paths, **before the session occurs**. There is no escrow, no completion trigger, no refund
+logic, no cancellation workflow, and no no-show handling anywhere in the app. **Decided:** this
+rebuild's held-earnings-on-completion model (§7.11) is a deliberate correction, not a divergence to
+be reconciled — written into SPEC explicitly so a future session does not "align to Bubble" and undo
+it.
+
+### Decision 4 — `total_withdrawn` is never written; a live financial defect
+
+The field exists on `UserProfile` and is **read** in the withdrawal gate
+(`earnings × 0.75 − withdrawn ≥ $30`) but no workflow anywhere writes it. **Consequence:** a tutor
+can submit repeated withdrawal requests against the same balance, and the displayed "available to
+withdraw" never decreases after a request is submitted. Recorded as a known defect in the live app
+affecting Phase 8 payouts. No fix now; it must not be reproduced — this rebuild has no
+`total_withdrawn`-shaped counter to begin with, deriving "available" from the ledger instead (§7.11).
+
+### Decision 5 — liveness confirms SPEC §3.1
+
+Bubble has the exact `is_live` / `online_status` divergence §3.1 forbids. Loading the tutor
+dashboard sets `online_status` only. A stale-tutor sweep clears both after 10 minutes of inactivity.
+No confirmed write of `is_live = true` exists anywhere in the app. Tutor cards read `online_status`;
+the dashboard indicator reads `is_live`. The two can disagree. Recorded as confirmation of the
+existing rule, not a change to it. SPEC §3.1 amended with a confirming note.
+
+### Decision 6 — the platform fee is 25%
+
+Bubble's withdrawal maths pays out gross × 0.75 — a live commercial term. SPEC already stated
+`platform_fee_percent = 25` (§4.7, §7.11, §18 item 8) before this investigation; the live figure
+matches exactly, so this is a confirmation, not a change. SPEC §18 item 8 amended with a confirming
+note.
+
+### Carried for Noora (record only, not actioned)
+
+Bubble's payout mechanism is a manual admin approval of a `WithdrawalRequest` followed by a PayPal
+Payout. Relevant to the held Stripe Connect cross-border question (§2, "Not in the stack,
+deliberately") — recorded here for when that question is revisited, not actioned in this pass.
