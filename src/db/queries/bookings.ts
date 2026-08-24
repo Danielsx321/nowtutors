@@ -11,6 +11,7 @@ import {
   tutorSubjects,
   wallets,
 } from "@/db/schema";
+import { publicProfiles } from "@/db/schema/views";
 import { computeSlots } from "@/lib/availability/compute-slots";
 import { SLOT_STEP_MINUTES } from "@/lib/availability/validate-slot";
 import { getBookingSettings } from "@/lib/settings";
@@ -295,6 +296,64 @@ export function groupBookingsByTab(
   }
   // Upcoming reads soonest-first; the others newest-first (query is desc).
   out.upcoming.reverse();
+  return out;
+}
+
+export interface RecentTutor {
+  userId: string;
+  slug: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  subjectName: string | null;
+}
+
+/**
+ * Distinct tutors from the student's completed bookings, most recent first
+ * (SPEC §6 `/dashboard` "recent tutors"). Same visibility rules as browse/
+ * favourites (§3.1): approved and non-suspended only.
+ */
+export async function getRecentTutorsForStudent(
+  studentId: string,
+  limit = 5,
+): Promise<RecentTutor[]> {
+  const rows = await db
+    .select({
+      userId: bookings.tutorId,
+      slug: tutorProfiles.slug,
+      displayName: publicProfiles.displayName,
+      avatarUrl: publicProfiles.avatarUrl,
+      subjectName: subjects.name,
+      scheduledStartAt: bookings.scheduledStartAt,
+    })
+    .from(bookings)
+    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, bookings.tutorId))
+    .innerJoin(publicProfiles, eq(publicProfiles.id, bookings.tutorId))
+    .innerJoin(profiles, eq(profiles.id, bookings.tutorId))
+    .leftJoin(subjects, eq(subjects.id, bookings.subjectId))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(bookings.status, "completed"),
+        eq(tutorProfiles.approvalStatus, "approved"),
+        eq(profiles.isSuspended, false),
+      ),
+    )
+    .orderBy(desc(bookings.scheduledStartAt));
+
+  const seen = new Set<string>();
+  const out: RecentTutor[] = [];
+  for (const r of rows) {
+    if (seen.has(r.userId)) continue;
+    seen.add(r.userId);
+    out.push({
+      userId: r.userId,
+      slug: r.slug,
+      displayName: r.displayName,
+      avatarUrl: r.avatarUrl,
+      subjectName: r.subjectName,
+    });
+    if (out.length >= limit) break;
+  }
   return out;
 }
 
