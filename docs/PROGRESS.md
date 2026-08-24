@@ -19,10 +19,20 @@ below, and `DECISIONS.md` for the three SPEC amendments #34 carries (§4.3
 `billed_minutes`, §12 `complete-sessions`, §9 step 2), the falsification table,
 and #35's renewal-off-`expiresAt` reasoning.
 
-**Next up: Phase 6 Part 3C** — the complete-sessions cron and `tutor_earnings`,
-reading instant bookings at `status='completed'` via the shared `sessionElapsedSql`
-fragment (§12), with `started_at` / `*_joined_at` carrying the `no_show_*`
-classification for a pair that never completed.
+**Phase 6 Part 3C — the complete-sessions cron and `tutor_earnings` — is BUILT**
+on `phase-6-part3c-complete-sessions` (PR open, not yet merged). It needed **no
+migration**: `tutor_earnings` has existed since `drizzle/0000` with exactly the
+columns it writes, `booking_id` already carried its UNIQUE, and `no_show_tutor` /
+`no_show_student` were already values in the shipped `booking_status` enum. See
+"What Phase 6 Part 3C built" below. Two SPEC amendments ride with it (§7.11's
+no-show money rules and wallet-at-release; §12's clock for a never-started
+instant booking, which was named as this cron's job without anything saying what
+made it due), plus a falsification table in `DECISIONS.md` — including the break
+that proved nothing until the fixtures were fixed.
+
+**Next up: nothing in Phase 6 is assigned.** Screen share, chat and
+credits-consumed/earned remain the open Part 3 remainder; `release-earnings` and
+withdrawals are Phase 8.
 
 **PRs #32 and #33 are MERGED** (`df9d249`, `582e83a`). #32 was squash-merged while
 #33 still carried #32's original commit, which left #33 `CONFLICTING` against
@@ -254,6 +264,74 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
 - Run by hand from the Supabase SQL editor as `postgres`: `create extension` and the Vault writes
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
+
+
+## What Phase 6 Part 3C built (`phase-6-part3c-complete-sessions`)
+
+**The sweep that closes sessions nobody was left to close, and the first
+`tutor_earnings` writer in the codebase.** `GET/POST /api/cron/complete-sessions`
+(`*/15`), following `expire-requests` exactly: `cronAuthFailure` first, nodejs
+runtime, `force-dynamic`, structured `console.info` summary, 500 on throw, POST =
+GET. Returns `{ ok, job, completed, noShowTutor, noShowStudent, earningsCreated,
+durationMs }` plus the affected booking ids per classification.
+
+**No migration, no RLS change, nothing under `drizzle/`, and nothing from
+`lib/credits/ledger.ts` — not even transitively.**
+
+- **Three work sets, three clocks.** *Instant, started:* the shared
+  `sessionElapsedSql` fragment, **called and not restated**, closed through the
+  shipped `endElapsedInstantSession` one booking at a time so the `ended_at` cap
+  is not copied. *Instant, never started:* `created_at + duration_minutes <=
+  now()` with `started_at IS NULL` in the predicate — the clock §12 never stated,
+  decided this pass and written into §12. *Scheduled:* `scheduled_end_at + 30m`,
+  `confirmed` or `in_progress`, `ended_at = scheduled_end_at`.
+- **Classification from `started_at` / `*_joined_at`, tutor-absence first**, in
+  one shared SQL fragment used by both statements. Both-NULL lands
+  `no_show_tutor`: an empty room is not evidence the tutor was there.
+- **The money rules, decided this pass and recorded in `DECISIONS.md`:**
+  `completed` and `no_show_student` each write a `tutor_earnings` row (identical
+  treatment — the tutor held the slot and was present, and §7.4 refunds the
+  student nothing); `no_show_tutor` writes none. Split by `splitEarnings`, called
+  not inlined; `status = 'held'`; `available_at = ended_at + earnings_hold_hours`.
+- **The wallet is NOT touched.** A `held` row is a promise; the ledger entry is
+  the money and is written when `release-earnings` flips `held` → `available`
+  (Phase 8). Crediting `credit_balance` at completion would put unwithdrawable
+  credits into it and `reconcile-wallets` would fire on its first run, correctly.
+- **Idempotent twice over:** every predicate stops matching the rows it just
+  moved, **and** `tutor_earnings.booking_id`'s UNIQUE is used with `ON CONFLICT DO
+  NOTHING`, so the window between a transition committing and its insert running
+  cannot double-pay. The falsification pass shows these are genuinely two
+  guarantees: removing the second left the first's test green.
+- **`getEarningsSettings()`** added to `lib/settings.ts` on the
+  `getBookingSettings` pattern — `platform_fee_percent` and `earnings_hold_hours`
+  had no accessor because nothing in `src/` read them until now.
+- **`tests/unit/fees.test.ts`** — the authoritative money split had no unit test
+  at all despite being the one place the platform/tutor division is decided.
+- **`tests/integration/complete-sessions.test.ts`** — 12 tests in the DB-backed
+  lane: both predicates in isolation, all three classifications, the `ended_at`
+  cap holding on a late run, earnings written for `completed` and
+  `no_show_student` and not for `no_show_tutor`, the split and `available_at`,
+  idempotence on immediate re-run, and the double-pay window.
+- **The `@/db` mock in `session-end-concurrency.test.ts` now forwards `select`**,
+  extended before this pass's coverage was written — the omission had already
+  caused one misdiagnosis in Part 3B's falsification pass.
+
+**Verified:** `pnpm lint` clean, `pnpm typecheck` clean, `pnpm test` 293 passed /
+26 files, `pnpm test:db:test` 29 passed / 3 files. **Falsification: five breaks,
+four failed exactly the predicted tests; the fifth (inline round-half-up instead
+of `splitEarnings`) failed NOTHING** — the fixtures' gross amounts (41, 60) did
+not straddle a half, so floor and half-up agreed. Fixtures changed to 50 (12.5)
+and 30 (7.5) with the expected numbers pinned literally; the identical break then
+failed 3 tests. Both runs are in `DECISIONS.md`.
+
+**Absent rather than stubbed, in this pass:** the `pg_cron` snippet and its
+RUNBOOK step (scheduling is gated on the CRON_SECRET rotation, still open — the
+route is complete and hand-invocable with the bearer header), the
+`/admin/settings` "run now" button, `release-earnings`, withdrawals, anything in
+`lib/credits/ledger.ts`, screen share, chat and emails. Nothing about correctness
+waits on the schedule: the four Part 3B actors still end any elapsed session with
+a person in the room, and a late run writes the same `ended_at` an on-time one
+would.
 
 ## What Phase 6 Part 3B built
 

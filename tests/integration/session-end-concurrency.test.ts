@@ -64,11 +64,22 @@ vi.mock("@/db", async () => {
       execute: (query: SQL) => currentExecutor().execute(query),
       // The transition is written through the query builder (so `.returning()`
       // decodes real `Date`s), so the mock forwards `update` as well — the join
-      // lane's mock needed only `execute`. Nothing else is forwarded: the
-      // helpers read through their own connections on purpose, so a read that
-      // verifies a write is never decoded by the same path that made it.
+      // lane's mock needed only `execute`.
       update: ((table: Parameters<Executor["update"]>[0]) =>
         currentExecutor().update(table)) as Executor["update"],
+      // `select` is forwarded too, added in Phase 6 Part 3C. It is not used by
+      // this file's assertions — the helpers deliberately read through their own
+      // connections, so a read that verifies a write is never decoded by the
+      // path that made it — but a mock that omits a method the code under test
+      // calls fails with `db.select is not a function`, which reads exactly like
+      // a real refusal. That is not hypothetical: Part 3B's falsification pass
+      // wrote its first break through `db.select()`, saw all nine tests fail,
+      // and had to establish that the mock was incomplete rather than that the
+      // guard had held (docs/DECISIONS.md, "Break 1 first failed for the wrong
+      // reason"). Forwarding it here removes that misdiagnosis from the next
+      // pass's path.
+      select: ((...args: Parameters<Executor["select"]>) =>
+        currentExecutor().select(...args)) as Executor["select"],
     },
   };
 });
