@@ -761,6 +761,18 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   built-in sender after tonight's testing. The corrected `redirect_to` **was** observed in the 429
   log lines, confirming the app sends the right callback URL — but the full flow is unproven. Cold
   re-test once the rate limit resets.
+- **Repository hygiene — 32 stale branches deleted from origin, 26 deleted locally (2026-08-24).**
+  Origin and local now hold only `main`. **`delete_branch_on_merge` is currently `false`** in the
+  GitHub repo settings (confirmed via `gh api repos/:owner/:repo --jq '.delete_branch_on_merge'`) —
+  turning on "Automatically delete head branches" is a **to-do**, not yet done, so this cleanup
+  will recur on the next few merged PRs until it's enabled.
+- **Two short outstanding items before Phase 6 Part 3C, neither phase work:**
+  1. The cold signup end-to-end re-test (signup on Vercel → email → `/auth/callback` →
+     `/onboarding`, signed in) once the Supabase built-in sender's rate limit resets — see the
+     "Signup 'email confirmation not arriving'" entry above.
+  2. A `pnpm db:verify-rls` run to assert the SPEC §7.1 no-duplicate-accounts guarantee now that
+     Google OAuth is enabled — see the "Google OAuth" entry above, "still open, not closed by this
+     session."
 - **Two auth gaps found in the full audit — NOT YET FIXED, parked for a future short session.**
   - `requireOnboarded()` (`src/lib/auth/guards.ts`) is exported but has **no call site anywhere in
     the repo** — dead code — and it skips the `is_suspended` check that `requireRole()` has.
