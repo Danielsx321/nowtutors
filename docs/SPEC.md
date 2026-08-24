@@ -1106,7 +1106,7 @@ Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy o
 3. For `broadcast`: parse the broadcast id. If caller is the host → `publisher`; otherwise, if the broadcast is `live` → `subscriber`.
 4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity. The token itself is minted at the service's wildcard `uid/0`, which authorizes the *channel* for any uid; the client then joins under its own derived uid.
 5. Fetch from the Render service, return `{ token, uid, appId, channel, expiresAt }` with a TTL shorter than the token's.
-6. Client renews at 80% of TTL via Agora's `token-privilege-will-expire` event.
+6. Client renews via a `setTimeout` scheduled off the route's reported `expiresAt` (not Agora's `token-privilege-will-expire` event — see the Part 3B remainder amendment below).
 
 **The request carries an id, not a channel** (amended in Phase 6 Part 3A; this line previously specified `{ channel, purpose }` with the booking id parsed back out of the channel string). Taking the id and reading the channel off the row is the safer direction — a caller cannot name a channel they were not admitted to — and the id is what the client actually holds after the §7.4 handshake. The `purpose` discriminator is deferred until broadcasts exist (Phase 9); until then the two shapes are distinguished by which id is present.
 

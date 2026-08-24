@@ -4,15 +4,25 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-24)
 
-**Phase 6 Part 3B — the server-side end and the elapsed hard stop — is BUILT and
-open as a PR (`feat/phase6-part3b-end-session`).** Scope was deliberately
-narrower than "Part 3B" as this file previously described it: the §9 control-bar
-toggles (mic/camera/screen share), chat, credits consumed/earned and the 80%-TTL
-token renewal are **not** in it and are still absent rather than stubbed. It
-needed **no migration** — `ended_at` and `billed_minutes` have existed since
-`0000`. See "What Phase 6 Part 3B built" below, and `DECISIONS.md` for the three
-SPEC amendments it carries (§4.3 `billed_minutes`, §12 `complete-sessions`, §9
-step 2) and the falsification table.
+**Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
+control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and
+**PR #35 (`974cd7a`)**. #34 shipped the server-side end and the hard stop; #35
+closed the carve-out #34 deliberately left out — the §9 `toggleMic`/`toggleCamera`
+control-bar toggles and the 80%-margin token renewal, scheduled off the token
+route's `expiresAt`. **~~The §9 control-bar toggles (mic/camera/screen share),
+chat, credits consumed/earned and the 80%-TTL token renewal are not in it and are
+still absent rather than stubbed~~ — DONE for mic/camera toggles and token
+renewal in PR #35.** Screen share and chat remain absent rather than stubbed —
+still no part of any merged pass. Neither PR needed a migration — `ended_at` and
+`billed_minutes` have existed since `0000`. See "What Phase 6 Part 3B built"
+below, and `DECISIONS.md` for the three SPEC amendments #34 carries (§4.3
+`billed_minutes`, §12 `complete-sessions`, §9 step 2), the falsification table,
+and #35's renewal-off-`expiresAt` reasoning.
+
+**Next up: Phase 6 Part 3C** — the complete-sessions cron and `tutor_earnings`,
+reading instant bookings at `status='completed'` via the shared `sessionElapsedSql`
+fragment (§12), with `started_at` / `*_joined_at` carrying the `no_show_*`
+classification for a pair that never completed.
 
 **PRs #32 and #33 are MERGED** (`df9d249`, `582e83a`). #32 was squash-merged while
 #33 still carried #32's original commit, which left #33 `CONFLICTING` against
@@ -73,7 +83,10 @@ had no reader at all.
 
 **What remains unverified is the Agora media path, not the SQL**: two live participants in one
 channel still needs two authenticated browsers and real devices, and that is a §15 E2E concern
-rather than a Part 3B blocker.
+rather than a Part 3B blocker. **The same is now true of PR #35's toggle/renewal path** — the
+`toggleMic`/`toggleCamera` control-bar wiring and the 80%-margin token renewal are unexercised
+against a live Agora channel for the same reason: no automated pass drives two real browsers.
+Also a §15 E2E concern, explicitly non-blocking for Part 3C.
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -161,6 +174,18 @@ below.
   lives in `DECISIONS.md` (same section title) and is not restated here.
 - **Student `/dashboard` fix — same defect class as the earlier tutor `/tutor` fix.**
   **Merged via PR #30 (`7afea77`).** See "Student `/dashboard` fix" below.
+- **DB-backed `stampSessionJoin` concurrency coverage.** **Merged via PR #32 (`df9d249`)**
+  — `tests/integration/`, `pnpm test:db:test`, the `TEST_PROJECT_REF` guard. See "What Phase 6
+  Part 3A built" below and DECISIONS, "Phase 6 Part 3A — `started_at` concurrency coverage".
+- **`stampSessionJoin` returns real `Date`s, not timestamp text.** **Merged via PR #33
+  (`582e83a`)** — fixed at the query boundary (`toDate`); the `db.execute` generic corrected to
+  `string | Date | null`. See the top of this file and DECISIONS, "`stampSessionJoin`'s
+  timestamps — probed, then fixed at the boundary".
+- **Phase 6 Part 3B — server-side end + elapsed hard stop.** **Merged via PR #34 (`0bb9be2`).**
+  See "What Phase 6 Part 3B built" below.
+- **Phase 6 Part 3B remainder — control-bar mic/camera toggles + Agora token renewal.**
+  **Merged via PR #35 (`974cd7a`).** See "What Phase 6 Part 3B built" below and DECISIONS,
+  "Phase 6 Part 3B remainder — control-bar toggles + token renewal".
 
 ## 2026-08-23 — test project, tooling, and the cron going live
 
@@ -233,9 +258,13 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
 ## What Phase 6 Part 3B built
 
 **The server-side end of a session, and the hard stop that holds when nobody is
-watching.** Not the control bar: the §9 mic/camera toggles, screen share, chat,
-credits consumed/earned and the token renewal are a separate pass and are absent
-rather than stubbed.
+watching — plus, in the remainder pass (PR #35), the §9 control-bar mic/camera
+toggles and the 80%-margin token renewal.** ~~Not the control bar: the §9
+mic/camera toggles, screen share, chat, credits consumed/earned and the token
+renewal are a separate pass and are absent rather than stubbed.~~ — **DONE for
+mic/camera toggles and token renewal (PR #35).** Screen share, chat and credits
+consumed/earned remain absent rather than stubbed; no merged pass has touched
+them.
 
 **No migration, no RLS change, nothing in `lib/credits/`, no `tutor_earnings`, no
 `is_live` write, nothing under `drizzle/`.**
@@ -270,6 +299,17 @@ rather than stubbed.
   zero). The other party is told by the Agora SDK's `user-left` — `bookings` is
   not in the Realtime publication and adding it would have been a migration.
 
+**PR #35's remainder** — `SessionClient` gains `toggleMic`/`toggleCamera`
+(`setEnabled`, not unpublish/republish) and `renewToken` (swaps credentials
+without leaving the channel); `toggleCamera` returns `null` for a student
+(confirmed in code that no camera track is ever created for that role, not
+`false`). A new `useTokenRenewal` hook re-arms one `setTimeout` off the token
+route's `expiresAt` on each successful renewal; a refusal re-runs
+`refreshState` — the same path the countdown's expiry already uses — rather
+than special-casing elapsed client-side. New files: `src/hooks/use-token-renewal.ts`,
+`src/lib/agora/client.ts` (toggle/renewal additions), `src/lib/agora/renewal.ts`,
+`tests/unit/agora-client-toggle.test.ts`, `tests/unit/agora-renewal.test.ts`.
+
 ### Phase 6 Part 3B — shipped state
 
 - **`pnpm lint`, `pnpm typecheck` and `pnpm test` green** — 269 unit tests across
@@ -295,6 +335,15 @@ rather than stubbed.
   Part 3A, a §15 E2E concern, and not a blocker for Part 3C.
 - **§15 E2E path 2** ("session ends → earnings appear") becomes assertable at
   Part 3C; nothing in the E2E suite was touched here.
+- **Carry forward for Part 3C's integration work, not resolved here:** the
+  `@/db` mock used by `tests/integration/session-end-concurrency.test.ts`
+  forwards **`execute` and `update` only** — no `select`. A `db.select()`-based
+  pre-read in a falsification break failed with `TypeError: db.select is not a
+  function` and was first misdiagnosed as the guard failing; it was the mock,
+  not the guard (see `DECISIONS.md`, "Break 1 first failed for the wrong
+  reason"). Part 3C's cron will read via `select` somewhere in its own
+  integration coverage — extend the mock's forwarder before trusting a
+  `db.select` failure there as a real finding.
 
 ## What Phase 6 Part 3A built
 
