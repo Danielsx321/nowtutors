@@ -2435,3 +2435,39 @@ auth logs and an `auth.users` query showed `dadatosynseun@gmail.com` was created
   corrected `redirect_to` was visible in the 429 log lines themselves, which confirms the app sends
   the right callback URL, but the full flow through a successful send is still unproven. Carried
   forward in PROGRESS.md as a cold re-test once the rate limit resets.
+
+## A "carried forward" claim is not evidence either — two closed-unmerged branches audited, two gaps found and closed (2026-08-24)
+
+The carry-forward work for PR #6 (`fix/ci-build-step`) and PR #26 (`docs/phase-6-e2e-green-session`)
+— both closed unmerged, both recorded elsewhere in this log and in PROGRESS.md as "the useful content
+was carried forward, the rest discarded" — was itself never checked line-by-line against the actual
+branch diffs. A subsequent read-only audit of every branch still on `origin` did that check and found
+two sections that were **never ported and never mentioned in any record, in either direction**:
+
+- **PR #6's `docs/RUNBOOK.md` changes** — the "Vercel Framework Preset must read Next.js" checklist
+  warning, the "Vercel env vars are per-project and per-environment, not inherited" warning, and the
+  "move production off the DEV Supabase project before launch" checklist item. The commit that carried
+  PR #6 forward named only two things as ported — the CI change and a DECISIONS.md entry — and
+  separately said PROGRESS.md's edits were discarded. RUNBOOK.md was never mentioned at all.
+- **PR #26's five technical fixes** behind getting `presence-ungraceful-exit.spec.ts` to pass locally
+  (the empty Playwright browser cache, the `GoLiveToggle`/`is_live` conflation, the `webServer` boot
+  budget, `waitForURL` vs. a Server Action redirect, and the optimistic-UI toast fix), plus the
+  standalone open question about `GoLiveToggle`'s optimistic `aria-checked`. The correction in
+  `3f6798b` addressed the **framing claim** ("E2E is green, SPEC §16 met") — correctly — but never
+  touched this underlying technical content, and nothing else did either.
+
+Both are now ported (this commit): RUNBOOK.md gained the three items above, with the DEV-Supabase-project
+claim upgraded from a stated intention to a verified fact (project `mipnoxlhurdbaahmvhhx`, dashboard
+title "nowtutors-dev", confirmed live 2026-08-24) and marked a launch blocker; PROGRESS.md gained the
+five fixes as debugging context attached to the existing (correct) "debugged to passing, not yet
+verified" treatment of the spec, and the `GoLiveToggle` item as an explicit open question.
+
+**The lesson is one this project already applies elsewhere** — RUNBOOK's test-project verification
+insists on querying the database directly rather than trusting a script's own log; the `CRON_SECRET`
+rotation entry insists on a live bearer-token call before calling a rotation done; the E2E
+"confirmed green" correction above insists on captured runner output, not prose. It had not yet been
+applied to **this project's own carry-forward commits**: a prose claim that content was ported is not
+evidence that it was — verify against the source branch before deleting it, the same way any other
+claimed-done item gets verified. This was only catchable because the branches still existed on
+`origin`; had they been deleted on the strength of the "carried forward" claim, both gaps would have
+been unrecoverable.

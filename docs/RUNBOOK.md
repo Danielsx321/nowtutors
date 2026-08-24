@@ -131,6 +131,12 @@ already-running script.
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
+  - **Vercel "Framework Preset" must read "Next.js"**, not "Other" — with the wrong preset
+    Vercel runs the build but never applies Next's routing/output convention, so every route
+    returns a platform 404 despite a clean build. See DECISIONS, "Production 404".
+  - **Vercel env vars are per-project AND per-environment** (Production / Preview /
+    Development) — they are NOT inherited from the repo or from `.env.local`. Each must be
+    set explicitly in the Vercel dashboard for every environment that needs it.
 - [x] Google OAuth consent screen and redirect URIs — Phase 3. **Done 2026-08-24.** Google Cloud
   OAuth client created (consent screen External; scopes `email`/`profile`/`openid`; authorized
   redirect URI set to the **Supabase** callback, not ours), client id + secret entered into
@@ -244,6 +250,17 @@ already-running script.
 - [ ] DNS cutover for nowtutors.com — Phase 10.
   - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
     nowtutors.com at it.**
+- [ ] **⚠️ LAUNCH BLOCKER — move production off the DEV Supabase project — Phase 10, BEFORE
+  launch.** **Verified 2026-08-24: the deployed Vercel app currently authenticates against Supabase
+  project `mipnoxlhurdbaahmvhhx`** — dashboard title **"nowtutors-dev"** — confirmed live, not
+  inferred from config. Production is running on the development project today. This is acceptable
+  only while there are no real users; it is not a general aspiration to clean up eventually. Create a
+  dedicated production project, run the migrations against it, seed `platform_settings` + subjects
+  (NOT the dev fixtures), promote the first admin by SQL, repoint the Vercel production env vars
+  (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `DATABASE_URL`, `DIRECT_URL`), redo the Google OAuth redirect URIs and the same-email linking
+  setting for the new project, and re-run `pnpm db:verify-rls` against it. See DECISIONS,
+  "Production 404".
 - [ ] First-admin promotion SQL — Phase 1/8.
 - [ ] Rollback procedure.
 
