@@ -25,6 +25,9 @@ coverage
 *.pem
 .DS_Store
 
+# claude code (machine-local)
+.claude/
+
 # playwright
 test-results
 playwright-report

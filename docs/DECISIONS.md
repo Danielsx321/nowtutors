@@ -1484,3 +1484,44 @@ misdirects, is a step worth removing.
 *Scope.* Only `db:*` scripts are wrapped. `pnpm build` / `pnpm dev` / bare `tsx` still need the
 manual export, and RUNBOOK keeps it as the documented fallback for machines whose CA bundle sits at
 a different path. An already-set value is never overridden.
+
+## Production 404 root cause, carried forward from the closed PR #6 (2026-08-24)
+
+This text is carried forward verbatim from PR #6 (`fix/ci-build-step`), which was closed unmerged
+on 2026-08-24 as too stale to rebase (19 commits behind `main`, `CONFLICTING`/`DIRTY`). The rule
+below is correct and generally useful, so it is kept; the rest of that PR's docs changes were
+discarded rather than resolved by hand.
+
+Root cause: the Vercel project setting "Framework Preset" was "Other" instead of "Next.js." Vercel
+ran the build but never applied Next's routing/output convention, so nothing was served.
+
+Diagnostic note — middleware was wrongly named as first suspect in the earlier handoff. Middleware
+runs inside the deployment, so a platform 404 with no x-matched-path exonerates it by definition:
+if middleware were the cause you would see x-matched-path and an HTML response, and
+`/_next/static/*` would still serve. Corrected. The general rule: x-vercel-error with no
+x-matched-path means the request never reached the app, so nothing inside the app can be the
+cause — look at project settings, not code.
+
+## CI verify now runs `pnpm build` (2026-08-24)
+
+`verify` ran lint, typecheck and unit tests, but none of those catch a build that compiles under
+`tsc` and still breaks under the Next build — a route type error, a server/client boundary
+violation, a bad import, an RSC mistake. Code passing every prior check could still fail on deploy.
+Added `pnpm build` as a step after unit tests so a failing build no longer masks a failing test.
+
+The build step runs with one hardcoded placeholder Supabase URL and no secrets. This is
+deliberate: the failures this step exists to catch don't need real credentials, and putting real
+Supabase or PayPal values into GitHub Actions would widen the secret surface with no added
+coverage.
+
+*Known limitation.* Because `NEXT_PUBLIC_*` is inlined at build time, this CI build bakes in a
+fake, non-functional Supabase URL. It is a build-time gate only — it proves the bundle compiles,
+it proves nothing about whether the app runs, and it will not catch a regression tied to
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` or any other `NEXT_PUBLIC_*` var, none of which are set. A green
+`verify` must not be read as broader assurance than that.
+
+Separately, `pnpm build` fetches the DM Sans font from Google Fonts at build time via `next/font`,
+so the build — in CI and on Vercel — has a live network dependency on `fonts.googleapis.com` and
+can fail for reasons unrelated to the code; on this machine that fetch fails locally with
+`UNABLE_TO_GET_ISSUER_CERT_LOCALLY` because of the local Node trust store, and
+`node scripts/with-ca-certs.mjs pnpm build` is the local workaround.
