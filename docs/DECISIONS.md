@@ -2337,3 +2337,26 @@ instead of a frozen last frame — the placeholder already existed for the
 No screen share (§9 still names it, still absent rather than stubbed), no
 chat, no `network-quality`, no changes to end-session, the elapsed SQL, or
 Part 3C's scope (`tutor_earnings`, the completion cron).
+
+## A claimed pass with no captured output isn't evidence (2026-08-24)
+
+PROGRESS.md and SPEC §15 path 3 previously said `tests/e2e/presence-ungraceful-exit.spec.ts`
+"still needs a green run" — false. PR #25 (`f7b8a0a`) has detailed, specific evidence of five real
+fixes made against the running spec (measured server latencies, piped server logs, trace excerpts);
+that kind of detail doesn't come from iterating against a spec nobody ran. But the opposite claim —
+"confirmed green, 2 passed" — was equally wrong to assert: no runner output (a `2 passed` line, a
+duration) appears anywhere in #25's diff or commit message, and no CI workflow has ever run
+`test:e2e`. The "2 passed, 2.4m/2.6m" figure lived only in prose, in the now-closed PR #26.
+
+**This is the same standard the project already applies to its own tooling** — RUNBOOK's test-project
+verification insists on "confirmed by querying the test database directly, not just trusting the
+script's own log," and the `CRON_SECRET` rotation entry insists on a live bearer-token call before
+calling a rotation done. A pass asserted in prose, without the tool's own output kept alongside it,
+does not meet that bar. It hadn't been applied to a *human-reported* claim before — a session's own
+narrative account of "it went green" — until now: the same skepticism toward unverified success
+applies regardless of whether the claim comes from a script's log or from a person's summary of a
+local run.
+
+**Correction:** the spec was debugged to passing locally, on one machine, during PR #25. That pass
+was never captured as runner output and never independently or CI-verified. It needs a re-run with
+the runner's own output kept before it can be cited as settled or wired in as a CI gate.

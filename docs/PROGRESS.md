@@ -647,22 +647,23 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 - **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
   `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
   `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
-- **`tests/e2e/presence-ungraceful-exit.spec.ts` still needs a green run — now BOTH tests.** Part 2
-  added the request-expiry half beside Part 1's presence half; neither has ever completed a run.
-  **The seeding half is now unblocked** — the disposable test project (`uietkphpfqaicbndunwt`) exists
-  and `pnpm db:seed:test` populates it with verified counts, so the spec no longer has to choose
-  between seeding production and not running at all. What is still missing is the spec itself
-  actually passing end to end: it has **never** completed a run. The only local attempt (2026-08-22)
-  stopped at sign-in when Supabase Auth was unreachable over this machine's link, before reaching
-  any presence assertion — and that machine's Node CA problem, since fixed for db scripts by
-  `scripts/with-ca-certs.mjs`, is a plausible contributor worth re-testing first. Point Playwright
-  at the test project, get one green run, then consider it as a CI gate. Two real bugs in the spec
-  were found and fixed in PR #16 already: it matched the tutor by **display name** ("Tom Turner"),
-  which never appears — the seeded `display_name` is `Tom` — so every assertion would have
+- **`tests/e2e/presence-ungraceful-exit.spec.ts` was debugged to passing locally during PR #25
+  (`f7b8a0a`) — but that pass is not evidence, and the spec is not yet a gate.** PR #25's commit
+  documents five real fixes found and fixed against this spec, each with concrete evidence (measured
+  server latencies, piped server logs, trace excerpts) — that level of detail does not come from
+  iterating against a spec nobody ran, so treating this as "never had a green run" is false. But no
+  runner output — no `2 passed`, no duration — is captured anywhere in #25's diff or commit message;
+  the specific claim "confirmed green, 2 passed" lived only in prose in the now-closed PR #26, never
+  in captured output, and no CI workflow has ever run `test:e2e`. **What actually happened: the spec
+  was debugged to passing on one machine, once, locally, and that pass was never captured or
+  independently verified.** It needs a re-run with the runner's own output kept (not just asserted in
+  a commit message) before it can be treated as a CI gate or cited as settled. Two real bugs in the
+  spec were found and fixed in PR #16 already: it matched the tutor by **display name** ("Tom
+  Turner"), which never appears — the seeded `display_name` is `Tom` — so every assertion would have
   **silently passed as false** without ever exercising the intended path; and `signIn()` waited on
-  the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
-  "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
-  same shared-project reason, though it too now has a `:test` variant.)
+  the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only "waiting
+  for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the same
+  shared-project reason, though it too now has a `:test` variant.)
 - **~~CI `verify` does not run `pnpm build`~~ — DONE via PR #27 (`5396c3c`).** The required `verify`
   check now runs `pnpm build` alongside lint, typecheck and tests, so a change that compiles under
   `tsc` but breaks the Next build fails CI instead of reaching deploy undetected.
