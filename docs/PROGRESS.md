@@ -4,13 +4,28 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-24)
 
-**Phase 6 Part 3A — the session room shell and the Agora join — is built and in review
-(`feat/phase6-part3a-session-room`), not merged.** See "What Phase 6 Part 3A built" below. It needed
-**no migration**: `0014` already carried `agora_channel`, `started_at`, `student_joined_at` and
-`tutor_joined_at`. Two things in the build brief were **overridden after escalation** and both
-matter — the student now receives a `publisher` token rather than a `subscriber` one, and
-`started_at` is set when **both** parties are present rather than on first arrival (a billing bug if
-built as briefed). Both are in `DECISIONS.md` under "Phase 6 Part 3A".
+**Four PRs merged this session: #27 (CI build gate), #28 (Bubble live-app investigation), #29
+(Phase 6 Part 3A — session room), #30 (student `/dashboard` fix).** See their own sections below for
+detail; `DECISIONS.md` and `SPEC.md` are already current for #28 (no further doc changes needed
+there).
+
+**Phase 6 Part 3A — the session room shell and the Agora join — is COMPLETE and merged via PR #29
+(`4141d4a`).** See "What Phase 6 Part 3A built" below. It needed **no migration**: `0014` already
+carried `agora_channel`, `started_at`, `student_joined_at` and `tutor_joined_at`. Two things in the
+build brief were **overridden after escalation** and both matter — the student now receives a
+`publisher` token rather than a `subscriber` one, and `started_at` is set when **both** parties are
+present rather than on first arrival (a billing bug if built as briefed). Both are in `DECISIONS.md`
+under "Phase 6 Part 3A".
+
+**⚠️ Next: Phase 6 Part 3B (end-session, elapsed-time hard stop, `in_progress` → `completed`) is
+BLOCKED on a known gap, not just "next in line."** Part 3A's `started_at` concurrency properties
+(written once, both-participants-present gating, no CTE race) are verified by code inspection and
+confirmed in PR review, but have **zero automated test coverage** — the unit suite runs without a
+database, and two live participants racing to join has never been exercised end to end. Part 3B
+computes elapsed time and the hard-stop timer **from this exact column**, so building it on top of
+unverified concurrency behaviour risks a timer built on a race nobody has actually watched fail or
+succeed. Stand up that coverage (an E2E or test-project pass simulating two joins) **before** starting
+Part 3B. See "Phase 6 Part 3A — shipped state" below for the original note this sharpens.
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -91,6 +106,13 @@ below.
 - **Test project + tooling + cron scheduling (2026-08-23)** — **PR #18 (`eafe863`)**,
   **PR #19 (`b50b14f`)**, **PR #20 (`4b19bd6`)**. Infrastructure only, no product code. See the
   next section.
+- **Phase 6 Part 3A — session room shell + Agora join.** **Merged via PR #29 (`4141d4a`).** See
+  "What Phase 6 Part 3A built" below.
+- **Bubble live-app investigation — four read-only passes, two findings, six decisions.**
+  **Merged via PR #28 (`0955801`).** See "Bubble live-app investigation" below; full detail already
+  lives in `DECISIONS.md` (same section title) and is not restated here.
+- **Student `/dashboard` fix — same defect class as the earlier tutor `/tutor` fix.**
+  **Merged via PR #30 (`7afea77`).** See "Student `/dashboard` fix" below.
 
 ## 2026-08-23 — test project, tooling, and the cron going live
 
@@ -204,6 +226,7 @@ rather than stubbed** — an inert control that looks live is worse than one tha
 
 ### Phase 6 Part 3A — shipped state
 
+- **Merged 2026-08-24 as PR #29 (`4141d4a`).**
 - **Nothing was run against the shared project.** No migration, seed, reset or verify script touched
   `mipnoxlhurdbaahmvhhx` or the test project. `db:verify-rls` was **deliberately not run**: this
   phase changes no policy, and the script makes a material edit to seeded rows in the project that
@@ -212,14 +235,68 @@ rather than stubbed** — an inert control that looks live is worse than one tha
   files, 22 of them new (`agora-session-access`, `agora-token-contract`). The build confirms the SDK
   stays out of the shared bundle: `/session/[bookingId]` is 7.75 kB against a 185 kB baseline.
 - **One dependency added**: `agora-rtc-sdk-ng@4.24.7`, which SPEC §2 already pins.
-- **Not verified end to end.** Two live participants in one channel has not been exercised — it
-  needs two authenticated browsers, real devices and a booking in `in_progress`. The `started_at`
-  rule is enforced in SQL and the unit suite runs without a database, so **it has no automated
-  test**; "both join, `started_at` written once, refresh does not move it" is worth an E2E or
-  test-project pass when Part 3B makes the clock observable.
+- **⚠️ KNOWN GAP, blocking Part 3B — not verified end to end.** Two live participants in one channel
+  has never been exercised — it needs two authenticated browsers, real devices and a booking in
+  `in_progress`. The `started_at` concurrency properties (written once, both-participants-present
+  gating, no CTE race) are verified by code inspection and confirmed via PR review only; the unit
+  suite runs without a database, so **there is no automated test**. "Both join, `started_at` written
+  once, refresh does not move it" needs an E2E or test-project pass **before** Part 3B starts, not
+  alongside it — Part 3B computes elapsed time and the hard-stop timer from this exact column, so an
+  unverified race here becomes an unverified timer there.
 - **The token service cold start is real and measured**: a probe during this build took **22s** on
   the first request. The route allows 45s with `maxDuration = 60`; the warm ping is what keeps that
   path cold-start-free in practice.
+
+## Bubble live-app investigation (2026-08-24)
+
+**Four read-only passes over the live Bubble app (`nowtutors.com`) — `student_dashboard` structure,
+its workflows, Agora-vs-Lessonspace, and a full auth audit.** No application code touched.
+**Merged via PR #28 (`0955801`).** Full findings and decisions already live in `DECISIONS.md` under
+"Bubble live-app investigation — findings and six decisions (2026-08-24)", and SPEC §3.1, §7.4, §7.7,
+§7.11, §9, and §18 item 8 were amended in that same commit — this section indexes them rather than
+restating them.
+
+- **Finding A — Agora confirmed for two-way session rooms, not just broadcast preview.** An earlier
+  session in this project believed Agora was broadcast-only; the live app runs it in `rtc` mode for
+  the actual session room. **The Phase 6/7 Agora-vs-Lessonspace split was CONFIRMED correct, not
+  changed** — nothing to redo.
+- **Finding B — no request/accept flow exists in Bubble.** Bookings are created immediately on
+  payment; there is no request type, no accept step, no expiry. This rebuild's `session_requests`
+  model (§7.4) has **no Bubble counterpart** — it's our own design, so "Bubble is ground truth"
+  doesn't apply to it. Recorded so a future session doesn't go looking for a Bubble flow to reconcile
+  against.
+- **Six decisions taken from the investigation** (already in `DECISIONS.md` and `SPEC.md` — see
+  there for full text, not restated here): (1) the credit-burn model is rejected, not ported;
+  (2) the client-side burn is recorded as a live Bubble revenue leak this rebuild's server-side hard
+  stop removes by construction; (3) held-earnings-on-completion (§7.11) is confirmed as a **deliberate
+  correction** to Bubble's pay-before-session model, not a gap to close; (4) `total_withdrawn` is
+  never written in Bubble — a live financial defect that must **not** be reproduced (this rebuild
+  derives "available to withdraw" from the ledger instead); (5) the `is_live`/`online_status` split
+  SPEC §3.1 forbids is confirmed present in Bubble, validating the rule rather than changing it;
+  (6) the 25% platform fee is confirmed as the live commercial term.
+
+## Student `/dashboard` fix (2026-08-24, PR #30)
+
+**Standalone defect fix, not part of Phase 6.** `src/app/(student)/dashboard/` had only
+`bookings/`, `favourites/`, `wallet/` and a `.gitkeep` — no `page.tsx`. `guards.ts`'s
+`homeFor.student`, `actions/onboarding.ts`'s post-onboarding redirect, and the sidebar nav
+(`nav-config.ts`) all already pointed at `/dashboard` correctly; the missing page was the entire
+bug, same defect class as the earlier tutor `/tutor` 404 fix (Phase 6 Part 1). **Merged via
+PR #30 (`7afea77`).**
+
+- **SPEC citation error caught mid-build.** The build prompt cited SPEC §11 for the dashboard spec;
+  §11 is actually "Email," unrelated. Flagged to the advisory seat before writing any code rather
+  than silently substituting or guessing. The real (thin) spec is one line in §6 Routes: `/dashboard
+  — Stat cards, next session, recent tutors, wallet balance`. Content beyond that line — stat-card
+  choices, empty states, the "recent tutors" shape — was built from existing query/component
+  patterns (`getBookingsForParticipant`, `getWalletBalanceFor`, the `getFavouriteTutors` join shape,
+  `StatCard`/`EmptyState`/`Avatar` primitives) per explicit follow-up guidance from the advisory
+  seat, confirmed before proceeding — not invented independently.
+- New query: `getRecentTutorsForStudent` in `src/db/queries/bookings.ts`, scoped to the caller's own
+  `studentId` in its `WHERE`, mirroring `getFavouriteTutors`'s approved/non-suspended visibility
+  rule.
+- `pnpm lint`, `pnpm typecheck`, `pnpm test` (244 passed) and `pnpm build` all green; the guard chain
+  was traced by code reading (`requireRole("student")`), not exercised in a dev server.
 
 ## What Phase 6 Part 2 built
 
@@ -422,12 +499,38 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
   "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
   same shared-project reason, though it too now has a `:test` variant.)
-- **CI `verify` does not run `pnpm build` — a known gap, and `pnpm build` is where production 404s
-  surface.** The required `verify` check runs lint, typecheck and tests only, so a change that
-  compiles under `tsc` but breaks the Next build passes CI and fails on deploy. The fix is already
-  written and sitting in **PR #6 (`fix/ci-build-step`), which is still OPEN** and unrelated to
-  everything this session touched — it predates it (2026-08-21). Either merge it or close it
-  deliberately; leaving it open is the worst of both, because the gap stays and the fix looks handled.
+- **~~CI `verify` does not run `pnpm build`~~ — DONE via PR #27 (`5396c3c`).** The required `verify`
+  check now runs `pnpm build` alongside lint, typecheck and tests, so a change that compiles under
+  `tsc` but breaks the Next build fails CI instead of reaching deploy undetected.
+  **PR #6 (`fix/ci-build-step`), which had carried this same fix since 2026-08-21, was CLOSED
+  UNMERGED — superseded by #27.** It was 19 commits behind `main` and CONFLICTING/DIRTY by the time
+  #27 landed. Its CI change and its DECISIONS.md entry on the production-404/middleware diagnosis
+  were already carried forward into `main` (present today); its stale `PROGRESS.md` edits were
+  discarded rather than reconciled, since PROGRESS had moved on substantially across those 19
+  commits.
+- **Known gap, blocking Phase 6 Part 3B — `started_at` concurrency has no automated test.** See
+  "Phase 6 Part 3A — shipped state" above. Code-inspected and PR-reviewed only; no E2E or
+  test-project run has ever exercised two participants racing to join. Stand this up before Part 3B
+  builds the elapsed-time hard-stop timer on top of it.
+- **Google OAuth — code-verified correct, but NON-FUNCTIONAL in this environment.** The full auth
+  audit — the fourth of the four 2026-08-24 investigation passes alongside the Bubble parity checks
+  (see "Bubble live-app investigation" above), but scoped to **our own** auth code rather than
+  Bubble's — traced `on_auth_user_created` and confirmed the trigger runs in the **same transaction**
+  as the `auth.users` insert — no orphaned-profile window exists; the code is fine. But a live
+  click-through against Supabase's own `/authorize` endpoint returns **"provider is not enabled"**
+  — the Google provider is simply not turned on in this Supabase project. This is a **dashboard
+  configuration task, not a code defect**,
+  and it needs credentials created directly in Google Cloud Console and Supabase — never in chat or
+  docs. **Flagged as a short standalone session:** create a Google OAuth client, set the redirect URI
+  to the project's `/auth/v1/callback`, enable the provider in Supabase, verify with one live
+  click-through. (Setup steps are already written out in `RUNBOOK.md` under "Phase 3 — Auth &
+  onboarding"; this is the "actually do it" pass.)
+- **Two auth gaps found in the full audit — NOT YET FIXED, parked for a future short session.**
+  - `requireOnboarded()` (`src/lib/auth/guards.ts`) is exported but has **no call site anywhere in
+    the repo** — dead code — and it skips the `is_suspended` check that `requireRole()` has.
+  - `redirectIfSignedIn()` also skips the `is_suspended` check.
+  - No automated test coverage exists for the OAuth callback route (`src/app/auth/callback/route.ts`)
+    or the `on_auth_user_created` trigger.
 - **`tests/unit/pending-payment-slots.test.ts` and `tests/unit/slot-validation.test.ts` are slow and
   can time out on Vitest's 5-second default when the whole suite runs in one process under load.**
   Both pass on their own; both failed this way during the Phase 6 Part 2 run and reproduce the same

@@ -84,7 +84,14 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
-- [ ] Google OAuth consent screen and redirect URIs — Phase 3.
+- [ ] Google OAuth consent screen and redirect URIs — Phase 3. **Confirmed still not done
+  (2026-08-24):** a live click-through against Supabase's own `/authorize` endpoint returns
+  "provider is not enabled." The code side is verified correct (`on_auth_user_created` runs in the
+  same transaction as the `auth.users` insert — no orphaned-profile window), so this is purely the
+  dashboard steps below not having been executed yet. See "Phase 3 — Auth & onboarding" below for
+  the exact steps; needs credentials created directly in Google Cloud Console and Supabase, never in
+  chat or docs. Worth a short standalone session: create the OAuth client, set the redirect URI,
+  enable the provider, verify with one live click-through.
 - [x] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
   **Done for SANDBOX only.** Live is Phase 10 — see the warning below.
   - **Webhook registered (sandbox).** URL `https://nowtutors-brown.vercel.app/api/webhooks/paypal`.
