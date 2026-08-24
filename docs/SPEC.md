@@ -302,7 +302,7 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 | tutor_joined_at | timestamptz |  |
 | started_at | timestamptz | first moment both were present |
 | ended_at | timestamptz |  |
-| billed_minutes | integer | instant: actual; scheduled: planned |
+| billed_minutes | integer | **instant: the booked duration** (see below); scheduled: planned |
 | cancelled_by | uuid FK → profiles.id |  |
 | cancellation_reason | text |  |
 | student_notes | text | "what I want help with" |
@@ -310,6 +310,27 @@ Bookable slots are computed, not stored: expand rules for the requested date ran
 | reminder_1h_sent_at | timestamptz | idempotency stamp for the 1h reminder cron |
 
 `status` enum: `pending_payment`, `confirmed`, `in_progress`, `completed`, `cancelled_by_student`, `cancelled_by_tutor`, `no_show_student`, `no_show_tutor`, `expired`.
+
+**`billed_minutes` for an instant booking is `duration_minutes`, not elapsed time
+(corrected in Phase 6 Part 3B).** This line previously read "instant: actual",
+which is a survivor of the metering/hold model migration `0014` dismantled — it
+predates §7.4's flat upfront billing and contradicts it. Under flat billing there
+is no meter, no proration and no refund, so the minutes *billed* are the minutes
+*booked*, in every case: a student who leaves after five minutes of a paid
+sixty-minute session was billed sixty. Writing elapsed time into a column named
+"billed" would record a number nothing charges by, and would lose the only number
+this column can carry that is not recoverable elsewhere — actual elapsed time is
+always `ended_at - started_at`. This resolved a genuine **SPEC-vs-SPEC conflict**
+(§4.3's old wording against §7.4's billing rule) rather than an implementation
+preference, and it is written down here so it is not re-opened from the old
+wording. See DECISIONS, Phase 6 Part 3B.
+
+**`ended_at` is capped at the hard-stop deadline.** When a session ends because
+its booked duration ran out, `ended_at` is `started_at + duration_minutes` — not
+the moment some actor noticed. An early exit records the actual moment. §7.11
+derives `tutor_earnings.available_at` from `ended_at`, so this is what keeps a
+late sweep from moving a tutor's withdrawal date. See DECISIONS, Phase 6 Part 3B,
+"`ended_at` is capped at the deadline".
 
 Indexes: `(student_id, status)`, `(tutor_id, scheduled_start_at)`, `(status, scheduled_start_at)` for cron. Overlap prevention is a scheduled-only GiST exclusion constraint `bookings_no_overlap` (`tutor_id =`, `tstzrange(scheduled_start_at, scheduled_end_at) &&`) `where type='scheduled' and status in ('pending_payment','confirmed','in_progress')` — requires `btree_gist` (Decision #6).
 
@@ -781,6 +802,56 @@ Rules:
 > - **The 60-second ring is cosmetic on both sides** and is the only `setInterval` added: it ticks a
 >   deadline already in hand and makes no network call, so it is not the polling CLAUDE.md forbids.
 
+> **Part 3B implementation — the server-side end and the hard stop
+> (`feat/phase6-part3b-end-session`).** The §9 control-bar toggles (mic, camera,
+> screen share), text chat, credits consumed/earned and the 80%-TTL token renewal
+> are **not** in this pass and remain absent rather than stubbed.
+>
+> - **The transition is one conditional `UPDATE`**, no CTE and no read-then-write
+>   (`endInstantSessionByParticipant` / `endElapsedInstantSession` in
+>   `db/queries/sessions.ts`). `status = 'in_progress'` in the WHERE is the
+>   entire exactly-once guarantee: a second writer blocks on the row lock,
+>   re-evaluates under READ COMMITTED against the updated row, and matches zero
+>   rows. Both concurrent ends and an end racing the deadline are covered in
+>   `tests/integration/session-end-concurrency.test.ts`, and the suite was proved
+>   capable of failing against five deliberate breaks.
+> - **Four server-side actors enforce the deadline**, in the order they fire:
+>   `getSessionState` (the actor *at* the deadline, with people still in the
+>   room), `POST /api/agora/token` (the re-entry guard — refresh, second tab,
+>   reconnect, and every renewal once that pass lands), the end-session action
+>   (early exit), and the room's server read, which **refuses to open an elapsed
+>   room but deliberately performs no write** (a render is reachable by prefetch
+>   and by React's dev double-render; a GET that mutates is not worth the few
+>   minutes of dashboard freshness).
+> - **A booking whose duration elapses with both parties offline stays
+>   `in_progress` until Part 3C's cron, and that is correct.** No money moves at
+>   the transition — credits were charged at accept — and the harm the hard stop
+>   prevents (a room held open while tutoring continues unbilled) requires
+>   somebody to be present, which is exactly when the actors above fire. A
+>   lingering `in_progress` instant booking blocks nothing: the accept-time
+>   collision check reads `type = 'scheduled'` only.
+> - **The deadline is a deliberate pair**: `lib/sessions/deadline.ts` (pure,
+>   for display and for deciding whether to *attempt*) and `sessionElapsedSql`
+>   (authoritative, inside the statement). They cannot be collapsed — one must be
+>   SQL and one must run in a browser — so an integration test pins them to the
+>   same answer at `t - 1s`, `t` and `t + 1s`, both inclusive at the boundary.
+> - **The countdown is cosmetic** and makes no network call, exactly like the
+>   60-second request ring. The client asks the server what is true at three
+>   *events* — mount, the other party arriving, and the countdown reaching zero —
+>   never on an interval. A browser clock running fast is corrected, not obeyed:
+>   the comparison that authorizes the transition is Postgres's `now()`.
+> - **The other party is told by the Agora SDK's own `user-left`**, not by
+>   Realtime: `bookings` is not in the `supabase_realtime` publication
+>   (`drizzle/0006`) and adding it would be a migration. The media event is the
+>   notification; a guarded read is the data.
+> - **A session that never started cannot reach `completed`** (`started_at IS NOT
+>   NULL` in the WHERE). Otherwise a student whose tutor never arrived could end
+>   it, and Part 3C would pay a tutor who was never in the room while §7.4 forbids
+>   refunding the student. Those bookings are Part 3C's `no_show_*` case.
+> - **Nothing in this pass touches the ledger, computes a refund, writes
+>   `tutor_earnings`, clears `is_live`, or needs a migration.** `ended_at` and
+>   `billed_minutes` have existed since `0000`.
+
 **In-session UI (`/session/[bookingId]`):** local + remote video, mute mic, mute camera, elapsed timer, credits consumed so far (student) / earned so far (tutor), text chat panel, screen share, end session (both sides), connection quality indicator, reconnect handling. On `beforeunload` and on Agora `connection-state-change` to disconnected, fire a `leaveSession` action — but never depend on it for correctness (that dependency is what caused the original bug).
 
 ### 7.5 Presence and going live
@@ -1104,6 +1175,28 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > - **The warm ping is live** in `cron/sweep-presence`, hitting the service's `/ping` endpoint. It
 >   never throws and cannot fail the sweep.
 
+> **Part 3B amendment (`feat/phase6-part3b-end-session`).** Step 2's checks gain
+> one more: a booking whose booked duration has elapsed is refused a token even
+> while its row still reads `in_progress`. The status flips only when some actor
+> performs the transition, and this check must not wait for one — otherwise a
+> client could hold the room open in the window between the deadline and the
+> write. `checkSessionAccess` therefore takes `now` and returns an `elapsed` flag
+> on the 409; the route acts on it by closing the booking out **best-effort**,
+> because the refusal is the enforcement and must not depend on a write
+> succeeding. Participation is still checked first, so an elapsed booking
+> belonging to somebody else returns the same 404 as one that does not exist.
+>
+> Today this route fires on join only, so for a 30- or 60-minute session it runs
+> once, *before* the deadline — it is the **re-entry** guard (refresh, second tab,
+> reconnect), and the actor at the deadline is the `getSessionState` Server
+> Action. It becomes the continuous guard for free when step 6's renewal lands.
+> **The hard stop must not be allowed to rest on the token's own one-hour
+> expiry**, which would accidentally half-work for a 120-minute session and not at
+> all for a 30-minute one.
+>
+> Still deferred after Part 3B: the §9 `toggleMic` / `toggleCamera` /
+> `startScreenShare` surface, `network-quality`, chat, and the step 6 renewal.
+
 ---
 
 ## 10. Design system
@@ -1220,7 +1313,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
 | `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
-| `/api/cron/complete-sessions` | `*/15 * * * *` | Phase 6 Part 3 |
+| `/api/cron/complete-sessions` | `*/15 * * * *` | Phase 6 Part 3C |
 | `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
@@ -1233,7 +1326,23 @@ from `/admin/settings` with a "run now" button for debugging.
 - **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`, releasing the slot.
-- **complete-sessions** — bookings past `scheduled_end_at + 30m` still `confirmed`/`in_progress` → `completed` (or `no_show_*` if one party never joined), create `tutor_earnings`.
+- **complete-sessions** — two predicates, because the two booking types have
+  different clocks. **Scheduled:** past `scheduled_end_at + 30m` still
+  `confirmed`/`in_progress` → `completed` (or `no_show_*` if one party never
+  joined). **Instant:** `scheduled_end_at` is NULL for every instant booking
+  (§4.3), so the scheduled predicate matches none of them — the instant clock is
+  `started_at + duration_minutes <= now()`, and the cron **must call the shared
+  fragment `sessionElapsedSql` in `db/queries/sessions.ts` rather than restate
+  it** (authored in Part 3B, which enforces the same deadline at the token route,
+  the room read and the end-session action). A restated copy is how a second,
+  subtly different notion of "elapsed" gets into the codebase on the one column
+  that decides what a student is billed. An instant booking with `started_at`
+  NULL never elapses and is the cron's `no_show_*` case, classified from
+  `student_joined_at` / `tutor_joined_at`. Both predicates then create
+  `tutor_earnings` (§7.11) from the `completed` row's `price_credits` and
+  `ended_at`. This line previously described only the scheduled half; that half
+  was written down and the instant half was not, which is the half that could
+  have been implemented wrongly. Amended in Phase 6 Part 3B.
 - **release-earnings** — `held` → `available` where `available_at <= now()`.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.

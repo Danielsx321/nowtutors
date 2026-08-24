@@ -10,7 +10,11 @@ import {
   AgoraTokenServiceError,
   fetchRtcToken,
 } from "@/lib/agora/token-service";
-import { getSessionBooking, stampSessionJoin } from "@/db/queries/sessions";
+import {
+  endElapsedInstantSession,
+  getSessionBooking,
+  stampSessionJoin,
+} from "@/db/queries/sessions";
 
 /**
  * `POST /api/agora/token` — the only way a browser gets an Agora token
@@ -70,6 +74,26 @@ export async function POST(request: Request) {
   // be used to discover booking ids.
   const access = checkSessionAccess(await getSessionBooking(bookingId), user.id);
   if (!access.ok) {
+    if (access.elapsed) {
+      // The booked duration ran out (§7.4). Close the booking out on the way
+      // past — this is the re-entry guard, so it is the actor that catches a
+      // refresh, a second tab or a reconnect after the deadline, and (once the
+      // renewal pass lands) every renewal.
+      //
+      // **Best-effort, deliberately.** The refusal above is the enforcement and
+      // it has already been decided; if this write fails the caller still gets
+      // no credential, and the deadline actor or Part 3C's cron will close the
+      // row later. Awaiting it before answering would let a database hiccup turn
+      // a correct refusal into a 500.
+      try {
+        await endElapsedInstantSession(bookingId);
+      } catch (err) {
+        console.error("[agora/token] deadline transition failed", {
+          bookingId,
+          err,
+        });
+      }
+    }
     return NextResponse.json({ error: access.message }, { status: access.status });
   }
 
@@ -132,8 +156,8 @@ export async function POST(request: Request) {
     uid: agoraUid(user.id),
     appId,
     channel: stamp.agoraChannel,
-    // Deliberately earlier than the token's real expiry, so the renewal Part 3B
-    // wires up begins while the current token is still valid (§9 steps 5–6).
+    // Deliberately earlier than the token's real expiry, so the renewal (§9
+    // steps 5–6, still a later pass) begins while this token is still valid.
     expiresAt: tokenExpiresAt(new Date()).toISOString(),
     // Server-derived, and the reason the client needs no id comparison of its
     // own: it decides which tracks to publish from this, not from who it thinks

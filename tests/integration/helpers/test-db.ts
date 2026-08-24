@@ -251,9 +251,30 @@ export interface FixtureBooking {
  *
  * `type = 'instant'` also keeps the fixture clear of `bookings_no_overlap`,
  * which is `WHERE type = 'scheduled'` (`drizzle/0013`).
+ *
+ * **`startedAt` is expressed as an offset from Postgres's `now()`, not as a
+ * JavaScript `Date`.** The end-session lane asserts behaviour at the deadline
+ * boundary, where the difference between the app server's clock and the
+ * database's is exactly the kind of skew that makes a test flake and then get
+ * "fixed" by loosening the assertion. Seeding `now() - interval` and comparing
+ * against `now()` keeps every timestamp in one clock — the one the shipped
+ * predicate actually uses.
  */
+export interface FixtureBookingOptions {
+  /**
+   * Minutes before the database's `now()` to set `started_at`. Omit for null —
+   * a session whose pair never completed.
+   */
+  startedMinutesAgo?: number;
+  /** Booked duration. Defaults to 30. */
+  durationMinutes?: number;
+  /** Defaults to `in_progress`, as the accept transaction leaves it. */
+  status?: "in_progress" | "completed";
+}
+
 export async function createFixtureBooking(
   conn: TestConnection,
+  options: FixtureBookingOptions = {},
 ): Promise<FixtureBooking> {
   const participants = await conn.db.execute<{
     student_id: string;
@@ -274,10 +295,31 @@ export async function createFixtureBooking(
     );
   }
 
+  const {
+    startedMinutesAgo,
+    durationMinutes = 30,
+    status = "in_progress",
+  } = options;
+
+  // `started_at` and both `*_joined_at` move together: `started_at` is defined
+  // as the moment BOTH were present (§4.3), so a fixture with one set and not
+  // the others would be a state the shipped join path cannot produce.
+  const startedAt =
+    startedMinutesAgo === undefined
+      ? sql`null`
+      : sql`now() - make_interval(mins => ${startedMinutesAgo})`;
+
   const bookingId = randomUUID();
   await conn.db.execute(sql`
-    insert into bookings (id, student_id, tutor_id, type, status, duration_minutes, price_credits)
-    values (${bookingId}, ${studentId}, ${tutorId}, 'instant', 'in_progress', 30, 500)
+    insert into bookings (
+      id, student_id, tutor_id, type, status, duration_minutes, price_credits,
+      started_at, student_joined_at, tutor_joined_at
+    )
+    values (
+      ${bookingId}, ${studentId}, ${tutorId}, 'instant', ${status},
+      ${durationMinutes}, 500,
+      ${startedAt}, ${startedAt}, ${startedAt}
+    )
   `);
 
   return { bookingId, studentId, tutorId };
@@ -317,4 +359,51 @@ export async function readJoinColumns(conn: TestConnection, bookingId: string) {
     .from(schema.bookings)
     .where(eq(schema.bookings.id, bookingId));
   return row;
+}
+
+/**
+ * The columns the end-session transition writes, read outside any racing
+ * transaction. Query builder, for the same reason `readJoinColumns` uses it: the
+ * decode path differs from the one the code under test uses, so an assertion
+ * comparing the two is comparing independently-decoded values.
+ */
+export async function readEndColumns(conn: TestConnection, bookingId: string) {
+  const [row] = await conn.db
+    .select({
+      status: schema.bookings.status,
+      startedAt: schema.bookings.startedAt,
+      endedAt: schema.bookings.endedAt,
+      billedMinutes: schema.bookings.billedMinutes,
+      durationMinutes: schema.bookings.durationMinutes,
+    })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Ask Postgres directly whether the shipped predicate considers this booking
+ * elapsed — the SQL half of the deadline pair, evaluated on its own.
+ *
+ * This is what makes the boundary-agreement assertion possible: the same row is
+ * put to `sessionElapsedSql` and to `hasElapsed()`, and the two must agree. It
+ * imports the shipped fragment rather than restating the expression, because a
+ * restated copy would agree with itself no matter what the shipped one said.
+ */
+export async function sqlSaysElapsed(
+  conn: TestConnection,
+  bookingId: string,
+): Promise<boolean> {
+  const { sessionElapsedSql } = await import("@/db/queries/sessions");
+  const rows = await conn.db.execute<{ elapsed: boolean }>(
+    sql`select ${sessionElapsedSql} as elapsed from bookings where id = ${bookingId}`,
+  );
+  return rows[0]?.elapsed === true;
+}
+
+/** The row's `started_at`/`duration_minutes` as the TypeScript half sees them. */
+export async function readTiming(conn: TestConnection, bookingId: string) {
+  const row = await readEndColumns(conn, bookingId);
+  return { startedAt: row.startedAt, durationMinutes: row.durationMinutes };
 }
