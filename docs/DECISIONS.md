@@ -2360,3 +2360,78 @@ local run.
 **Correction:** the spec was debugged to passing locally, on one machine, during PR #25. That pass
 was never captured as runner output and never independently or CI-verified. It needs a re-run with
 the runner's own output kept before it can be cited as settled or wired in as a CI gate.
+
+## Google OAuth enabled; signup "no confirmation email" misdiagnosed as a code defect (2026-08-24)
+
+Two Supabase dashboard sessions, no application code touched. Docs corrected in PROGRESS.md the same
+day; recorded here because both started from a plausible-looking symptom that pointed at the wrong
+layer.
+
+**Google OAuth — enabled and verified.** A Google Cloud OAuth client (consent screen External;
+scopes `email`/`profile`/`openid`) was created with its **authorized redirect URI set to the
+Supabase callback** (`https://<project-ref>.supabase.co/auth/v1/callback`), not our own
+`/auth/callback` — Google redirects to Supabase, which then redirects to ours (RUNBOOK already
+documented this shape; tonight was the "actually do it" pass). Client id + secret went into
+Supabase → Authentication → Providers → Google, provider enabled, verified by a live click-through
+against the deployed Vercel app.
+
+- **Trap worth recording because it cost time:** the Client IDs field in Supabase's Google provider
+  panel takes the long Google client id ending in `.apps.googleusercontent.com` — **not** the
+  human-readable name given to the OAuth client inside Google Cloud Console. Entering the name
+  silently produces a client Google will not recognise (no error at save time; it just fails at the
+  `/authorize` step). *How to apply:* when wiring any OAuth provider into Supabase, copy the id field
+  labeled with the provider's own id format, never the console's display name for the credential.
+- `pnpm db:verify-rls` has not been re-run since. It is the only observable proxy for the SPEC §7.1
+  same-email-linking guarantee (RUNBOOK: the dashboard's own linking flag can't be read back via the
+  API we're willing to hold a token for), so same-email linking between a password account and the
+  new Google identity is asserted from the general finding, not freshly confirmed. Carried forward in
+  PROGRESS.md.
+
+**Signup "confirmation email not arriving" — misdiagnosed.** The investigation started from a
+believable symptom (repeat signup attempts on a test address produced no visible email) and initial
+suspicion fell on the signup code path or the email sender. Direct evidence ruled both out: Supabase
+auth logs and an `auth.users` query showed `dadatosynseun@gmail.com` was created and confirmed
+2026-08-21 with `confirmation_sent_at` **0.06s** after `created_at` — delivery was never broken.
+
+- **What the symptom actually was: anti-enumeration behaviour working as designed, not a bug.**
+  Signing up again on an address that is already confirmed logs `auth_event.action =
+  "user_repeated_signup"`, returns **200**, and sends **no email** — Supabase's defence against using
+  the signup endpoint to probe which emails are registered. Our `/signup` page correctly shows the
+  same generic "check your email" state whether or not the account already existed, per SPEC §7.1's
+  existing rule that auth responses must not reveal account existence (the same principle PROGRESS.md
+  already records for login failure and password reset). **Do not "fix" this by making the response
+  differ for an existing account** — that would be reintroducing the exact leak §7.1 forbids. Recorded
+  here because the generic state is easy to misread as a UX defect by a future reader who doesn't
+  know the repeat-signup case is deliberate; the two real faults below were the actual bugs.
+- **Real fault 1 — Site URL still pointed at localhost after deployment.** Supabase's URL
+  Configuration has exactly **one** Site URL, and it was left at `http://localhost:3000` after the
+  app went to Vercel. A confirmation email's action link is built from Site URL, so every confirmation
+  email sent to a real user opened `localhost:3000` on *their* machine — dead, with no error surfaced
+  anywhere in our stack or Supabase's. Now `https://nowtutors-brown.vercel.app`.
+- **Real fault 2 — `/auth/callback` was not in the redirect-URL allow-list.** Supabase only honours an
+  `emailRedirectTo` that matches an allow-listed URL; ours pointed at `/auth/callback` but that path
+  had never been added, so Supabase silently discarded it and fell back to the Site URL root. The
+  email link landed on `/?code=...` — a page with no code-exchange handler — leaving the user signed
+  out with no error. Allow-list now carries `http://localhost:3000/auth/callback`,
+  `https://nowtutors-brown.vercel.app/auth/callback`, and `https://*.vercel.app/auth/callback`.
+- **The later "Invalid email or password" was fault 2's consequence, not a third bug.** With the code
+  never exchanged, the account stayed unconfirmed; Supabase returns the same generic sign-in error for
+  an unconfirmed account as for a wrong password (again, correctly not distinguishing the two — same
+  §7.1 principle). No separate login-path defect exists.
+- **One Site URL, two environments — accepted trade-off, not solved.** This Supabase project serves
+  both local dev and the deployed app, and Site URL takes a single value platform-wide. It now points
+  at the deployed app rather than localhost, which is the right default for real users signing up —
+  but it means a developer testing signup **locally** whose confirmation link falls back to Site URL
+  (e.g. a future redirect-URL gap) lands on the deployed app, not their local server. Localhost still
+  works today only because it is explicitly allow-listed alongside the production origins. *Why not
+  "solved" properly:* a per-environment Site URL would need either a second Supabase project (real
+  infra cost, and PROGRESS.md/RUNBOOK already record that prod runs on the same project as dev for
+  other reasons) or a custom email-template rewrite of the action link, neither of which this session
+  had grounds to take on for a docs-and-config night. Flagged so a future reader who hits this doesn't
+  read it as an oversight.
+- **NOT YET VERIFIED.** No clean end-to-end click-through (signup on Vercel → email → `/auth/callback`
+  → `/onboarding`, signed in) has been done on the corrected settings — blocked by `HTTP 429
+  over_email_send_rate_limit` from Supabase's built-in sender after tonight's testing volume. The
+  corrected `redirect_to` was visible in the 429 log lines themselves, which confirms the app sends
+  the right callback URL, but the full flow through a successful send is still unproven. Carried
+  forward in PROGRESS.md as a cold re-test once the rate limit resets.

@@ -686,19 +686,49 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   "`stampSessionJoin`'s timestamps — probed, then fixed at the boundary"). The integration lane's
   normaliser was tightened to reject a string, so a reverted conversion now fails loudly instead of
   staying green.
-- **Google OAuth — code-verified correct, but NON-FUNCTIONAL in this environment.** The full auth
-  audit — the fourth of the four 2026-08-24 investigation passes alongside the Bubble parity checks
-  (see "Bubble live-app investigation" above), but scoped to **our own** auth code rather than
-  Bubble's — traced `on_auth_user_created` and confirmed the trigger runs in the **same transaction**
-  as the `auth.users` insert — no orphaned-profile window exists; the code is fine. But a live
-  click-through against Supabase's own `/authorize` endpoint returns **"provider is not enabled"**
-  — the Google provider is simply not turned on in this Supabase project. This is a **dashboard
-  configuration task, not a code defect**,
-  and it needs credentials created directly in Google Cloud Console and Supabase — never in chat or
-  docs. **Flagged as a short standalone session:** create a Google OAuth client, set the redirect URI
-  to the project's `/auth/v1/callback`, enable the provider in Supabase, verify with one live
-  click-through. (Setup steps are already written out in `RUNBOOK.md` under "Phase 3 — Auth &
-  onboarding"; this is the "actually do it" pass.)
+- **Google OAuth — DONE, closed 2026-08-24.** Was flagged as a short standalone session in the prior
+  entry; that session ran tonight. A Google Cloud OAuth client was created (consent screen External;
+  scopes `email`, `profile`, `openid`; authorized redirect URI set to the **Supabase** callback
+  `https://<project-ref>.supabase.co/auth/v1/callback`, not our own `/auth/callback`), and the
+  client id + secret were entered into Supabase → Authentication → Providers → Google, which was then
+  enabled. **Verified by a live click-through against the deployed Vercel app**: Google sign-in
+  completes and lands signed in; the "provider is not enabled" 400 is gone. No credential values are
+  recorded anywhere in these docs — they live in Google Cloud and Supabase only. See DECISIONS,
+  "Google OAuth enabled" for the client-ID-vs-client-name gotcha that cost time during setup.
+  **Still open, not closed by this session:** `pnpm db:verify-rls` has not been re-run since Google
+  was enabled. That script is the observable proxy for the SPEC §7.1 no-duplicate-accounts
+  guarantee (the dashboard's own same-email-linking toggle can't be read back — see RUNBOOK). Until
+  it runs, same-email linking between a password account and the Google identity is asserted from the
+  investigation's earlier finding, not freshly verified.
+- **Signup "email confirmation not arriving" — MISDIAGNOSED, now corrected (2026-08-24).** What looked
+  like a broken confirmation email was two dashboard misconfigurations, not an email-delivery or
+  code defect. Established from Supabase auth logs and a direct `auth.users` query, not inferred:
+  email delivery itself works (account `dadatosynseun@gmail.com` was created and confirmed
+  2026-08-21, `confirmation_sent_at` 0.06s after `created_at`, `email_confirmed_at` 38s later). The
+  apparent "no email" symptom on repeat signup attempts was Supabase's anti-enumeration behaviour —
+  signing up again on an already-confirmed address logs `user_repeated_signup`, returns 200, and
+  sends no email; our `/signup` page correctly shows the same generic "check your email" state
+  either way. **This is correct per SPEC §7.1 and must not be "fixed" by revealing the account
+  exists** — see DECISIONS for why a future reader might otherwise mistake it for a UX bug.
+  Two real faults, both dashboard configuration, both now corrected:
+  - **Site URL** was still `http://localhost:3000` after the app was deployed, so a confirmation
+    email opened from any machine pointed at the user's own localhost. Now
+    `https://nowtutors-brown.vercel.app`.
+  - The `/auth/callback` **redirect URLs were not allow-listed**, so Supabase discarded the
+    `emailRedirectTo` our code sends and fell back to the Site URL root — the link landed on
+    `/?code=...`, which has no code-exchange handler, leaving the user signed out. Allow-list now
+    contains `http://localhost:3000/auth/callback`, `https://nowtutors-brown.vercel.app/auth/callback`,
+    and `https://*.vercel.app/auth/callback`.
+  A later "Invalid email or password" on sign-in was a **consequence** of the redirect-URL fault, not
+  a separate defect: the code was never exchanged, the account stayed unconfirmed, and Supabase
+  returns the same generic error for an unconfirmed account as for a wrong password. No login-path
+  defect.
+  **NOT YET VERIFIED — recorded as open, not fixed.** A clean end-to-end click-through on the
+  corrected settings (signup on Vercel → email → link lands on `/auth/callback` → `/onboarding`,
+  signed in) has not been performed, blocked by `HTTP 429 over_email_send_rate_limit` from the
+  built-in sender after tonight's testing. The corrected `redirect_to` **was** observed in the 429
+  log lines, confirming the app sends the right callback URL — but the full flow is unproven. Cold
+  re-test once the rate limit resets.
 - **Two auth gaps found in the full audit — NOT YET FIXED, parked for a future short session.**
   - `requireOnboarded()` (`src/lib/auth/guards.ts`) is exported but has **no call site anywhere in
     the repo** — dead code — and it skips the `is_suspended` check that `requireRole()` has.

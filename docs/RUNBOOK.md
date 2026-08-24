@@ -131,14 +131,14 @@ already-running script.
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
-- [ ] Google OAuth consent screen and redirect URIs — Phase 3. **Confirmed still not done
-  (2026-08-24):** a live click-through against Supabase's own `/authorize` endpoint returns
-  "provider is not enabled." The code side is verified correct (`on_auth_user_created` runs in the
-  same transaction as the `auth.users` insert — no orphaned-profile window), so this is purely the
-  dashboard steps below not having been executed yet. See "Phase 3 — Auth & onboarding" below for
-  the exact steps; needs credentials created directly in Google Cloud Console and Supabase, never in
-  chat or docs. Worth a short standalone session: create the OAuth client, set the redirect URI,
-  enable the provider, verify with one live click-through.
+- [x] Google OAuth consent screen and redirect URIs — Phase 3. **Done 2026-08-24.** Google Cloud
+  OAuth client created (consent screen External; scopes `email`/`profile`/`openid`; authorized
+  redirect URI set to the **Supabase** callback, not ours), client id + secret entered into
+  Supabase → Authentication → Providers → Google, provider enabled, verified with a live
+  click-through against the deployed Vercel app — sign-in completes and lands signed in. See
+  "Phase 3 — Auth & onboarding" below for the exact steps and the client-ID-vs-client-name gotcha.
+  **Still open:** `pnpm db:verify-rls` has not been re-run since enabling — see DECISIONS,
+  "Google OAuth enabled".
 - [x] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
   **Done for SANDBOX only.** Live is Phase 10 — see the warning below.
   - **Webhook registered (sandbox).** URL `https://nowtutors-brown.vercel.app/api/webhooks/paypal`.
@@ -292,17 +292,27 @@ manual export needed for this command specifically.
 ## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
 
 **Supabase dashboard → Authentication → URL Configuration**
-- **Site URL:** the canonical app origin per environment — `http://localhost:3000`
-  (dev), the Vercel preview/prod URLs otherwise.
-- **Redirect URLs (allow-list):** add every origin that completes an auth flow, each
-  with the `/auth/callback` path. Supabase only redirects back to allow-listed URLs.
+- **Site URL — current value: `https://nowtutors-brown.vercel.app`.** ⚠️ **Must be updated whenever
+  the deployed origin changes.** This project has only **one** Site URL for both local dev and the
+  deployed app; a confirmation/reset email's action link is built from it. Left at
+  `http://localhost:3000` after a deploy, it produces a confirmation email that opens fine for the
+  developer and is **dead for every real user, with no error surfaced anywhere** — this is exactly
+  what happened 2026-08-24 (see DECISIONS, "Google OAuth enabled; signup 'no confirmation email'
+  misdiagnosed as a code defect") and cost a full misdiagnosis before the actual cause (this setting)
+  was found. Local dev keeps working only because `localhost:3000/auth/callback` is separately
+  allow-listed below — a fallback link lands on the **deployed** app, not localhost, which is an
+  accepted trade-off (see DECISIONS), not a bug.
+- **Redirect URLs (allow-list) — current values:**
   - `http://localhost:3000/auth/callback`
-  - `https://<vercel-preview>.vercel.app/auth/callback` (or `https://*.vercel.app/auth/callback`)
-  - `https://<production-domain>/auth/callback`
-  Our code always sends `redirectTo`/`emailRedirectTo` = `${origin}/auth/callback` (OAuth,
-  email confirmation → `?next=/onboarding`, password reset → `?next=/reset-password`).
+  - `https://nowtutors-brown.vercel.app/auth/callback`
+  - `https://*.vercel.app/auth/callback`
+  Supabase only redirects back to allow-listed URLs — anything else is silently dropped and the
+  request falls back to the Site URL root (`/?code=...`), which has no code-exchange handler and
+  leaves the user signed out with no error. Our code always sends `redirectTo`/`emailRedirectTo` =
+  `${origin}/auth/callback` (OAuth, email confirmation → `?next=/onboarding`, password reset →
+  `?next=/reset-password`).
 
-**Google OAuth (Google Cloud Console → APIs & Services)**
+**Google OAuth (Google Cloud Console → APIs & Services) — DONE, completed 2026-08-24.**
 - **OAuth consent screen:** External; app name, support email, logo; scopes `email`,
   `profile`, `openid`; add test users while unverified.
 - **Credentials → OAuth 2.0 Client ID (Web application):**
@@ -312,6 +322,14 @@ manual export needed for this command specifically.
     which then returns to our `/auth/callback`).
 - Put the Client ID + secret into **Supabase → Authentication → Providers → Google**
   and enable it.
+- ⚠️ **The Client IDs field in Supabase's Google provider panel takes the long Google
+  client id ending in `.apps.googleusercontent.com` — NOT the human-readable name you
+  gave the OAuth client in Google Cloud Console.** Entering the name instead of the id
+  saves without error and silently produces a client Google will not recognise; the
+  failure only shows up at the `/authorize` step. This cost real time during setup —
+  copy the id-shaped value, not the console's display name.
+- **Verified 2026-08-24** by a live click-through against the deployed Vercel app:
+  Google sign-in completes and lands the user signed in.
 
 **Account linking (the Google-on-existing-email case — SPEC §7.1)**
 - Enable **Authentication → Providers → "Allow linking accounts with the same email"**
@@ -333,6 +351,12 @@ manual export needed for this command specifically.
   only. For real signups configure a custom SMTP / Resend (Phase 10). For dev you may
   turn **"Confirm email" OFF** so `signUp` returns a session immediately and routes
   straight to `/onboarding`; with it ON, signup shows a "check your email" state.
+  **Confirmed 2026-08-24: the limit bites after a handful of sends per hour** —
+  repeated signup testing against the built-in sender hits `HTTP 429
+  over_email_send_rate_limit` and becomes self-blocking well before an hour of normal
+  manual testing is up. This is the concrete reason Resend (Phase 10) is the fix, not
+  just a "nicer sender" upgrade — it's what unblocks testing the signup flow at all
+  without waiting out the window.
 - Password minimum length / leaked-password protection can be tightened in
   **Authentication → Policies**; our client+server zod schema already requires ≥8 chars
   with a letter and a number.
