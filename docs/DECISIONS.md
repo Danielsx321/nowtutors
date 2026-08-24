@@ -2200,3 +2200,79 @@ becomes load-bearing, with nothing to catch you.**
 failed experiment. *How to apply:* report the break that proved nothing; the
 temptation is to reshape it until it fails, which converts a finding into
 theatre.
+
+## Phase 6 Part 3B remainder — control-bar toggles + token renewal (`feat/phase6-part3b-controls-renewal`, 2026-08-24)
+
+Closes the carve-out both #34's PR and this entry's own predecessors named
+explicitly: the §9 `toggleMic` / `toggleCamera` surface on `lib/agora/client.ts`,
+and the step-6 80%-margin token renewal. Nothing in end-session, the deadline SQL,
+`ended_at` capping, or `db/queries/sessions.ts`'s transition logic was touched —
+all shipped in #34.
+
+### 1. Renewal is scheduled off `expiresAt`, not the SDK's own expiry event
+
+SPEC §9 step 6 as originally written said "client renews at 80% of TTL via
+Agora's `token-privilege-will-expire` event." That event fires off the token's
+*real* one-hour expiry, which the route deliberately never tells the client —
+`expiresAt` is reported five minutes early specifically so a `setTimeout` keyed
+to it fires while the current token is still valid (DECISIONS, Phase 6 Part
+3A). Listening for the SDK event instead would mean trusting a signal derived
+from the number this pass is supposed to not rely on, for no benefit: the
+route already computed the margin, and duplicating that arithmetic
+client-side by listening to Agora's own countdown is the second notion of
+"when renewal happens" that Part 3B's entry 6 already warned against
+inventing for a different pair of clocks. One `setTimeout` off the known
+value, re-armed each time a successful renewal reports a fresh one — not the
+SDK event, and not a poll.
+
+### 2. A renewal refusal asks the server what's true; it does not special-case elapsed
+
+The renewal hook (`useTokenRenewal`) treats a non-2xx response as "the route's
+checks ran and refused" and hands the response body to the caller, which is
+`SessionRoom`'s existing `refreshState` — the same function the timer's
+`onExpired` already calls at the real deadline. This was a deliberate choice
+not to have the renewal path decide anything about elapsed sessions itself:
+`checkSessionAccess` already returns the `elapsed` flag and the route already
+does the best-effort deadline transition on it (Part 3B, #34) — a renewal that
+arrives past the deadline is refused by the exact same code path an initial
+join would hit, and re-deriving "was this refusal because we're elapsed" on
+the client would be redundant with information the server already acted on.
+If the session is actually over, `refreshState` reads that and calls
+`finish()`; if it isn't (a transient 5xx, say), the room is left as it was
+and the next scheduled renewal — or the timer reaching zero — resolves it.
+
+A genuine network failure (the fetch itself throwing, never reaching the
+route) is handled separately from a refusal: one fixed-delay retry
+(`RENEWAL_RETRY_MS`, 30s), because the route's checks never ran and asking
+`refreshState` "what's true" would only re-describe a state that hasn't
+changed. Still one-shot per failure, not a recurring timer.
+
+### 3. `toggleCamera` returns `null` for a student, not `false`
+
+Confirmed in the code before building, per the brief: `client.ts`'s existing
+`#createLocalTracks` only creates a camera track `if (isTutor)` — a student
+session has no `#camera` field to flip. `toggleCamera` treats that as a third
+outcome distinct from "off": `null` means no camera track exists to toggle at
+all, `false` means it exists and is currently off. The control bar uses the
+same three-way value to decide whether to render the button — `cameraEnabled
+!== null` — rather than checking `viewerIsTutor` a second time in a different
+file, which is the same "derive the media split from the token response, not
+from a client-side identity comparison" property `session-access.ts` already
+holds for the initial publish decision.
+
+### 4. `setEnabled`, not unpublish/republish, and the toggled-off tile shows the placeholder
+
+`setEnabled(false)` stops capture and tells the peer the track is muted
+without renegotiating the channel — cheaper and faster than
+unpublish/publish, and the SDK's own docs warn against mixing it with
+`setMuted`. Locally, `SessionRoom` does not keep handing the (still-live, just
+disabled) track object to `VideoTile` once `cameraEnabled` is `false`; it
+passes `null` so the tile renders its existing "Camera off" placeholder
+instead of a frozen last frame — the placeholder already existed for the
+"waiting to join" case, and reusing it for "toggled off" needed no new UI.
+
+### What is NOT here
+
+No screen share (§9 still names it, still absent rather than stubbed), no
+chat, no `network-quality`, no changes to end-session, the elapsed SQL, or
+Part 3C's scope (`tutor_earnings`, the completion cron).

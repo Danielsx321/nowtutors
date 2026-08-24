@@ -1197,6 +1197,32 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > Still deferred after Part 3B: the §9 `toggleMic` / `toggleCamera` /
 > `startScreenShare` surface, `network-quality`, chat, and the step 6 renewal.
 
+> **Part 3B remainder (`feat/phase6-part3b-controls-renewal`).** The carve-out
+> above is closed: `lib/agora/client.ts` now exposes `toggleMic` and
+> `toggleCamera`, wired into the control bar, and step 6's renewal is built.
+>
+> `toggleMic` flips the local microphone via `setEnabled`, present for either
+> role. `toggleCamera` does the same for the camera track — a no-op returning
+> `null`, not `false`, when called on a student session, since the student
+> never creates a camera track to begin with (the media split above). The
+> control bar uses that `null` to decide whether to render the camera button
+> at all, rather than checking `isTutor` a second time.
+>
+> Renewal is a single `setTimeout` scheduled off the token route's `expiresAt`
+> — not Agora's `token-privilege-will-expire` event, which this step's earlier
+> wording named and which fires off the token's real, undisclosed expiry
+> rather than the five-minutes-early value the route deliberately reports
+> (DECISIONS, Phase 6 Part 3A). `SessionClient.renewToken` swaps the fresh
+> token into the live client via the SDK's own `renewToken`, without leaving
+> the channel. A renewal refused by the route (participation, or the elapsed
+> check Part 3B added) is not special-cased on the client — it re-runs the
+> same `refreshState` the countdown's expiry already calls, and the route's
+> existing best-effort deadline transition on refusal applies unchanged. See
+> DECISIONS, "Phase 6 Part 3B remainder — control-bar toggles + token
+> renewal."
+>
+> Still not here: screen share, chat, `network-quality`.
+
 ---
 
 ## 10. Design system
