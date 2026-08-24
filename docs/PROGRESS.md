@@ -651,8 +651,35 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   (`f7b8a0a`) — but that pass is not evidence, and the spec is not yet a gate.** PR #25's commit
   documents five real fixes found and fixed against this spec, each with concrete evidence (measured
   server latencies, piped server logs, trace excerpts) — that level of detail does not come from
-  iterating against a spec nobody ran, so treating this as "never had a green run" is false. But no
-  runner output — no `2 passed`, no duration — is captured anywhere in #25's diff or commit message;
+  iterating against a spec nobody ran, so treating this as "never had a green run" is false.
+  **The five, in the order hit — kept here as debugging context for whoever performs the re-run,
+  not as evidence of a pass:**
+  1. **Empty `ms-playwright` browser cache.** No browser had ever been installed; both tests failed
+     at launch in 2ms. `pnpm exec playwright install` itself failed with `SELF_SIGNED_CERT_IN_CHAIN`
+     downloading from `cdn.playwright.dev` — not interception (see RUNBOOK's CA entry) — fixed by
+     routing the install through `scripts/with-ca-certs.mjs`.
+  2. **`GoLiveToggle` rendered `is_live` as if it were liveness, so the test's own go-live click was
+     a no-op.** The switch renders CHECKED from the stored `is_live` column; `live_tutors`
+     membership also needs a fresh `last_seen_at` (§3.1). A tutor left over from a prior run —
+     `is_live = true`, stale `last_seen_at` — rendered checked, so the setup's
+     `if (!checked) click()` clicked nothing, `last_seen_at` was never refreshed, and the tutor was
+     never actually live. This is the same conflation §3.1 exists to forbid — the spec's own test
+     setup had committed the mistake the spec is there to catch. Fixed by forcing a real off→on
+     transition regardless of starting state.
+  3. **The 120s `webServer` boot budget expired mid-compile on a healthy server.** Under `next dev`,
+     cold boot plus first-request compilation exceeded the timeout while nothing was actually broken.
+  4. **`waitForURL` waited for a navigation event a Server Action redirect never emits.** The login
+     action redirects via the Next router, updating history client-side with no event Playwright
+     observes — a sign-in that had already landed on `/tutor` (confirmed via the trace: 303, RSC
+     fetch, heartbeats firing) still timed out. Fixed by polling the URL (`toHaveURL`) instead of
+     awaiting an event.
+  5. **`goLive()` returned on optimistic UI before the server write landed.** `GoLiveToggle` flips
+     `aria-checked` the instant it's clicked, before the Server Action resolves — observed directly
+     in the server log, the tutor's profile was fetched one second before the go-live `POST` landed.
+     Fixed by waiting for the confirmation toast, which only renders from the action's resolved
+     result; `go-live-toggle.tsx` itself is untouched — see the open question below.
+
+  But no runner output — no `2 passed`, no duration — is captured anywhere in #25's diff or commit message;
   the specific claim "confirmed green, 2 passed" lived only in prose in the now-closed PR #26, never
   in captured output, and no CI workflow has ever run `test:e2e`. **What actually happened: the spec
   was debugged to passing on one machine, once, locally, and that pass was never captured or
@@ -664,6 +691,11 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only "waiting
   for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the same
   shared-project reason, though it too now has a `:test` variant.)
+- **`GoLiveToggle` flips `aria-checked` optimistically, before the Server Action resolves — OPEN
+  question, not a settled decision.** The E2E fix above (cause 5) waits for the confirmation toast
+  instead of trusting the switch state, so the test suite no longer depends on this. Whether the
+  component itself should stop flipping optimistically — and show a pending state instead — is a
+  separate product decision that has not been taken.
 - **~~CI `verify` does not run `pnpm build`~~ — DONE via PR #27 (`5396c3c`).** The required `verify`
   check now runs `pnpm build` alongside lint, typecheck and tests, so a change that compiles under
   `tsc` but breaks the Next build fails CI instead of reaching deploy undetected.
