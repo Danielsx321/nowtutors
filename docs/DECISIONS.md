@@ -1747,3 +1747,91 @@ unit test. The pure pieces around it — participation, role derivation, the tok
 covered in `tests/unit/agora-session-access.test.ts` and `tests/unit/agora-token-contract.test.ts`.
 Verifying "both parties join, `started_at` is written once, a refresh does not move it" needs the
 test Supabase project or an E2E pass, and is worth adding when Part 3B makes the clock observable.
+
+## Phase 6 Part 3A — `started_at` concurrency coverage (`test/session-join-concurrency`, 2026-08-24)
+
+Closes the known gap that was blocking Part 3B. No shipped behaviour changed: `stampSessionJoin` is
+byte-for-byte what PR #29 merged, and the four assertions below run against it unmodified.
+
+### 1. A DB-backed lane, not a new file in `tests/unit/`
+
+The unit suite runs without a database **by design** — the accept transaction, the ledger and
+settlement are all storage-agnostic precisely so their decisions are testable without a live
+Postgres. That design has one blind spot, and `stampSessionJoin` sits squarely in it: the rule
+being tested is not a decision *in* TypeScript, it is a property of how Postgres re-evaluates a
+blocked `UPDATE` under READ COMMITTED. No fake, in-memory store or mocked driver reproduces it —
+a test that could pass without a server would not be testing the thing at all.
+
+So `vitest.integration.config.ts` is a second config with `include: ["tests/integration/**"]`,
+disjoint from the unit lane's `tests/unit/**`. `pnpm test` cannot pick these files up, and
+`pnpm test:db:test` is the only way to run them. *Why it matters:* the DB-free property of the unit
+suite is worth keeping absolute — the moment one file in it needs credentials, "run the tests"
+stops being a thing anyone can do on a clean checkout. *How to apply:* when a rule lives in SQL,
+give it a lane rather than weakening the lane that deliberately has no database.
+
+### 2. NOT in the CI `verify` job — deliberately, and this must stay true
+
+The GitHub runner has no Postgres and no `.env.test` (gitignored, live credentials). Adding this
+step to `verify` would fail the **required** check on every PR for missing infrastructure rather
+than for a broken assertion — the worst kind of red, because it trains everyone to ignore it. It is
+a local, pre-Part-3B gate: run it by hand against the disposable test project before touching the
+`started_at` column or anything computed from it.
+
+The guard against it drifting in is that it is a separate config and a separate script, not a
+`describe.skipIf` inside the unit suite. *Why it matters:* a required check that goes red for
+environmental reasons costs more trust than the coverage buys. *How to apply:* infrastructure-
+dependent suites get their own invocation, and the reason they are excluded gets written down where
+the next person will look — here, `vitest.integration.config.ts`, and SPEC §15.
+
+### 3. Real connections and a real lock, not two awaited calls
+
+Two `postgres` clients at `max: 1` on the **session pooler** (`sessionPoolerUrl()`, :5432) — not
+`DATABASE_URL`, which is the :6543 transaction pooler and hands a server connection back to the
+pool between statements, the exact opposite of holding a transaction open. Connection A stamps and
+holds; connection B issues the same statement for the other party and blocks; a third connection
+asks Postgres to confirm it (`pg_blocking_pids`) before anything is asserted; then A commits and B
+re-evaluates against the row it was waiting on.
+
+`await stamp(student); await stamp(tutor)` would have passed against the CTE draft this whole thing
+exists to rule out. *Why it matters:* a concurrency test that never contends is a slower version of
+the sequential test standing next to it. *How to apply:* if the test does not observe the block, it
+is not testing the race — assert the block, do not infer it from a sleep.
+
+### 4. The shipped signature was not widened for the test
+
+`stampSessionJoin(bookingId, userId)` imports the `@/db` singleton and takes no executor. Adding an
+optional transaction parameter would have been the easy way in — and would have put a
+test-only affordance on the one write that governs billing. Instead the test mocks `@/db` with an
+object forwarding to whichever transaction is current for the async context (`AsyncLocalStorage`),
+so two racing calls each get their own connection through an unmodified function.
+
+Two mechanical notes for whoever extends this: `server-only` is not an installed package (only
+Next's bundler aliases it), so the integration config aliases it to Next's own empty shim; and the
+`profiles.id → auth.users.id` FK (`drizzle/0002`) is why the fixture reuses seeded profiles and
+creates only a `bookings` row, which `afterEach` deletes.
+
+### 5. The test was proved capable of failing before it was trusted
+
+`stampSessionJoin`'s `UPDATE` was temporarily rewritten into the CTE form described in item 3 of the
+Part 3A section above, and the suite re-run. **Exactly one test failed — the concurrent one** — and
+the failure was the predicted one: the blocked statement wrote back its stale snapshot, leaving
+`student_joined_at` **null** (erasing the stamp the other transaction had just committed) and
+`started_at` never written at all. The other three passed against the broken implementation, which
+is the point: they are not the ones carrying this property. The CTE version was then reverted and
+the suite re-run green.
+
+*Why it matters:* a suite that would also be green against the known-broken implementation is worth
+less than no suite, because it converts "unverified" into "verified" without doing the work. *How to
+apply:* when a test exists to rule out one specific defect, reintroduce that defect once and watch
+it fail before believing the green.
+
+### Found, not fixed — a type-vs-runtime mismatch Part 3B will hit
+
+Drizzle's raw `execute()` returns `timestamptz` as a **string**, not a `Date`, because it disables
+postgres-js's type parsers and relies on column mappers a raw `sql` query does not have. `JoinStamp`
+declares `Date | null` for `studentJoinedAt` / `tutorJoinedAt` / `startedAt`; at runtime all three
+are strings like `2026-08-24 10:48:18.051472+00`. It is **latent today** — `/api/agora/token` reads
+only `agoraChannel` — and was therefore left alone here, since this pass changes no shipped
+behaviour. **Part 3B computes elapsed time from `startedAt`, and `.getTime()` on a string throws.**
+Fix it there, in the pass that has a reason to touch the column. The test normalises both shapes
+(`toEpochMicros`) rather than asserting a `Date`, so it will keep passing either way.
