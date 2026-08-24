@@ -139,6 +139,14 @@ WHERE is_live = true
 
 A cron sweep also exists (Section 12) to tidy the underlying rows, but correctness does not depend on it running. If the sweep fails for an hour, students still see the right thing. This is the single most important design decision in the document.
 
+> **Confirmed against the live app (Bubble live-app investigation, 2026-08-24).** Bubble has the
+> exact `is_live` / `online_status` divergence this section forbids. Loading the tutor dashboard
+> sets `online_status` only; a stale-tutor sweep clears both after 10 minutes of inactivity; no
+> confirmed write of `is_live = true` exists anywhere in the app. Tutor cards read
+> `online_status`, the dashboard indicator reads `is_live`, and the two can disagree — which is
+> exactly the failure mode this rule exists to make structurally impossible in the rebuild. This
+> confirms the existing rule; it does not change it. See DECISIONS, Decision 5.
+
 **3.2 `is_live` is a real boolean.** No `"yes"`/`"no"` text. The type system enforces it.
 
 **3.3 Empty search constraints fail loudly.** Bubble's `ignore_empty_constraints` silently dropped filters. In SQL, a filter with a null parameter is a bug that surfaces immediately. Filters are built explicitly: a helper composes the `WHERE` clause from only the filters the user actually set, and every composed condition is unit-tested.
@@ -655,6 +663,15 @@ Pagination: cursor-based, 24 per page.
 
 This flow replaces the entire `has_live_request` polling mechanism.
 
+> **No Bubble counterpart (Bubble live-app investigation, 2026-08-24).** The request/accept
+> handshake below — a `session_requests` row, a 60-second accept window, explicit decline — does
+> not exist in the live app at all. Bubble creates the booking immediately on payment, with no
+> request type, no accept step, no expiry, and no timeout; the tutor is pulled into the room by a
+> `has_live_request` boolean on the `User` record, polled every 10 seconds on the index page. The
+> rule that Bubble is ground truth for UX behaviour does not apply to this flow, because there is
+> no Bubble behaviour to match — the handshake is this rebuild's own design. See DECISIONS, Finding
+> B.
+
 ```
 Student                          Server                           Tutor
    |                                |                                |
@@ -702,6 +719,20 @@ Rules:
 - **A mid-flight balance failure is a distinct terminal state.** The debit runs inside the tutor's accept transaction, atomic with the booking insert. If the student's balance moved between request and accept such that the pinned-price debit would fail, the whole accept rolls back and the request goes terminal as `failed_payment` (§4.3) — not `expired`, not `declined` — so an operator reading `session_requests` can tell a refusal from a payment failure.
 
 **Billing (instant):** flat and charged **upfront at booking creation**, debited via the ledger in the same transaction that inserts the booking. `price_credits = hourly_rate_credits × duration_minutes / 60`, rounded up — the **same formula as a scheduled booking** (§7.3). There is **no metering, no authorization hold, no partial refund, and no remainder release.** Session length is enforced **server-side from `bookings.started_at`**: when the booked duration has elapsed, the session ends — elapsed time is always computed server-side, never from a client interval. Instant price uses the tutor's `hourly_rate_credits`, not a per-minute rate: `tutor_profiles.instant_rate_credits_per_minute` was **dropped in migration `0014`** (§4.1). The charge is a single `booking_debit` credit transaction; the earlier hold model's `instant_hold` / `instant_release` / `instant_capture` enum values were likewise **removed in `0014`** (§4.4). See DECISIONS ("bug not ported, intended behaviour built": the Bubble countdown decrements a `credits_remaining` field on a **180-second** client interval, one credit per tick — the withdrawn "1 credit = 3 minutes" rule working exactly as designed, not a units bug; not ported regardless, since elapsed time is computed server-side).
+
+> **Confirmed against the live app, and the flat bracket is a live pricing defect (Bubble live-app
+> investigation, 2026-08-24).** Live inspection confirms the countdown described above is still the
+> mechanism that ends a Bubble session today, and adds a second problem this SPEC's model was
+> already avoiding: Bubble sets a booking's `credits_remaining` to a **flat bracket by duration**
+> (10/20/30/40 credits for 30/60/90/120 minutes), which ignores the tutor's hourly rate entirely —
+> every tutor costs the same in credits. That bracket is a pricing defect in the live app, not a
+> model worth preserving, and this rebuild's `sessionPriceCredits()` formula (`hourly_rate_credits ×
+> duration_minutes / 60`, charged once at booking) was never going to reproduce it regardless.
+> Separately: because Bubble's metering runs in the browser, closing the tab stops the meter while
+> the session room stays open — the student keeps being tutored without being charged. This is a
+> live revenue leak, recorded as an observed property of the live app. This rebuild's server-side
+> hard stop from `bookings.started_at` (above) removes it by construction, not by patching the
+> symptom. See DECISIONS, Decisions 1 and 2.
 
 **Ending a session is unchanged from Bubble (Phase 6 pre-build decision).** Credits are charged upfront and **nothing is refunded on early exit by either party** — a student who leaves after 5 minutes of a paid 60-minute session, or a tutor who ends it early, gets no partial credit back. The session **hard-stops when the booked duration elapses**, with **no grace period**. Bubble's mid-session "buy more credits" top-up popup is **not ported**: under flat upfront billing there is nothing to run out of mid-session, so the popup has no equivalent state to attach to.
 
@@ -907,6 +938,13 @@ Server-side only; the API key never reaches the browser.
 
 **Waiting room** is a LessonSpace dashboard setting, not code — note it in the runbook (Section 17) as a deployment checklist item.
 
+> **Confirmed against the live app (Bubble live-app investigation, 2026-08-24).** Bubble's own
+> `POST /v2/spaces/launch/` call passes only booking id, display name, and a leader boolean — no
+> duration, expiry, or time limit. This section's join-window enforcement (step 1, and §7.3's
+> "10 minutes before to 30 minutes after") is entirely our own server-side gate; LessonSpace itself
+> was never asked to enforce a time box in the live app either, so there is nothing to reconcile
+> here. See DECISIONS, Finding A.
+
 Tutor-only controls (whiteboard admin, recording, end-for-all) come from the `teacher` role in the launch payload rather than from conditionally hiding elements on the page — which is why the current "tutor-facing element visibility on live_classroom" problem doesn't carry over.
 
 ### 7.8 Live broadcast
@@ -935,6 +973,26 @@ async function debitWallet(tx, { userId, amount, type, referenceType, referenceI
 Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the wallet, reject debits that would go negative, insert the ledger row, and update the cached balance. **Nothing else in the codebase touches `wallets.credit_balance`.** Enforce with a lint rule or a code-review note in `CLAUDE.md`.
 
 ### 7.11 Earnings and withdrawals
+
+> **Held-on-completion is a deliberate correction, not a divergence to reconcile (Bubble live-app
+> investigation, 2026-08-24).** Live inspection confirms Bubble increments the tutor's
+> `total_earnings` at booking creation — unconditionally, on all three booking paths, **before the
+> session happens** — with no escrow, no completion trigger, no refund logic, no cancellation
+> workflow, and no no-show handling anywhere in the app. The held/available/withdrawn model below
+> is this rebuild's intentional design, chosen *because* of that gap, not something that drifted
+> from Bubble and needs aligning back to it. A future session must not "align to Bubble" here. See
+> DECISIONS, Decision 3.
+>
+> **`total_withdrawn` is a live financial defect, not reproduced here (same investigation).** On
+> Bubble's `UserProfile`, `total_withdrawn` is **read** by the withdrawal gate
+> (`earnings × 0.75 − withdrawn ≥ $30`) but **no workflow anywhere writes it** — a tutor can submit
+> repeated withdrawal requests against the same balance, and the displayed "available to withdraw"
+> never decreases after a request is submitted. This rebuild has no `total_withdrawn` counter to
+> forget to write: `withdrawal_requests` plus the `withdrawal_hold` / `withdrawal_paid` ledger
+> entries below derive "available" from the ledger itself, which structurally cannot go stale the
+> way an unwritten counter can. No fix is needed because the defect has no equivalent to reproduce;
+> it is recorded here only so a future session does not port a `total_withdrawn`-shaped field. See
+> DECISIONS, Decision 4.
 
 - Session completes → `tutor_earnings` row, `status = held`, `available_at = ended_at + earnings_hold_hours`.
 - **Fee split (authoritative).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`, `net_credits = gross_credits − platform_fee_credits`. The fee **rounds down; the remainder goes to the tutor.** Rounding against the payee would accumulate in the platform's favour across many small sessions, so the split rounds down instead. This is implemented once in `src/lib/credits/fees.ts` (`splitEarnings`) and called by both the seed and the earnings pipeline so they cannot diverge. (`platform_fee_percent = 25` → tutor keeps ≥75%.)
@@ -982,6 +1040,23 @@ Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy o
 Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tolerate SSR), expose `join`, `leave`, `toggleMic`, `toggleCamera`, `startScreenShare`, and handle `user-published`, `user-unpublished`, `user-left`, `connection-state-change`, `network-quality`.
 
 **Cold-start note:** the Render free tier sleeps. First token request after idle can take 30–50 seconds. Either move to a paid instance or ping the service from the presence cron to keep it warm. Recommend the latter for now — one line in the cron handler.
+
+> **Confirmed against the live app (Bubble live-app investigation, 2026-08-24).** The Phase
+> 6/Phase 7 split — Agora for the instant session room, LessonSpace for scheduled sessions — is
+> correct and is not an inference; the live app's `live_session_room` element (content type
+> `Booking`) runs the Agora Web SDK in `rtc` mode two-way: the tutor publishes video + audio, the
+> student publishes audio only, and both subscribe to the other. Tokens come from the same
+> `AGORA_TOKEN_SERVICE_URL` at `/rtc/{channel}/{role}/uid/0/?expiry=3600`, with role chosen
+> client-side by comparing the current user's profile id to the booking's tutor profile id — the
+> same publisher/subscriber split this section already specifies. Bubble's channel naming
+> (`"channel_" + tutor profile id`, one channel per tutor rather than per booking) is **not**
+> reproduced here; `agora_channel = session_{booking_id}` (§4.3) is a deliberate, safer departure,
+> not an oversight. An earlier reading of the live app as "Agora is broadcast-only" was
+> investigated directly and found wrong — recorded so it is not re-derived. Separately,
+> `live_classroom` hosts an unrelated, subscriber-only Agora element previewing the tutor's
+> broadcast (channel keyed to the tutor's profile id, shown only while the tutor is live) — a
+> broadcast preview widget, not a session, and not evidence that §4.6's broadcasts are anything
+> other than net-new. See DECISIONS, Finding A.
 
 ---
 
@@ -1287,7 +1362,9 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
    Popular 30cr/$39.99, Pro 60cr/$67.99, Premium 100cr/$97.99 — with **no** credit-to-USD rate and
    **no** credit-to-minutes ratio stated on the purchase page. (Bubble's per-package "minutes"
    labels are inconsistent marketing copy and are **not** seeded; see DECISIONS.)
-8. **Platform fee** — **25%** (`platform_fee_percent = 25`); tutor keeps 75%.
+8. **Platform fee** — **25%** (`platform_fee_percent = 25`); tutor keeps 75%. **Confirmed as a live
+   commercial term (Bubble live-app investigation, 2026-08-24):** Bubble's withdrawal maths pays out
+   `gross × 0.75`, matching this figure exactly — see DECISIONS, Decision 6.
 
 **Phase 6 (instant sessions):**
 9. **Instant pricing** — **flat, charged upfront** at booking creation, priced by the **same formula
