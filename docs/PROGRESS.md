@@ -4,15 +4,25 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-24)
 
-**Phase 6 Part 3B — the server-side end and the elapsed hard stop — is BUILT and
-open as a PR (`feat/phase6-part3b-end-session`).** Scope was deliberately
-narrower than "Part 3B" as this file previously described it: the §9 control-bar
-toggles (mic/camera/screen share), chat, credits consumed/earned and the 80%-TTL
-token renewal are **not** in it and are still absent rather than stubbed. It
-needed **no migration** — `ended_at` and `billed_minutes` have existed since
-`0000`. See "What Phase 6 Part 3B built" below, and `DECISIONS.md` for the three
-SPEC amendments it carries (§4.3 `billed_minutes`, §12 `complete-sessions`, §9
-step 2) and the falsification table.
+**Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
+control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and
+**PR #35 (`974cd7a`)**. #34 shipped the server-side end and the hard stop; #35
+closed the carve-out #34 deliberately left out — the §9 `toggleMic`/`toggleCamera`
+control-bar toggles and the 80%-margin token renewal, scheduled off the token
+route's `expiresAt`. **~~The §9 control-bar toggles (mic/camera/screen share),
+chat, credits consumed/earned and the 80%-TTL token renewal are not in it and are
+still absent rather than stubbed~~ — DONE for mic/camera toggles and token
+renewal in PR #35.** Screen share and chat remain absent rather than stubbed —
+still no part of any merged pass. Neither PR needed a migration — `ended_at` and
+`billed_minutes` have existed since `0000`. See "What Phase 6 Part 3B built"
+below, and `DECISIONS.md` for the three SPEC amendments #34 carries (§4.3
+`billed_minutes`, §12 `complete-sessions`, §9 step 2), the falsification table,
+and #35's renewal-off-`expiresAt` reasoning.
+
+**Next up: Phase 6 Part 3C** — the complete-sessions cron and `tutor_earnings`,
+reading instant bookings at `status='completed'` via the shared `sessionElapsedSql`
+fragment (§12), with `started_at` / `*_joined_at` carrying the `no_show_*`
+classification for a pair that never completed.
 
 **PRs #32 and #33 are MERGED** (`df9d249`, `582e83a`). #32 was squash-merged while
 #33 still carried #32's original commit, which left #33 `CONFLICTING` against
@@ -73,7 +83,10 @@ had no reader at all.
 
 **What remains unverified is the Agora media path, not the SQL**: two live participants in one
 channel still needs two authenticated browsers and real devices, and that is a §15 E2E concern
-rather than a Part 3B blocker.
+rather than a Part 3B blocker. **The same is now true of PR #35's toggle/renewal path** — the
+`toggleMic`/`toggleCamera` control-bar wiring and the 80%-margin token renewal are unexercised
+against a live Agora channel for the same reason: no automated pass drives two real browsers.
+Also a §15 E2E concern, explicitly non-blocking for Part 3C.
 
 **Phases 0–5, Phase 6 Part 1, and Phase 6 Part 2 are complete and merged to `main`.** Phase 6
 Part 2 — the instant-session handshake, its billing and the expiry cron — was **merged via
@@ -161,6 +174,18 @@ below.
   lives in `DECISIONS.md` (same section title) and is not restated here.
 - **Student `/dashboard` fix — same defect class as the earlier tutor `/tutor` fix.**
   **Merged via PR #30 (`7afea77`).** See "Student `/dashboard` fix" below.
+- **DB-backed `stampSessionJoin` concurrency coverage.** **Merged via PR #32 (`df9d249`)**
+  — `tests/integration/`, `pnpm test:db:test`, the `TEST_PROJECT_REF` guard. See "What Phase 6
+  Part 3A built" below and DECISIONS, "Phase 6 Part 3A — `started_at` concurrency coverage".
+- **`stampSessionJoin` returns real `Date`s, not timestamp text.** **Merged via PR #33
+  (`582e83a`)** — fixed at the query boundary (`toDate`); the `db.execute` generic corrected to
+  `string | Date | null`. See the top of this file and DECISIONS, "`stampSessionJoin`'s
+  timestamps — probed, then fixed at the boundary".
+- **Phase 6 Part 3B — server-side end + elapsed hard stop.** **Merged via PR #34 (`0bb9be2`).**
+  See "What Phase 6 Part 3B built" below.
+- **Phase 6 Part 3B remainder — control-bar mic/camera toggles + Agora token renewal.**
+  **Merged via PR #35 (`974cd7a`).** See "What Phase 6 Part 3B built" below and DECISIONS,
+  "Phase 6 Part 3B remainder — control-bar toggles + token renewal".
 
 ## 2026-08-23 — test project, tooling, and the cron going live
 
@@ -233,9 +258,13 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
 ## What Phase 6 Part 3B built
 
 **The server-side end of a session, and the hard stop that holds when nobody is
-watching.** Not the control bar: the §9 mic/camera toggles, screen share, chat,
-credits consumed/earned and the token renewal are a separate pass and are absent
-rather than stubbed.
+watching — plus, in the remainder pass (PR #35), the §9 control-bar mic/camera
+toggles and the 80%-margin token renewal.** ~~Not the control bar: the §9
+mic/camera toggles, screen share, chat, credits consumed/earned and the token
+renewal are a separate pass and are absent rather than stubbed.~~ — **DONE for
+mic/camera toggles and token renewal (PR #35).** Screen share, chat and credits
+consumed/earned remain absent rather than stubbed; no merged pass has touched
+them.
 
 **No migration, no RLS change, nothing in `lib/credits/`, no `tutor_earnings`, no
 `is_live` write, nothing under `drizzle/`.**
@@ -270,6 +299,17 @@ rather than stubbed.
   zero). The other party is told by the Agora SDK's `user-left` — `bookings` is
   not in the Realtime publication and adding it would have been a migration.
 
+**PR #35's remainder** — `SessionClient` gains `toggleMic`/`toggleCamera`
+(`setEnabled`, not unpublish/republish) and `renewToken` (swaps credentials
+without leaving the channel); `toggleCamera` returns `null` for a student
+(confirmed in code that no camera track is ever created for that role, not
+`false`). A new `useTokenRenewal` hook re-arms one `setTimeout` off the token
+route's `expiresAt` on each successful renewal; a refusal re-runs
+`refreshState` — the same path the countdown's expiry already uses — rather
+than special-casing elapsed client-side. New files: `src/hooks/use-token-renewal.ts`,
+`src/lib/agora/client.ts` (toggle/renewal additions), `src/lib/agora/renewal.ts`,
+`tests/unit/agora-client-toggle.test.ts`, `tests/unit/agora-renewal.test.ts`.
+
 ### Phase 6 Part 3B — shipped state
 
 - **`pnpm lint`, `pnpm typecheck` and `pnpm test` green** — 269 unit tests across
@@ -295,6 +335,15 @@ rather than stubbed.
   Part 3A, a §15 E2E concern, and not a blocker for Part 3C.
 - **§15 E2E path 2** ("session ends → earnings appear") becomes assertable at
   Part 3C; nothing in the E2E suite was touched here.
+- **Carry forward for Part 3C's integration work, not resolved here:** the
+  `@/db` mock used by `tests/integration/session-end-concurrency.test.ts`
+  forwards **`execute` and `update` only** — no `select`. A `db.select()`-based
+  pre-read in a falsification break failed with `TypeError: db.select is not a
+  function` and was first misdiagnosed as the guard failing; it was the mock,
+  not the guard (see `DECISIONS.md`, "Break 1 first failed for the wrong
+  reason"). Part 3C's cron will read via `select` somewhere in its own
+  integration coverage — extend the mock's forwarder before trusting a
+  `db.select` failure there as a real finding.
 
 ## What Phase 6 Part 3A built
 
@@ -598,22 +647,23 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 - **~~Obsolete pricing remnants~~ — DONE in migration `0014`** (Phase 6 Part 1).
   `tutor_profiles.instant_rate_credits_per_minute` is dropped and the `instant_hold` /
   `instant_release` / `instant_capture` `credit_transaction_type` values are removed.
-- **`tests/e2e/presence-ungraceful-exit.spec.ts` still needs a green run — now BOTH tests.** Part 2
-  added the request-expiry half beside Part 1's presence half; neither has ever completed a run.
-  **The seeding half is now unblocked** — the disposable test project (`uietkphpfqaicbndunwt`) exists
-  and `pnpm db:seed:test` populates it with verified counts, so the spec no longer has to choose
-  between seeding production and not running at all. What is still missing is the spec itself
-  actually passing end to end: it has **never** completed a run. The only local attempt (2026-08-22)
-  stopped at sign-in when Supabase Auth was unreachable over this machine's link, before reaching
-  any presence assertion — and that machine's Node CA problem, since fixed for db scripts by
-  `scripts/with-ca-certs.mjs`, is a plausible contributor worth re-testing first. Point Playwright
-  at the test project, get one green run, then consider it as a CI gate. Two real bugs in the spec
-  were found and fixed in PR #16 already: it matched the tutor by **display name** ("Tom Turner"),
-  which never appears — the seeded `display_name` is `Tom` — so every assertion would have
+- **`tests/e2e/presence-ungraceful-exit.spec.ts` was debugged to passing locally during PR #25
+  (`f7b8a0a`) — but that pass is not evidence, and the spec is not yet a gate.** PR #25's commit
+  documents five real fixes found and fixed against this spec, each with concrete evidence (measured
+  server latencies, piped server logs, trace excerpts) — that level of detail does not come from
+  iterating against a spec nobody ran, so treating this as "never had a green run" is false. But no
+  runner output — no `2 passed`, no duration — is captured anywhere in #25's diff or commit message;
+  the specific claim "confirmed green, 2 passed" lived only in prose in the now-closed PR #26, never
+  in captured output, and no CI workflow has ever run `test:e2e`. **What actually happened: the spec
+  was debugged to passing on one machine, once, locally, and that pass was never captured or
+  independently verified.** It needs a re-run with the runner's own output kept (not just asserted in
+  a commit message) before it can be treated as a CI gate or cited as settled. Two real bugs in the
+  spec were found and fixed in PR #16 already: it matched the tutor by **display name** ("Tom
+  Turner"), which never appears — the seeded `display_name` is `Tom` — so every assertion would have
   **silently passed as false** without ever exercising the intended path; and `signIn()` waited on
-  the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only
-  "waiting for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the
-  same shared-project reason, though it too now has a `:test` variant.)
+  the URL alone, so a rejected login burned the whole 5-minute timeout while reporting only "waiting
+  for navigation" instead of the real cause. (`db:verify-rls` remains local-only for the same
+  shared-project reason, though it too now has a `:test` variant.)
 - **~~CI `verify` does not run `pnpm build`~~ — DONE via PR #27 (`5396c3c`).** The required `verify`
   check now runs `pnpm build` alongside lint, typecheck and tests, so a change that compiles under
   `tsc` but breaks the Next build fails CI instead of reaching deploy undetected.
@@ -636,19 +686,49 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   "`stampSessionJoin`'s timestamps — probed, then fixed at the boundary"). The integration lane's
   normaliser was tightened to reject a string, so a reverted conversion now fails loudly instead of
   staying green.
-- **Google OAuth — code-verified correct, but NON-FUNCTIONAL in this environment.** The full auth
-  audit — the fourth of the four 2026-08-24 investigation passes alongside the Bubble parity checks
-  (see "Bubble live-app investigation" above), but scoped to **our own** auth code rather than
-  Bubble's — traced `on_auth_user_created` and confirmed the trigger runs in the **same transaction**
-  as the `auth.users` insert — no orphaned-profile window exists; the code is fine. But a live
-  click-through against Supabase's own `/authorize` endpoint returns **"provider is not enabled"**
-  — the Google provider is simply not turned on in this Supabase project. This is a **dashboard
-  configuration task, not a code defect**,
-  and it needs credentials created directly in Google Cloud Console and Supabase — never in chat or
-  docs. **Flagged as a short standalone session:** create a Google OAuth client, set the redirect URI
-  to the project's `/auth/v1/callback`, enable the provider in Supabase, verify with one live
-  click-through. (Setup steps are already written out in `RUNBOOK.md` under "Phase 3 — Auth &
-  onboarding"; this is the "actually do it" pass.)
+- **Google OAuth — DONE, closed 2026-08-24.** Was flagged as a short standalone session in the prior
+  entry; that session ran tonight. A Google Cloud OAuth client was created (consent screen External;
+  scopes `email`, `profile`, `openid`; authorized redirect URI set to the **Supabase** callback
+  `https://<project-ref>.supabase.co/auth/v1/callback`, not our own `/auth/callback`), and the
+  client id + secret were entered into Supabase → Authentication → Providers → Google, which was then
+  enabled. **Verified by a live click-through against the deployed Vercel app**: Google sign-in
+  completes and lands signed in; the "provider is not enabled" 400 is gone. No credential values are
+  recorded anywhere in these docs — they live in Google Cloud and Supabase only. See DECISIONS,
+  "Google OAuth enabled" for the client-ID-vs-client-name gotcha that cost time during setup.
+  **Still open, not closed by this session:** `pnpm db:verify-rls` has not been re-run since Google
+  was enabled. That script is the observable proxy for the SPEC §7.1 no-duplicate-accounts
+  guarantee (the dashboard's own same-email-linking toggle can't be read back — see RUNBOOK). Until
+  it runs, same-email linking between a password account and the Google identity is asserted from the
+  investigation's earlier finding, not freshly verified.
+- **Signup "email confirmation not arriving" — MISDIAGNOSED, now corrected (2026-08-24).** What looked
+  like a broken confirmation email was two dashboard misconfigurations, not an email-delivery or
+  code defect. Established from Supabase auth logs and a direct `auth.users` query, not inferred:
+  email delivery itself works (account `dadatosynseun@gmail.com` was created and confirmed
+  2026-08-21, `confirmation_sent_at` 0.06s after `created_at`, `email_confirmed_at` 38s later). The
+  apparent "no email" symptom on repeat signup attempts was Supabase's anti-enumeration behaviour —
+  signing up again on an already-confirmed address logs `user_repeated_signup`, returns 200, and
+  sends no email; our `/signup` page correctly shows the same generic "check your email" state
+  either way. **This is correct per SPEC §7.1 and must not be "fixed" by revealing the account
+  exists** — see DECISIONS for why a future reader might otherwise mistake it for a UX bug.
+  Two real faults, both dashboard configuration, both now corrected:
+  - **Site URL** was still `http://localhost:3000` after the app was deployed, so a confirmation
+    email opened from any machine pointed at the user's own localhost. Now
+    `https://nowtutors-brown.vercel.app`.
+  - The `/auth/callback` **redirect URLs were not allow-listed**, so Supabase discarded the
+    `emailRedirectTo` our code sends and fell back to the Site URL root — the link landed on
+    `/?code=...`, which has no code-exchange handler, leaving the user signed out. Allow-list now
+    contains `http://localhost:3000/auth/callback`, `https://nowtutors-brown.vercel.app/auth/callback`,
+    and `https://*.vercel.app/auth/callback`.
+  A later "Invalid email or password" on sign-in was a **consequence** of the redirect-URL fault, not
+  a separate defect: the code was never exchanged, the account stayed unconfirmed, and Supabase
+  returns the same generic error for an unconfirmed account as for a wrong password. No login-path
+  defect.
+  **NOT YET VERIFIED — recorded as open, not fixed.** A clean end-to-end click-through on the
+  corrected settings (signup on Vercel → email → link lands on `/auth/callback` → `/onboarding`,
+  signed in) has not been performed, blocked by `HTTP 429 over_email_send_rate_limit` from the
+  built-in sender after tonight's testing. The corrected `redirect_to` **was** observed in the 429
+  log lines, confirming the app sends the right callback URL — but the full flow is unproven. Cold
+  re-test once the rate limit resets.
 - **Two auth gaps found in the full audit — NOT YET FIXED, parked for a future short session.**
   - `requireOnboarded()` (`src/lib/auth/guards.ts`) is exported but has **no call site anywhere in
     the repo** — dead code — and it skips the `is_suspended` check that `requireRole()` has.

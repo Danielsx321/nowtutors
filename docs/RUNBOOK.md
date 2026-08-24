@@ -86,24 +86,59 @@ profiles, 26 subjects, 9 platform_settings rows, 2 favourites — confirmed by
 querying the test database directly, not just trusting the script's own log.
 
 Note: `db:seed:test` calls the Supabase Admin API via `@supabase/supabase-js`,
-which uses Node's `fetch`. On a machine where Node's own CA trust store is
-incomplete (symptom: `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, while `curl` to the
-same host works fine), run with `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or
-your platform's system CA bundle path) — this is a local Node/TLS environment
-quirk, unrelated to the test project, credentials, or migration/seed code.
+which uses Node's `fetch` — one of the two symptoms of the machine-wide CA
+issue below. See "Node's CA trust store" for the full picture; the short
+version is `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` fixes it and this is
+unrelated to the test project, credentials, or migration/seed code.
+
+### Node's CA trust store does not complete chains the system bundle does
+
+**This is a machine-wide property, not a Supabase quirk.** On this machine,
+Node's own bundled CA trust store fails to complete TLS chains that the
+system bundle at `/etc/ssl/cert.pem` (and therefore `curl`) completes without
+issue. It affects **any** Node process reaching the network over HTTPS, not
+just calls to Supabase.
+
+**Two symptoms observed so far, one fix:**
+- `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` — Node `fetch` against `*.supabase.co`
+  (the Supabase Admin API and Auth).
+- `SELF_SIGNED_CERT_IN_CHAIN` — `pnpm exec playwright install` downloading
+  browsers from `cdn.playwright.dev`.
+
+**Both hosts were verified to serve genuine certificate chains** — `curl -v`
+against each returns `ssl_verify_result=0` (verified, not bypassed), and the
+chains resolve to real public CAs: Google Trust Services for `supabase.co`,
+DigiCert for `cdn.playwright.dev`. **This is explicitly NOT TLS interception
+and NOT a VPN** — that hypothesis was investigated and disproved (no proxy env
+vars set, no active VPN tunnel interface, `scutil --proxy` empty, genuine
+chain presented) — so if a future symptom on a third host looks like this,
+don't re-open that investigation; go straight to `NODE_EXTRA_CA_CERTS`.
+
+**The fix, one variable:** `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` (or your
+platform's system CA bundle path), set **before** the Node process starts —
+Node reads it once at startup, so it cannot be set from inside an
+already-running script.
+
+- **`db:*` / `db:*:test` scripts:** automatic, via `scripts/with-ca-certs.mjs` (below).
+- **`pnpm build` / `pnpm dev` / bare `tsx`:** not wrapped — export it manually.
+- **`pnpm exec playwright install`:** not wrapped — run it as
+  `node scripts/with-ca-certs.mjs pnpm exec playwright install` on a fresh
+  clone. The bare command fails on this machine.
+- **`pnpm test:e2e`:** wrapped internally — the `webServer.command` in
+  `playwright.config.ts` runs through `scripts/with-ca-certs.mjs`.
 
 ## Checklist (fill in as the build progresses)
 
 - [ ] Supabase project creation (dev done; prod TBD) and RLS verification steps — Phase 1.
 - [ ] Vercel project + env vars per environment (values from `.env.example`).
-- [ ] Google OAuth consent screen and redirect URIs — Phase 3. **Confirmed still not done
-  (2026-08-24):** a live click-through against Supabase's own `/authorize` endpoint returns
-  "provider is not enabled." The code side is verified correct (`on_auth_user_created` runs in the
-  same transaction as the `auth.users` insert — no orphaned-profile window), so this is purely the
-  dashboard steps below not having been executed yet. See "Phase 3 — Auth & onboarding" below for
-  the exact steps; needs credentials created directly in Google Cloud Console and Supabase, never in
-  chat or docs. Worth a short standalone session: create the OAuth client, set the redirect URI,
-  enable the provider, verify with one live click-through.
+- [x] Google OAuth consent screen and redirect URIs — Phase 3. **Done 2026-08-24.** Google Cloud
+  OAuth client created (consent screen External; scopes `email`/`profile`/`openid`; authorized
+  redirect URI set to the **Supabase** callback, not ours), client id + secret entered into
+  Supabase → Authentication → Providers → Google, provider enabled, verified with a live
+  click-through against the deployed Vercel app — sign-in completes and lands signed in. See
+  "Phase 3 — Auth & onboarding" below for the exact steps and the client-ID-vs-client-name gotcha.
+  **Still open:** `pnpm db:verify-rls` has not been re-run since enabling — see DECISIONS,
+  "Google OAuth enabled".
 - [x] PayPal app: sandbox vs live credentials, webhook registration + webhook id — Phase 5.
   **Done for SANDBOX only.** Live is Phase 10 — see the warning below.
   - **Webhook registered (sandbox).** URL `https://nowtutors-brown.vercel.app/api/webhooks/paypal`.
@@ -231,20 +266,53 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   script — an already-set value is left untouched. This is a local-machine
   quirk only; CI and Vercel are unaffected.
 
+### Running the E2E suite
+
+`pnpm test:e2e` boots its **own production build** and serves it —
+`playwright.config.ts`'s `webServer.command` runs
+`node scripts/with-ca-certs.mjs --env-file=.env.test sh -c 'pnpm build && pnpm start'`,
+so the CA fix and the test-project env are both applied automatically; no
+manual export needed for this command specifically.
+
+- **`reuseExistingServer` is `false`, deliberately.** A stray `pnpm dev`
+  already running on `:3000` is pointed at the dev/prod project — reusing it
+  would silently run the whole suite (presence writes, session requests,
+  wallet reads) against the database that serves production. A port clash is
+  a loud, correct failure; a silently wrong database is not. If the suite
+  reports the port is busy, find and stop whatever is listening on it before
+  retrying — do not relax this setting.
+- **Requires the test project seeded first:** `pnpm db:seed:test` (see "Test
+  Supabase project" above). The suite drives real sign-ins against
+  `tutor1@nowtutors.dev` / `student1@nowtutors.dev`.
+- **Why a production build and not `next dev`:** under `next dev` every route
+  compiles on first request, which inflated every timeout in the spec into
+  latency cover rather than a real budget. See `playwright.config.ts`'s own
+  header comment for the measured numbers.
+
 ## Phase 3 — Auth & onboarding (Supabase Auth + Google OAuth)
 
 **Supabase dashboard → Authentication → URL Configuration**
-- **Site URL:** the canonical app origin per environment — `http://localhost:3000`
-  (dev), the Vercel preview/prod URLs otherwise.
-- **Redirect URLs (allow-list):** add every origin that completes an auth flow, each
-  with the `/auth/callback` path. Supabase only redirects back to allow-listed URLs.
+- **Site URL — current value: `https://nowtutors-brown.vercel.app`.** ⚠️ **Must be updated whenever
+  the deployed origin changes.** This project has only **one** Site URL for both local dev and the
+  deployed app; a confirmation/reset email's action link is built from it. Left at
+  `http://localhost:3000` after a deploy, it produces a confirmation email that opens fine for the
+  developer and is **dead for every real user, with no error surfaced anywhere** — this is exactly
+  what happened 2026-08-24 (see DECISIONS, "Google OAuth enabled; signup 'no confirmation email'
+  misdiagnosed as a code defect") and cost a full misdiagnosis before the actual cause (this setting)
+  was found. Local dev keeps working only because `localhost:3000/auth/callback` is separately
+  allow-listed below — a fallback link lands on the **deployed** app, not localhost, which is an
+  accepted trade-off (see DECISIONS), not a bug.
+- **Redirect URLs (allow-list) — current values:**
   - `http://localhost:3000/auth/callback`
-  - `https://<vercel-preview>.vercel.app/auth/callback` (or `https://*.vercel.app/auth/callback`)
-  - `https://<production-domain>/auth/callback`
-  Our code always sends `redirectTo`/`emailRedirectTo` = `${origin}/auth/callback` (OAuth,
-  email confirmation → `?next=/onboarding`, password reset → `?next=/reset-password`).
+  - `https://nowtutors-brown.vercel.app/auth/callback`
+  - `https://*.vercel.app/auth/callback`
+  Supabase only redirects back to allow-listed URLs — anything else is silently dropped and the
+  request falls back to the Site URL root (`/?code=...`), which has no code-exchange handler and
+  leaves the user signed out with no error. Our code always sends `redirectTo`/`emailRedirectTo` =
+  `${origin}/auth/callback` (OAuth, email confirmation → `?next=/onboarding`, password reset →
+  `?next=/reset-password`).
 
-**Google OAuth (Google Cloud Console → APIs & Services)**
+**Google OAuth (Google Cloud Console → APIs & Services) — DONE, completed 2026-08-24.**
 - **OAuth consent screen:** External; app name, support email, logo; scopes `email`,
   `profile`, `openid`; add test users while unverified.
 - **Credentials → OAuth 2.0 Client ID (Web application):**
@@ -254,6 +322,14 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
     which then returns to our `/auth/callback`).
 - Put the Client ID + secret into **Supabase → Authentication → Providers → Google**
   and enable it.
+- ⚠️ **The Client IDs field in Supabase's Google provider panel takes the long Google
+  client id ending in `.apps.googleusercontent.com` — NOT the human-readable name you
+  gave the OAuth client in Google Cloud Console.** Entering the name instead of the id
+  saves without error and silently produces a client Google will not recognise; the
+  failure only shows up at the `/authorize` step. This cost real time during setup —
+  copy the id-shaped value, not the console's display name.
+- **Verified 2026-08-24** by a live click-through against the deployed Vercel app:
+  Google sign-in completes and lands the user signed in.
 
 **Account linking (the Google-on-existing-email case — SPEC §7.1)**
 - Enable **Authentication → Providers → "Allow linking accounts with the same email"**
@@ -275,6 +351,12 @@ quirk, unrelated to the test project, credentials, or migration/seed code.
   only. For real signups configure a custom SMTP / Resend (Phase 10). For dev you may
   turn **"Confirm email" OFF** so `signUp` returns a session immediately and routes
   straight to `/onboarding`; with it ON, signup shows a "check your email" state.
+  **Confirmed 2026-08-24: the limit bites after a handful of sends per hour** —
+  repeated signup testing against the built-in sender hits `HTTP 429
+  over_email_send_rate_limit` and becomes self-blocking well before an hour of normal
+  manual testing is up. This is the concrete reason Resend (Phase 10) is the fix, not
+  just a "nicer sender" upgrade — it's what unblocks testing the signup flow at all
+  without waiting out the window.
 - Password minimum length / leaked-password protection can be tightened in
   **Authentication → Policies**; our client+server zod schema already requires ≥8 chars
   with a letter and a number.

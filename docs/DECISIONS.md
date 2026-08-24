@@ -1485,6 +1485,67 @@ misdirects, is a step worth removing.
 manual export, and RUNBOOK keeps it as the documented fallback for machines whose CA bundle sits at
 a different path. An already-set value is never overridden.
 
+## Phase 6 E2E: production build, not `next dev` (PR #25, 2026-08-23)
+
+`tests/e2e/presence-ungraceful-exit.spec.ts` runs against a **compiled production build**
+(`next build && next start`), not the dev server it had always run against before.
+
+*Why.* Under `next dev`, every route compiles on first request rather than ahead of time. Measured
+directly from the piped server log during a real run: `GET /` in 73s, `POST /login` in 54s, `GET
+/login` in 37s. That is not a slow test — it is a slow **server**, and every timeout in the spec had
+been set (or inflated) to survive it. A timeout sized to survive compilation latency is not a real
+budget; it is latency wearing a budget's clothes, and it hides genuine regressions behind the same
+number that was papering over the compiler. Post-change, on a compiled server, sign-in dropped from
+60s to **15s** and can genuinely fire if sign-in breaks; the `webServer` boot timeout is **420s**
+against a **measured** 273s cold build (not a guess), because a `next build` really does take that
+long once and the suite must survive it once per run.
+
+*What this does NOT change.* `reuseExistingServer` stays `false` — see the entry below on why that
+matters even more with a build in the command.
+
+## Phase 6 E2E: build and serve share ONE wrapped command (PR #25, 2026-08-23)
+
+`playwright.config.ts`'s `webServer.command` is
+`node scripts/with-ca-certs.mjs --env-file=.env.test sh -c 'pnpm build && pnpm start'` — a single
+wrapped invocation, not a build step followed by a separately-wrapped serve step.
+
+*This is the load-bearing reason, not a convenience.* `NEXT_PUBLIC_*` environment variables are
+**inlined into the client JavaScript bundle at build time** — they do not exist at request time the
+way server-only env vars do. If the build ran outside the `--env-file` wrapper (e.g. a bare `pnpm
+build` before a wrapped `pnpm start`), it would read `.env.local` — the **dev/prod** Supabase
+project — and bake those `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` values directly
+into the client bundle. The server-side wrapper on `pnpm start` would then be pointing the *server*
+at the test project while the *browser* — driven by Playwright, running the actual assertions — was
+still talking to the dev/prod project's Supabase Auth and REST endpoints, because that's what got
+compiled into the JS it downloaded.
+
+**The suite would have gone green while driving a real browser against production**, and nothing in
+the existing guards would have caught it: `assertTestProjectRef` (`src/db/load-env.ts`) reads
+`.env.test` off disk and checks the *file*, not what actually got compiled into the bundle — a build
+run against the wrong file would pass that check while shipping the wrong project entirely. This is
+the reason both steps live inside one wrapped command rather than two independently-correct-looking
+ones: correctness here depends on the *same* environment being present for both steps, not on each
+step individually being pointed somewhere valid.
+
+## Claude Code may execute `gh pr merge` (2026-08-23/24)
+
+**Both positions, recorded.** The advisory position was that Claude Code executing `gh pr merge`
+removes the last human gate on the one shared, hard-to-reverse action in this workflow — merging to
+`main` is visible to everyone and not cleanly undone the way a bad commit on a feature branch is.
+Daniels overruled that position as an accepted trade: the friction of typing the merge command
+himself on every PR was worth removing, and the actual decision to merge — reviewing the PR, judging
+it ready — still happens before the instruction is given, same as before. See WORKFLOW.md's amended
+merge rule: what changed is who types the command, not who decides to merge.
+
+**The grant is scoped, not blanket.** `.claude/settings.local.json` allows exactly
+`Bash(gh pr merge:*)` — not `gh` broadly, and explicitly not `git push`. Executing a merge on an
+explicitly-approved, green PR is a different risk than being able to run arbitrary `gh` subcommands
+or push directly to `main`, and the permission grant is written to reflect only the former.
+
+**The file is machine-local and gitignored** — `.claude/settings.local.json` lives outside the repo's
+own policy (`.claude/settings.json`, tracked and shared) precisely because this is one operator's
+tooling permission on one machine, not a rule every clone of this repo should inherit.
+
 ## Production 404 root cause, carried forward from the closed PR #6 (2026-08-24)
 
 This text is carried forward verbatim from PR #6 (`fix/ci-build-step`), which was closed unmerged
@@ -2276,3 +2337,101 @@ instead of a frozen last frame — the placeholder already existed for the
 No screen share (§9 still names it, still absent rather than stubbed), no
 chat, no `network-quality`, no changes to end-session, the elapsed SQL, or
 Part 3C's scope (`tutor_earnings`, the completion cron).
+
+## A claimed pass with no captured output isn't evidence (2026-08-24)
+
+PROGRESS.md and SPEC §15 path 3 previously said `tests/e2e/presence-ungraceful-exit.spec.ts`
+"still needs a green run" — false. PR #25 (`f7b8a0a`) has detailed, specific evidence of five real
+fixes made against the running spec (measured server latencies, piped server logs, trace excerpts);
+that kind of detail doesn't come from iterating against a spec nobody ran. But the opposite claim —
+"confirmed green, 2 passed" — was equally wrong to assert: no runner output (a `2 passed` line, a
+duration) appears anywhere in #25's diff or commit message, and no CI workflow has ever run
+`test:e2e`. The "2 passed, 2.4m/2.6m" figure lived only in prose, in the now-closed PR #26.
+
+**This is the same standard the project already applies to its own tooling** — RUNBOOK's test-project
+verification insists on "confirmed by querying the test database directly, not just trusting the
+script's own log," and the `CRON_SECRET` rotation entry insists on a live bearer-token call before
+calling a rotation done. A pass asserted in prose, without the tool's own output kept alongside it,
+does not meet that bar. It hadn't been applied to a *human-reported* claim before — a session's own
+narrative account of "it went green" — until now: the same skepticism toward unverified success
+applies regardless of whether the claim comes from a script's log or from a person's summary of a
+local run.
+
+**Correction:** the spec was debugged to passing locally, on one machine, during PR #25. That pass
+was never captured as runner output and never independently or CI-verified. It needs a re-run with
+the runner's own output kept before it can be cited as settled or wired in as a CI gate.
+
+## Google OAuth enabled; signup "no confirmation email" misdiagnosed as a code defect (2026-08-24)
+
+Two Supabase dashboard sessions, no application code touched. Docs corrected in PROGRESS.md the same
+day; recorded here because both started from a plausible-looking symptom that pointed at the wrong
+layer.
+
+**Google OAuth — enabled and verified.** A Google Cloud OAuth client (consent screen External;
+scopes `email`/`profile`/`openid`) was created with its **authorized redirect URI set to the
+Supabase callback** (`https://<project-ref>.supabase.co/auth/v1/callback`), not our own
+`/auth/callback` — Google redirects to Supabase, which then redirects to ours (RUNBOOK already
+documented this shape; tonight was the "actually do it" pass). Client id + secret went into
+Supabase → Authentication → Providers → Google, provider enabled, verified by a live click-through
+against the deployed Vercel app.
+
+- **Trap worth recording because it cost time:** the Client IDs field in Supabase's Google provider
+  panel takes the long Google client id ending in `.apps.googleusercontent.com` — **not** the
+  human-readable name given to the OAuth client inside Google Cloud Console. Entering the name
+  silently produces a client Google will not recognise (no error at save time; it just fails at the
+  `/authorize` step). *How to apply:* when wiring any OAuth provider into Supabase, copy the id field
+  labeled with the provider's own id format, never the console's display name for the credential.
+- `pnpm db:verify-rls` has not been re-run since. It is the only observable proxy for the SPEC §7.1
+  same-email-linking guarantee (RUNBOOK: the dashboard's own linking flag can't be read back via the
+  API we're willing to hold a token for), so same-email linking between a password account and the
+  new Google identity is asserted from the general finding, not freshly confirmed. Carried forward in
+  PROGRESS.md.
+
+**Signup "confirmation email not arriving" — misdiagnosed.** The investigation started from a
+believable symptom (repeat signup attempts on a test address produced no visible email) and initial
+suspicion fell on the signup code path or the email sender. Direct evidence ruled both out: Supabase
+auth logs and an `auth.users` query showed `dadatosynseun@gmail.com` was created and confirmed
+2026-08-21 with `confirmation_sent_at` **0.06s** after `created_at` — delivery was never broken.
+
+- **What the symptom actually was: anti-enumeration behaviour working as designed, not a bug.**
+  Signing up again on an address that is already confirmed logs `auth_event.action =
+  "user_repeated_signup"`, returns **200**, and sends **no email** — Supabase's defence against using
+  the signup endpoint to probe which emails are registered. Our `/signup` page correctly shows the
+  same generic "check your email" state whether or not the account already existed, per SPEC §7.1's
+  existing rule that auth responses must not reveal account existence (the same principle PROGRESS.md
+  already records for login failure and password reset). **Do not "fix" this by making the response
+  differ for an existing account** — that would be reintroducing the exact leak §7.1 forbids. Recorded
+  here because the generic state is easy to misread as a UX defect by a future reader who doesn't
+  know the repeat-signup case is deliberate; the two real faults below were the actual bugs.
+- **Real fault 1 — Site URL still pointed at localhost after deployment.** Supabase's URL
+  Configuration has exactly **one** Site URL, and it was left at `http://localhost:3000` after the
+  app went to Vercel. A confirmation email's action link is built from Site URL, so every confirmation
+  email sent to a real user opened `localhost:3000` on *their* machine — dead, with no error surfaced
+  anywhere in our stack or Supabase's. Now `https://nowtutors-brown.vercel.app`.
+- **Real fault 2 — `/auth/callback` was not in the redirect-URL allow-list.** Supabase only honours an
+  `emailRedirectTo` that matches an allow-listed URL; ours pointed at `/auth/callback` but that path
+  had never been added, so Supabase silently discarded it and fell back to the Site URL root. The
+  email link landed on `/?code=...` — a page with no code-exchange handler — leaving the user signed
+  out with no error. Allow-list now carries `http://localhost:3000/auth/callback`,
+  `https://nowtutors-brown.vercel.app/auth/callback`, and `https://*.vercel.app/auth/callback`.
+- **The later "Invalid email or password" was fault 2's consequence, not a third bug.** With the code
+  never exchanged, the account stayed unconfirmed; Supabase returns the same generic sign-in error for
+  an unconfirmed account as for a wrong password (again, correctly not distinguishing the two — same
+  §7.1 principle). No separate login-path defect exists.
+- **One Site URL, two environments — accepted trade-off, not solved.** This Supabase project serves
+  both local dev and the deployed app, and Site URL takes a single value platform-wide. It now points
+  at the deployed app rather than localhost, which is the right default for real users signing up —
+  but it means a developer testing signup **locally** whose confirmation link falls back to Site URL
+  (e.g. a future redirect-URL gap) lands on the deployed app, not their local server. Localhost still
+  works today only because it is explicitly allow-listed alongside the production origins. *Why not
+  "solved" properly:* a per-environment Site URL would need either a second Supabase project (real
+  infra cost, and PROGRESS.md/RUNBOOK already record that prod runs on the same project as dev for
+  other reasons) or a custom email-template rewrite of the action link, neither of which this session
+  had grounds to take on for a docs-and-config night. Flagged so a future reader who hits this doesn't
+  read it as an oversight.
+- **NOT YET VERIFIED.** No clean end-to-end click-through (signup on Vercel → email → `/auth/callback`
+  → `/onboarding`, signed in) has been done on the corrected settings — blocked by `HTTP 429
+  over_email_send_rate_limit` from Supabase's built-in sender after tonight's testing volume. The
+  corrected `redirect_to` was visible in the 429 log lines themselves, which confirms the app sends
+  the right callback URL, but the full flow through a successful send is still unproven. Carried
+  forward in PROGRESS.md as a cold re-test once the rate limit resets.
