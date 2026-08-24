@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { DbTransaction } from "@/db";
@@ -211,43 +211,27 @@ export async function waitUntilBlockedBy(
 }
 
 /**
- * Postgres timestamp → microseconds since the epoch.
+ * A `Date` from the code under test, as milliseconds — and a hard assertion
+ * that it really is a `Date`.
  *
- * **Drizzle's raw `execute()` returns `timestamptz` as a STRING, not a `Date`**
- * — it turns off postgres-js's own type parsers and relies on its column
- * mappers to convert, and a raw `sql` query has no column mappers. So
- * `stampSessionJoin`'s `JoinStamp`, which declares `Date | null`, actually
- * carries strings like `2026-08-24 10:48:18.051472+00` at runtime. Nothing
- * shipped reads those three fields today (`/api/agora/token` uses only
- * `agoraChannel`), so it is latent rather than broken — but Part 3B computes
- * elapsed time from `startedAt`, which is where a `.getTime()` on a string
- * stops being latent. Reported, deliberately not fixed here: this pass changes
- * no shipped behaviour. See docs/PROGRESS.md.
- *
- * Accepts both shapes so the assertions stay true whichever the driver hands
- * back, and keeps full microsecond precision — `Date` would truncate to
- * milliseconds and could make two genuinely different stamps compare equal.
+ * This deliberately has **no string branch**. It used to accept both shapes,
+ * because drizzle's raw `execute()` returned `timestamptz` as text while
+ * `JoinStamp` declared `Date`. That is now fixed at the query boundary
+ * (`toDate` in `db/queries/sessions.ts`), and a normaliser that still tolerated
+ * text would stay green if the conversion were ever reverted — on the column
+ * that decides what a student is billed. Permissiveness here would hide exactly
+ * the regression this lane exists to catch, so a string throws.
  */
-export function toEpochMicros(value: Date | string): number {
-  if (value instanceof Date) return value.getTime() * 1_000;
-
-  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?(.*)$/.exec(
-    value,
-  );
-  if (!match) {
-    throw new Error(`Unrecognised Postgres timestamp: ${JSON.stringify(value)}`);
+export function epochMs(value: Date | null): number {
+  if (!(value instanceof Date)) {
+    throw new Error(
+      `Expected a Date from the code under test, got ${typeof value} ` +
+        `(${JSON.stringify(value)}). stampSessionJoin promises Date in ` +
+        `JoinStamp; if this is a string, the boundary conversion in ` +
+        `db/queries/sessions.ts has regressed.`,
+    );
   }
-  const [, date, time, fraction = "", zone] = match;
-  // Postgres writes `+00`; `Date.parse` wants `+00:00` or `Z`. The fractional
-  // part is parsed separately rather than handed to `Date.parse`, which would
-  // drop everything below a millisecond.
-  const normalisedZone =
-    zone === "" ? "Z" : /^[+-]\d{2}$/.test(zone) ? `${zone}:00` : zone;
-  const ms = Date.parse(`${date}T${time}${normalisedZone}`);
-  if (Number.isNaN(ms)) {
-    throw new Error(`Unparseable Postgres timestamp: ${JSON.stringify(value)}`);
-  }
-  return ms * 1_000 + Math.round(Number(`0${fraction || ".0"}`) * 1_000_000);
+  return value.getTime();
 }
 
 export interface FixtureBooking {
@@ -312,17 +296,25 @@ export async function deleteFixtureBooking(
   await conn.db.execute(sql`delete from bookings where id = ${bookingId}`);
 }
 
-/** The columns under test, read back outside any of the racing transactions. */
+/**
+ * The columns under test, read back outside any of the racing transactions.
+ *
+ * Uses the **query builder**, not raw `execute()`. That is deliberate: the
+ * builder decodes `timestamptz` into a `Date` through drizzle's own column
+ * mapper, which is a different mechanism from the boundary conversion the code
+ * under test applies. So every assertion comparing a returned stamp against
+ * this read is comparing two independently-decoded values — if `toDate` ever
+ * drifted, the comparison would catch it rather than agree with it.
+ */
 export async function readJoinColumns(conn: TestConnection, bookingId: string) {
-  const rows = await conn.db.execute<{
-    student_joined_at: Date | string | null;
-    tutor_joined_at: Date | string | null;
-    started_at: Date | string | null;
-    agora_channel: string | null;
-  }>(sql`
-    select student_joined_at, tutor_joined_at, started_at, agora_channel
-      from bookings
-     where id = ${bookingId}
-  `);
-  return rows[0];
+  const [row] = await conn.db
+    .select({
+      studentJoinedAt: schema.bookings.studentJoinedAt,
+      tutorJoinedAt: schema.bookings.tutorJoinedAt,
+      startedAt: schema.bookings.startedAt,
+      agoraChannel: schema.bookings.agoraChannel,
+    })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId));
+  return row;
 }

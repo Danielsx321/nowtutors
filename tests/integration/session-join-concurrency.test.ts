@@ -15,7 +15,7 @@ import {
   deleteFixtureBooking,
   openConnection,
   readJoinColumns,
-  toEpochMicros,
+  epochMs,
   waitUntilBlockedBy,
   withExecutor,
   type FixtureBooking,
@@ -67,17 +67,36 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
   let connB: TestConnection;
   /** A third connection, so the lock can be observed without joining the fight. */
   let watcher: TestConnection;
-  let fixture: FixtureBooking;
-  let openTransactions: HeldTransaction[];
+  let fixture: FixtureBooking | undefined;
+  let openTransactions: HeldTransaction[] = [];
+  /** Every connection actually opened, in order, so teardown closes only those. */
+  const opened: TestConnection[] = [];
+
+  function open(label: string): TestConnection {
+    const conn = openConnection(label);
+    opened.push(conn);
+    return conn;
+  }
 
   beforeAll(() => {
-    connA = openConnection("A");
-    connB = openConnection("B");
-    watcher = openConnection("watcher");
+    connA = open("A");
+    connB = open("B");
+    watcher = open("watcher");
   });
 
   afterAll(async () => {
-    await Promise.all([connA.end(), connB.end(), watcher.end()]);
+    // Close what exists; say nothing about what does not.
+    //
+    // `beforeAll` can abort partway through, and the case that matters is the
+    // safety guard refusing a connection string that is not the test project:
+    // `openConnection("A")` throws, so all three handles stay undefined. The
+    // previous `Promise.all([connA.end(), …])` then threw
+    // "Cannot read properties of undefined (reading 'end')" ON TOP of the
+    // guard's message — which is how a working guard gets misdiagnosed as a
+    // broken test. The guard's own error must be the first and clearest thing
+    // in the output, so teardown iterates only what was really opened and
+    // swallows close failures.
+    await Promise.all(opened.splice(0).map((conn) => conn.end().catch(() => {})));
   });
 
   beforeEach(async () => {
@@ -92,7 +111,10 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
     for (const held of openTransactions) {
       await held.rollback().catch(() => {});
     }
-    await deleteFixtureBooking(watcher, fixture.bookingId);
+    // Same reasoning as afterAll: `beforeEach` may have failed before the
+    // fixture existed, and a TypeError here would bury why.
+    if (fixture) await deleteFixtureBooking(watcher, fixture.bookingId);
+    fixture = undefined;
   });
 
   /** Open a transaction the teardown is guaranteed to close. */
@@ -106,14 +128,14 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
   async function stampAndCommit(conn: TestConnection, userId: string) {
     const held = await begin(conn);
     const result = await withExecutor(held.tx, () =>
-      stampSessionJoin(fixture.bookingId, userId),
+      stampSessionJoin(fixture!.bookingId, userId),
     );
     await held.commit();
     return result;
   }
 
   it("sequential both-party join: started_at is the SECOND stamp's moment, not the first's", async () => {
-    const first = await stampAndCommit(connA, fixture.studentId);
+    const first = await stampAndCommit(connA, fixture!.studentId);
 
     expect(first).not.toBeNull();
     expect(first!.studentJoinedAt).not.toBeNull();
@@ -127,28 +149,37 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
     // transaction timestamp, so each stamp carries its own transaction's start.
     await delay(1_100);
 
-    const second = await stampAndCommit(connB, fixture.tutorId);
+    const second = await stampAndCommit(connB, fixture!.tutorId);
     expect(second).not.toBeNull();
     expect(second!.startedAt).not.toBeNull();
 
-    const row = await readJoinColumns(watcher, fixture.bookingId);
-    expect(row.student_joined_at).not.toBeNull();
-    expect(row.tutor_joined_at).not.toBeNull();
-    expect(row.started_at).not.toBeNull();
+    // The shape itself, asserted rather than assumed. `JoinStamp` declares
+    // `Date`; drizzle's raw execute() yields text, and `toDate` at the query
+    // boundary is what reconciles them. If that conversion is ever dropped
+    // these three fail immediately, on the billing column, instead of surfacing
+    // as a `.getTime is not a function` inside Part 3B's timer.
+    expect(second!.startedAt).toBeInstanceOf(Date);
+    expect(second!.studentJoinedAt).toBeInstanceOf(Date);
+    expect(second!.tutorJoinedAt).toBeInstanceOf(Date);
+
+    const row = await readJoinColumns(watcher, fixture!.bookingId);
+    expect(row.studentJoinedAt).not.toBeNull();
+    expect(row.tutorJoinedAt).not.toBeNull();
+    expect(row.startedAt).not.toBeNull();
 
     // started_at IS the second arrival, exactly — same transaction, same now().
-    expect(toEpochMicros(row.started_at!)).toBe(
-      toEpochMicros(row.tutor_joined_at!),
+    expect(epochMs(row.startedAt!)).toBe(
+      epochMs(row.tutorJoinedAt!),
     );
     // ...and is strictly later than the first arrival, which is the assertion
     // that fails under first-arrival semantics (the build brief's version, and
     // a silent overcharge — DECISIONS.md, Phase 6 Part 3A item 2).
-    expect(toEpochMicros(row.started_at!)).toBeGreaterThan(
-      toEpochMicros(row.student_joined_at!),
+    expect(epochMs(row.startedAt!)).toBeGreaterThan(
+      epochMs(row.studentJoinedAt!),
     );
     // The first party's stamp was not disturbed by the second write.
-    expect(toEpochMicros(row.student_joined_at!)).toBe(
-      toEpochMicros(first!.studentJoinedAt!),
+    expect(epochMs(row.studentJoinedAt!)).toBe(
+      epochMs(first!.studentJoinedAt!),
     );
   });
 
@@ -158,7 +189,7 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
 
     // A stamps and holds the row lock. Nothing is committed yet.
     const resultA = await withExecutor(heldA.tx, () =>
-      stampSessionJoin(fixture.bookingId, fixture.studentId),
+      stampSessionJoin(fixture!.bookingId, fixture!.studentId),
     );
     expect(resultA).not.toBeNull();
     expect(resultA!.studentJoinedAt).not.toBeNull();
@@ -168,7 +199,7 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
     // snapshot predates A's uncommitted write.
     let settledEarly = false;
     const pendingB = withExecutor(heldB.tx, () =>
-      stampSessionJoin(fixture.bookingId, fixture.tutorId),
+      stampSessionJoin(fixture!.bookingId, fixture!.tutorId),
     ).then((result) => {
       settledEarly = true;
       return result;
@@ -192,78 +223,78 @@ describe("stampSessionJoin — concurrency properties (test project)", () => {
     expect(resultA!.startedAt).toBeNull();
     expect(resultB!.startedAt).not.toBeNull();
 
-    const row = await readJoinColumns(watcher, fixture.bookingId);
-    expect(row.started_at).not.toBeNull();
-    expect(toEpochMicros(row.started_at!)).toBe(
-      toEpochMicros(resultB!.startedAt!),
+    const row = await readJoinColumns(watcher, fixture!.bookingId);
+    expect(row.startedAt).not.toBeNull();
+    expect(epochMs(row.startedAt!)).toBe(
+      epochMs(resultB!.startedAt!),
     );
 
     // THE assertion the CTE draft fails. B's write, computed from a stale
     // snapshot, would push student_joined_at back to null and erase the stamp A
     // had just made — leaving a session that is "started" with a participant
     // who, per the row, never arrived.
-    expect(row.student_joined_at).not.toBeNull();
-    expect(row.tutor_joined_at).not.toBeNull();
+    expect(row.studentJoinedAt).not.toBeNull();
+    expect(row.tutorJoinedAt).not.toBeNull();
   });
 
   it("lone participant: started_at stays null while the other party never joins", async () => {
-    const first = await stampAndCommit(connA, fixture.studentId);
+    const first = await stampAndCommit(connA, fixture!.studentId);
     expect(first!.studentJoinedAt).not.toBeNull();
     expect(first!.startedAt).toBeNull();
 
     // A refresh, or Part 3B's token renewal, by the same lone party.
     await delay(1_100);
-    const again = await stampAndCommit(connB, fixture.studentId);
+    const again = await stampAndCommit(connB, fixture!.studentId);
     expect(again!.startedAt).toBeNull();
-    expect(toEpochMicros(again!.studentJoinedAt!)).toBe(
-      toEpochMicros(first!.studentJoinedAt!),
+    expect(epochMs(again!.studentJoinedAt!)).toBe(
+      epochMs(first!.studentJoinedAt!),
     );
 
-    const row = await readJoinColumns(watcher, fixture.bookingId);
-    expect(row.tutor_joined_at).toBeNull();
+    const row = await readJoinColumns(watcher, fixture!.bookingId);
+    expect(row.tutorJoinedAt).toBeNull();
     // No clock, no billing. A student waiting alone for a tutor who never
     // arrives is not in a session (§7.4 has no refund and no grace period).
-    expect(row.started_at).toBeNull();
+    expect(row.startedAt).toBeNull();
   });
 
   it("idempotent after both joined: re-stamping either party moves nothing", async () => {
-    await stampAndCommit(connA, fixture.studentId);
+    await stampAndCommit(connA, fixture!.studentId);
     await delay(1_100);
-    await stampAndCommit(connB, fixture.tutorId);
+    await stampAndCommit(connB, fixture!.tutorId);
 
-    const before = await readJoinColumns(watcher, fixture.bookingId);
-    expect(before.started_at).not.toBeNull();
+    const before = await readJoinColumns(watcher, fixture!.bookingId);
+    expect(before.startedAt).not.toBeNull();
 
     // Both of these happen for real: a browser refresh re-requests a token, and
     // Part 3B's renewal will re-run this write on a timer for the whole session.
     await delay(1_100);
-    const studentRefresh = await stampAndCommit(connA, fixture.studentId);
-    const tutorRefresh = await stampAndCommit(connB, fixture.tutorId);
+    const studentRefresh = await stampAndCommit(connA, fixture!.studentId);
+    const tutorRefresh = await stampAndCommit(connB, fixture!.tutorId);
 
     for (const result of [studentRefresh, tutorRefresh]) {
-      expect(toEpochMicros(result!.startedAt!)).toBe(
-        toEpochMicros(before.started_at!),
+      expect(epochMs(result!.startedAt!)).toBe(
+        epochMs(before.startedAt!),
       );
-      expect(toEpochMicros(result!.studentJoinedAt!)).toBe(
-        toEpochMicros(before.student_joined_at!),
+      expect(epochMs(result!.studentJoinedAt!)).toBe(
+        epochMs(before.studentJoinedAt!),
       );
-      expect(toEpochMicros(result!.tutorJoinedAt!)).toBe(
-        toEpochMicros(before.tutor_joined_at!),
+      expect(epochMs(result!.tutorJoinedAt!)).toBe(
+        epochMs(before.tutorJoinedAt!),
       );
     }
 
-    const after = await readJoinColumns(watcher, fixture.bookingId);
-    expect(toEpochMicros(after.started_at!)).toBe(
-      toEpochMicros(before.started_at!),
+    const after = await readJoinColumns(watcher, fixture!.bookingId);
+    expect(epochMs(after.startedAt!)).toBe(
+      epochMs(before.startedAt!),
     );
-    expect(toEpochMicros(after.student_joined_at!)).toBe(
-      toEpochMicros(before.student_joined_at!),
+    expect(epochMs(after.studentJoinedAt!)).toBe(
+      epochMs(before.studentJoinedAt!),
     );
-    expect(toEpochMicros(after.tutor_joined_at!)).toBe(
-      toEpochMicros(before.tutor_joined_at!),
+    expect(epochMs(after.tutorJoinedAt!)).toBe(
+      epochMs(before.tutorJoinedAt!),
     );
     // Backfilled once and stable — a second channel value mid-session would put
     // the two participants in different rooms.
-    expect(after.agora_channel).toBe(`session_${fixture.bookingId}`);
+    expect(after.agoraChannel).toBe(`session_${fixture!.bookingId}`);
   });
 });
