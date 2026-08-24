@@ -97,9 +97,9 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
       toast.error(res.error);
       return;
     }
-    // TODO(Phase 6 Part 3): /session/[bookingId] — the Agora room — lands in
-    // Part 3. The booking is created `in_progress` with its channel already set,
-    // so this navigation is correct now and the page it opens is what is missing.
+    // The booking is created `in_progress` with its channel already set, so the
+    // room (Phase 6 Part 3A) opens straight into a join — the tutor's arrival is
+    // stamped by /api/agora/token, not by anything here.
     router.push(`/session/${res.bookingId}`);
   }
 

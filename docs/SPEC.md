@@ -1028,14 +1028,16 @@ The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.
 
 Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy or modify it.
 
-`POST /api/agora/token` with `{ channel, purpose: 'session' | 'broadcast' }`:
+`POST /api/agora/token` with `{ bookingId }` for a session, or `{ broadcastId }` for a broadcast:
 
-1. `requireUser()`.
-2. For `session`: parse the booking id from the channel, confirm the caller is a participant and the booking is `in_progress`. Role → `publisher`.
+1. `requireApiUser()` — the API-route guard (§5 Layer 2), not the redirect-based page guard.
+2. For a session: load the booking by id, confirm the caller is its `student_id` or `tutor_id`, and confirm `status = 'in_progress'`. Role → `publisher`, for **both** participants. The channel comes from `bookings.agora_channel`, never from the request.
 3. For `broadcast`: parse the broadcast id. If caller is the host → `publisher`; otherwise, if the broadcast is `live` → `subscriber`.
-4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity.
+4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity. The token itself is minted at the service's wildcard `uid/0`, which authorizes the *channel* for any uid; the client then joins under its own derived uid.
 5. Fetch from the Render service, return `{ token, uid, appId, channel, expiresAt }` with a TTL shorter than the token's.
 6. Client renews at 80% of TTL via Agora's `token-privilege-will-expire` event.
+
+**The request carries an id, not a channel** (amended in Phase 6 Part 3A; this line previously specified `{ channel, purpose }` with the booking id parsed back out of the channel string). Taking the id and reading the channel off the row is the safer direction — a caller cannot name a channel they were not admitted to — and the id is what the client actually holds after the §7.4 handshake. The `purpose` discriminator is deferred until broadcasts exist (Phase 9); until then the two shapes are distinguished by which id is present.
 
 Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tolerate SSR), expose `join`, `leave`, `toggleMic`, `toggleCamera`, `startScreenShare`, and handle `user-published`, `user-unpublished`, `user-left`, `connection-state-change`, `network-quality`.
 
@@ -1046,9 +1048,21 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > correct and is not an inference; the live app's `live_session_room` element (content type
 > `Booking`) runs the Agora Web SDK in `rtc` mode two-way: the tutor publishes video + audio, the
 > student publishes audio only, and both subscribe to the other. Tokens come from the same
-> `AGORA_TOKEN_SERVICE_URL` at `/rtc/{channel}/{role}/uid/0/?expiry=3600`, with role chosen
-> client-side by comparing the current user's profile id to the booking's tutor profile id — the
-> same publisher/subscriber split this section already specifies. Bubble's channel naming
+> `AGORA_TOKEN_SERVICE_URL` at `/rtc/{channel}/{role}/uid/0/?expiry=3600`. **Bubble derives the
+> token role in browser JavaScript**, comparing the current user's profile id to the booking's
+> tutor profile id and requesting `publisher` for the tutor, `subscriber` for the student — and
+> the student then publishes microphone audio on that subscriber token anyway, which works only
+> because Agora's co-host authentication is switched off for the project. **This rebuild does
+> neither.** Step 2 above stands unchanged: the role is derived server-side in
+> `/api/agora/token` from the booking row, and **both participants receive a `publisher` token**,
+> because a subscriber token forbids the audio the student is required to send the moment that
+> console setting is ever turned on. The tutor/student asymmetry is real but it is a *media*
+> decision — the client wrapper publishes camera + microphone for the tutor and microphone only
+> for the student — not a token-role decision. An earlier revision of this note described
+> Bubble's client-side split as "the same publisher/subscriber split this section already
+> specifies"; that was wrong on both halves (§9 step 2 specifies an unconditional `publisher`,
+> and a client-chosen role is precisely what this section exists to prevent) and is corrected
+> here. See DECISIONS, Phase 6 Part 3A. Bubble's channel naming
 > (`"channel_" + tutor profile id`, one channel per tutor rather than per booking) is **not**
 > reproduced here; `agora_channel = session_{booking_id}` (§4.3) is a deliberate, safer departure,
 > not an oversight. An earlier reading of the live app as "Agora is broadcast-only" was
@@ -1057,6 +1071,38 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > broadcast (channel keyed to the tutor's profile id, shown only while the tutor is live) — a
 > broadcast preview widget, not a session, and not evidence that §4.6's broadcasts are anything
 > other than net-new. See DECISIONS, Finding A.
+
+> **Part 3A implementation (Phase 6, `feat/phase6-part3a-session-room`).** The room shell and the
+> join path are built; the controls are not.
+>
+> - **`POST /api/agora/token`** takes `{ bookingId }` and returns
+>   `{ token, uid, appId, channel, expiresAt, isTutor }`. Participation, booking state and role are
+>   one pure decision in `lib/agora/session-access.ts`, unit-tested without a database. A booking
+>   that does not exist and one the caller is not part of return the **same 404**, so the endpoint
+>   cannot be used to discover booking ids.
+> - **`isTutor` is the only asymmetry that reaches the client**, and it is server-derived. The
+>   wrapper publishes camera + microphone for the tutor and microphone only for the student; both
+>   hold a `publisher` token (step 2).
+> - **First-join writes happen in the token route**, mirroring §7.7 step 4 — the sibling LessonSpace
+>   flow stamps `*_joined_at` inside its own join route. One idempotent `UPDATE`
+>   (`db/queries/sessions.ts`) backfills `agora_channel` if null, stamps the arriving party's
+>   `*_joined_at`, and sets `started_at` **only on the write that makes both non-null** (§4.3: "first
+>   moment both were present"). It is a single statement referencing the target row — not a CTE —
+>   so that under READ COMMITTED a concurrent join re-evaluates against the locked row instead of
+>   writing back a stale null. Status is untouched: instant bookings are already `in_progress` from
+>   the accept transaction (§7.4).
+> - **Route placement:** `/session/[bookingId]` lives in a new `(session)` route group, because it is
+>   the one authenticated area both roles enter — a `requireRole` in either existing group's layout
+>   would redirect half the room away from its own session. The layout guards signed-in + onboarded
+>   + not suspended; participation is checked by the page, and again by the token route.
+> - **A `scheduled` booking reaching `/session/` renders an honest Phase 7 placeholder.** Its real
+>   home is `/classroom/[bookingId]` (§6, §7.7). Nothing is stubbed and no join is faked.
+> - **Deferred to Part 3B:** the elapsed timer, credits consumed/earned, mute and camera toggles,
+>   screen share, chat, end-session, `network-quality`, and the 80%-TTL renewal in step 6. The
+>   `toggleMic` / `toggleCamera` / `startScreenShare` surface named above is therefore not yet on
+>   `lib/agora/client.ts`, which exposes `join` and `leave` only.
+> - **The warm ping is live** in `cron/sweep-presence`, hitting the service's `/ping` endpoint. It
+>   never throws and cannot fail the sweep.
 
 ---
 

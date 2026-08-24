@@ -1627,3 +1627,123 @@ note.
 Bubble's payout mechanism is a manual admin approval of a `WithdrawalRequest` followed by a PayPal
 Payout. Relevant to the held Stripe Connect cross-border question (§2, "Not in the stack,
 deliberately") — recorded here for when that question is revisited, not actioned in this pass.
+
+---
+
+## Phase 6 Part 3A — session room shell + Agora join (`feat/phase6-part3a-session-room`, 2026-08-24)
+
+Two of these overrode the build brief, which asked for the opposite in both cases. Both were
+escalated before any code was written and both were confirmed. They are recorded here because the
+reasoning is not recoverable from the diff.
+
+### 1. Both participants get a `publisher` token — the student is NOT a subscriber
+
+The brief specified `publisher` for the tutor and `subscriber` for everyone else, framed as a
+security improvement over Bubble's client-side role choice. It is not one, and it contradicted its
+own next paragraph, which required the student to publish microphone audio.
+
+An Agora RTC token minted with `Role_Subscriber` does not authorize publishing. Whether the SD-RTN
+actually rejects the student's microphone depends on **co-host authentication**, a per-project
+Agora console setting. Bubble has it off, which is the only reason the live app's
+subscriber-token-that-publishes works at all (Finding A). Reproducing that would make a working
+session depend on a console toggle nothing in this repo owns, guards, or would notice being
+changed — and the failure mode is silent: the student is simply inaudible, discovered only when two
+real people are in a room.
+
+SPEC §9 step 2 already said `publisher` unconditionally for a session. The **media** asymmetry —
+tutor publishes camera + microphone, student publishes microphone only — is real and is enforced in
+`lib/agora/client.ts`, which is the layer that actually decides what gets published. The token
+grants capability; the wrapper decides use. *Why it matters:* "the student may not send video" and
+"the student may not send anything" are different rules, and only the first one is the design.
+*How to apply:* asymmetry in what a peer publishes belongs in the media layer, not in the credential.
+
+The security property the brief was reaching for is kept in full and is the actual improvement over
+Bubble: role and identity are derived server-side in `lib/agora/session-access.ts`, from the booking
+row. No request field feeds that decision, and the function's signature — `(row, userId)` — is the
+enforcement. There is a unit test asserting exactly that.
+
+SPEC §9's "Confirmed against the live app" note was **wrong** and is corrected in this commit. It
+described Bubble's client-side comparison as "the same publisher/subscriber split this section
+already specifies"; §9 step 2 specifies no split, and a client-chosen role is the thing §9 exists to
+prevent. That sentence is what created the contradiction the brief inherited.
+
+### 2. `started_at` is set when BOTH parties are present, not on first arrival
+
+The brief said: on first join, if `started_at` is null, set it to `now()`. SPEC §4.3 defines the
+column as "first moment both were present", and §7.7 step 4 implements exactly that for the sibling
+LessonSpace flow.
+
+This is a money bug, not a definitional quibble. §7.4 makes `started_at` the clock the server-side
+hard stop measures against, with **no refund on early exit and no grace period**. Under first-arrival
+semantics, a tutor who opens the room four minutes before the student burns four minutes off a
+session the student paid sixty for, and there is no mechanism to give them back.
+
+*Why it matters:* a clock that starts before the service does is a silent overcharge, and the
+existing no-refund rule means it can never be corrected after the fact. *How to apply:* when a
+timestamp drives billing, its definition is a spec question, not an implementation convenience.
+
+### 3. The join write is one statement referencing the target row, not a CTE
+
+`stampSessionJoin` (`db/queries/sessions.ts`) does the whole first-join decision in a single
+`UPDATE`. The first draft computed the post-join `*_joined_at` values in a CTE and joined to it,
+which reads better and is wrong: under READ COMMITTED, an `UPDATE` that blocks on a row another
+transaction is writing re-evaluates its qualifiers and its `SET` expressions against the **updated**
+row once the lock clears, but a CTE is materialized from the original snapshot and is not re-read.
+Both parties clicking join in the same instant would have had the second write push back the stale
+null and erase the stamp the first had just made.
+
+Referencing `b.*` directly in the `CASE` expressions costs some repetition and buys correctness under
+exactly the concurrency this route sees. `started_at` tests the *other* party's column, because
+after the statement the arriving side is stamped by definition — so the pair is complete precisely
+when the other side already was.
+
+*Why it matters:* "one statement" is not the same as "atomic against a concurrent writer" once a CTE
+is involved. *How to apply:* in a self-referential conditional `UPDATE`, read the target table, not a
+snapshot of it.
+
+### 4. First-join writes live in the token route, not a separate Server Action
+
+Mirrors SPEC §7.7 step 4, where the LessonSpace join route stamps `*_joined_at` at link issuance. A
+browser cannot reach a channel without asking this route for a token, so the stamp cannot be skipped
+by simply not calling something afterwards — which a post-join Server Action could be. Every write is
+idempotent, so the token renewal Part 3B adds will re-run it harmlessly.
+
+### 5. `{ bookingId }`, not `{ channel }` — and the same 404 for missing and forbidden
+
+SPEC §9 previously specified `{ channel, purpose }` with the booking id parsed back out of the
+channel string; the route now takes the id and reads the channel off the row. A caller cannot name a
+channel they were not admitted to, and the id is what the client holds after the §7.4 handshake.
+SPEC §9 amended in this commit.
+
+The brief asked for **403** for a non-participant. It also asked, two steps later, that the room not
+leak whether a booking exists — and a 403 leaks exactly that, since it distinguishes "exists but not
+yours" from "does not exist". Both return **404**, matching `checkDirectPayEligibility` and
+`getBookingDetailForParticipant`, which already made this call for the same reason.
+
+### 6. Token TTL, timeouts, and the wildcard uid
+
+The token is minted at the service's `uid/0` — a **wildcard**, valid for any uid, not "uid zero". The
+per-user deterministic uid (§9 step 4) is what the client joins under. Minting per-uid tokens would
+buy nothing: both uids in a session derive from ids the server has already authorized.
+
+`expiresAt` is reported five minutes before the token's real one-hour expiry, so Part 3B's renewal
+begins while the current token is still valid. The fetch timeout is **45s** and the route's
+`maxDuration` is **60s**, because Render's free tier sleeps and SPEC §9 measures the first request
+after idle at 30–50 seconds (a probe during this build took 22s). A tighter timeout would turn every
+cold start into a failed join. The `/ping` warm ping now in `cron/sweep-presence` is what makes
+reaching that ceiling rare; the generous timeout is what stops it being fatal when the sweep has not
+run recently enough.
+
+### What is NOT here
+
+No migration, no RLS change, nothing in `lib/credits/`, no LessonSpace. End-session, elapsed time and
+the hard stop are Part 3B; `tutor_earnings` and the completion cron are Part 3C. The control bar is
+absent rather than stubbed — an inert control that looks live is worse than one that is not there.
+
+### Known gap
+
+The `started_at` rule is enforced in SQL and the unit suite runs without a database, so it has no
+unit test. The pure pieces around it — participation, role derivation, the token path, the uid — are
+covered in `tests/unit/agora-session-access.test.ts` and `tests/unit/agora-token-contract.test.ts`.
+Verifying "both parties join, `started_at` is written once, a refresh does not move it" needs the
+test Supabase project or an E2E pass, and is worth adding when Part 3B makes the clock observable.

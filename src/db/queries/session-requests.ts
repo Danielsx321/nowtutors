@@ -380,9 +380,10 @@ function acceptTx(tx: DbTransaction): AcceptTx {
         agoraChannel: row.agoraChannel,
         studentNotes: row.studentNotes,
         // started_at stays null: it is "the first moment both were present"
-        // (§4.3), which the session room sets.
-        // TODO(Phase 6 Part 3): /session/[bookingId] stamps student_joined_at /
-        // tutor_joined_at and started_at, and end-session writes tutor_earnings.
+        // (§4.3). `stampSessionJoin` (db/queries/sessions.ts, Part 3A) stamps
+        // student_joined_at / tutor_joined_at on arrival and sets started_at only
+        // on the write that makes BOTH non-null.
+        // TODO(Phase 6 Part 3C): end-session writes tutor_earnings.
       });
     },
 
