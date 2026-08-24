@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { ConnectionState } from "agora-rtc-sdk-ng";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionClient, type SessionTokenGrant } from "@/lib/agora/client";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/features/session/video-tile";
 import { SessionTimer } from "@/components/features/session/session-timer";
 import { EndSessionButton } from "@/components/features/session/end-session-button";
+import { useTokenRenewal } from "@/hooks/use-token-renewal";
 import { getSessionState } from "@/actions/sessions";
 import { cn } from "@/lib/utils";
 
@@ -18,10 +19,11 @@ import { cn } from "@/lib/utils";
  * The instant-session room (SPEC §7.4 in-session UI, §9).
  *
  * **Scope: connect both people, count the booked time down, and stop.** Part 3A
- * built the join; this pass adds the session timer and end-session. The mute and
- * camera toggles, screen share, text chat, credits consumed/earned and the
- * 80%-TTL token renewal are still absent rather than stubbed — an inert control
- * that looks live is worse than one that isn't there.
+ * built the join; Part 3B (#34) added the session timer and end-session; this
+ * pass adds the mic/camera toggles and token renewal that Part 3B carved out.
+ * Screen share, text chat and credits consumed/earned are still absent rather
+ * than stubbed — an inert control that looks live is worse than one that isn't
+ * there.
  *
  * **The countdown is cosmetic and this component never decides the session is
  * over.** It ticks a deadline the server computed from `bookings.started_at`,
@@ -83,6 +85,13 @@ export function SessionRoom({
   const [deadline, setDeadline] = React.useState<string | null>(initialDeadline);
   /** Terminal: the session is over and the room has been torn down. */
   const [finished, setFinished] = React.useState(false);
+  /** The current token's server-reported expiry (§9 step 5). Drives renewal below. */
+  const [tokenExpiresAt, setTokenExpiresAt] = React.useState<string | null>(null);
+  const [micEnabled, setMicEnabled] = React.useState(true);
+  /** Null for a student: no camera track exists to toggle (§9, media split). */
+  const [cameraEnabled, setCameraEnabled] = React.useState<boolean | null>(
+    viewerIsTutor ? true : null,
+  );
 
   /**
    * Held so the room can be torn down from outside the join effect — when the
@@ -177,9 +186,11 @@ export function SessionRoom({
         }
         if (cancelled || client.disposed) return;
 
+        const grant = body as SessionTokenGrant;
         setPhase("joining");
-        await client.join(body as SessionTokenGrant);
+        await client.join(grant);
         if (cancelled || client.disposed) return;
+        setTokenExpiresAt(grant.expiresAt);
         setPhase("live");
       } catch (err) {
         if (cancelled) return;
@@ -204,9 +215,50 @@ export function SessionRoom({
     setLocalVideo(null);
     setRemoteVideo(null);
     setRemotePresent(false);
+    setTokenExpiresAt(null);
     setPhase("connecting");
     setAttempt((n) => n + 1);
   };
+
+  /**
+   * Swap the renewed token in without dropping the connection (§9 step 6),
+   * then re-arm this hook off the fresh `expiresAt` it came back with.
+   */
+  const handleRenewed = React.useCallback(async (grant: SessionTokenGrant) => {
+    try {
+      await clientRef.current?.renewToken(grant.token);
+      setTokenExpiresAt(grant.expiresAt);
+    } catch (err) {
+      setNotice(describeJoinError(err));
+    }
+  }, []);
+
+  /**
+   * The renewal request came back non-OK. It re-ran the same checks the
+   * initial join did (participation, and the elapsed refusal Part 3B added),
+   * so the server has already spoken — ask it what is now true rather than
+   * guess. If the booking elapsed mid-session, `refreshState` is what turns
+   * that into `finish()`; the best-effort deadline transition on the route's
+   * refusal applies unchanged and needs nothing from the client.
+   */
+  const handleRenewalRefused = React.useCallback(() => {
+    void refreshState();
+  }, [refreshState]);
+
+  useTokenRenewal(bookingId, tokenExpiresAt, handleRenewed, handleRenewalRefused);
+
+  const toggleMic = React.useCallback(async () => {
+    const next = await clientRef.current?.toggleMic();
+    if (next !== undefined) setMicEnabled(next);
+  }, []);
+
+  const toggleCamera = React.useCallback(async () => {
+    const next = await clientRef.current?.toggleCamera();
+    // `undefined` means no client yet; `null` means no camera track (student)
+    // and is a legitimate result, not "unknown" — both leave state alone only
+    // in the first case.
+    if (next !== undefined) setCameraEnabled(next);
+  }, []);
 
   // Terminal, and checked before the error branch: a token refusal that arrives
   // *because* the session ended should read as "it's over", not as a failure.
@@ -237,7 +289,12 @@ export function SessionRoom({
       name={viewerName}
       roleLabel="You"
       avatarUrl={viewerAvatarUrl}
-      track={localVideo}
+      // A toggled-off camera renders the same "Camera off" placeholder as one
+      // that never came up, rather than a frozen last frame — `setEnabled`
+      // stops sending, it does not stop this component from being handed a
+      // still-live track object.
+      track={cameraEnabled === false ? null : localVideo}
+      muted={!micEnabled}
       emptyReason={phase === "live" ? "camera-off" : "waiting"}
     />
   ) : (
@@ -267,6 +324,7 @@ export function SessionRoom({
       roleLabel="You"
       avatarUrl={viewerAvatarUrl}
       track={null}
+      muted={!micEnabled}
       emptyReason={phase === "live" ? "audio-only" : "waiting"}
     />
   );
@@ -275,9 +333,8 @@ export function SessionRoom({
     <div className="flex flex-col gap-4">
       <ConnectionBanner phase={phase} connection={connection} />
       {/*
-        The control bar. §9's mic/camera toggles and screen share belong here and
-        are a separate pass — the bar carries the timer and end-session only, and
-        shows nothing where those controls will go rather than showing them inert.
+        The control bar. Screen share still belongs here and is a separate
+        pass; mic/camera toggles are this one.
       */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
         <SessionTimer
@@ -285,11 +342,38 @@ export function SessionRoom({
           durationMinutes={durationMinutes}
           onExpired={refreshState}
         />
-        <EndSessionButton
-          bookingId={bookingId}
-          viewerIsTutor={viewerIsTutor}
-          onEnded={finish}
-        />
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ink-ghost"
+            size="icon"
+            disabled={phase !== "live"}
+            onClick={() => void toggleMic()}
+            aria-pressed={!micEnabled}
+            aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
+          >
+            {micEnabled ? <Mic aria-hidden /> : <MicOff aria-hidden />}
+          </Button>
+          {/* Student sessions publish no camera track (§9); nothing to toggle. */}
+          {cameraEnabled !== null && (
+            <Button
+              type="button"
+              variant="ink-ghost"
+              size="icon"
+              disabled={phase !== "live"}
+              onClick={() => void toggleCamera()}
+              aria-pressed={!cameraEnabled}
+              aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"}
+            >
+              {cameraEnabled ? <Video aria-hidden /> : <VideoOff aria-hidden />}
+            </Button>
+          )}
+          <EndSessionButton
+            bookingId={bookingId}
+            viewerIsTutor={viewerIsTutor}
+            onEnded={finish}
+          />
+        </div>
       </div>
       {notice && (
         <p

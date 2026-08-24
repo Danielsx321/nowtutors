@@ -69,6 +69,8 @@ export class SessionClient {
   #client: IAgoraRTCClient | null = null;
   #mic: IMicrophoneAudioTrack | null = null;
   #camera: ICameraVideoTrack | null = null;
+  #micEnabled = true;
+  #cameraEnabled = true;
   /** In-flight `join()`, so `leave()` can wait for it to unwind before tearing down. */
   #joining: Promise<void> | null = null;
   #remoteUid: string | number | null = null;
@@ -133,6 +135,71 @@ export class SessionClient {
 
     this.#phase = "joined";
     if (this.#camera) this.#handlers.onLocalVideo?.(this.#camera);
+  }
+
+  /**
+   * Mute or unmute the local microphone (SPEC §9's `toggleMic`).
+   *
+   * `setEnabled`, not unpublish/republish: it stops capture and tells the
+   * remote side the track is muted without renegotiating the channel, and it
+   * is the pairing `setMuted` warns not to mix with (SDK docs). Every
+   * participant has a microphone track, so there is nothing to guard here
+   * beyond having joined.
+   *
+   * Returns the enabled state that took effect. If the SDK call itself throws
+   * (device vanished mid-toggle), the flip is rolled back so the returned
+   * value matches what is actually publishing, and the failure surfaces
+   * through `onError` the same way a lost device does elsewhere in this class.
+   */
+  async toggleMic(): Promise<boolean> {
+    if (!this.#mic) return this.#micEnabled;
+    const next = !this.#micEnabled;
+    this.#micEnabled = next;
+    try {
+      await this.#mic.setEnabled(next);
+    } catch (err) {
+      this.#micEnabled = !next;
+      this.#handlers.onError?.(err);
+    }
+    return this.#micEnabled;
+  }
+
+  /**
+   * Turn the local camera on or off (SPEC §9's `toggleCamera`) — **tutor
+   * only**. The student never creates a camera track (§9, confirmed against
+   * the live app: tutor publishes camera + microphone, student publishes
+   * microphone only), so `#camera` is null for a student session and this is
+   * a deliberate no-op returning `null` rather than a state that does not
+   * exist. A caller building the control bar uses that `null` to decide
+   * whether to render the button at all, rather than inferring it from
+   * `isTutor` a second time.
+   */
+  async toggleCamera(): Promise<boolean | null> {
+    if (!this.#camera) return null;
+    const next = !this.#cameraEnabled;
+    this.#cameraEnabled = next;
+    try {
+      await this.#camera.setEnabled(next);
+    } catch (err) {
+      this.#cameraEnabled = !next;
+      this.#handlers.onError?.(err);
+    }
+    return this.#cameraEnabled;
+  }
+
+  /**
+   * Swap in a freshly renewed token without dropping the connection (SPEC §9
+   * step 6). The channel, uid and app id are unchanged — only the credential
+   * is — so this is `client.renewToken`, not a leave/rejoin.
+   *
+   * A no-op before `join()` has reached `"joined"` or after `leave()`: there
+   * is no live `IAgoraRTCClient` to hand the token to, and the caller (the
+   * renewal scheduler) is expected to stop scheduling once the room is gone
+   * rather than rely on this swallowing the call.
+   */
+  async renewToken(token: string): Promise<void> {
+    if (this.#phase !== "joined" || !this.#client) return;
+    await this.#client.renewToken(token);
   }
 
   /**
