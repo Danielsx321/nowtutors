@@ -1972,3 +1972,231 @@ guard's error alone, `[1/1]`.
 
 *Why it matters:* a safety mechanism is only as good as the legibility of its refusal. *How to
 apply:* teardown must tolerate a setup that stopped halfway, or it will bury the reason it stopped.
+
+## Phase 6 Part 3B — server-side end + the elapsed hard stop (`feat/phase6-part3b-end-session`, 2026-08-24)
+
+Scope was deliberately narrower than PROGRESS's "Part 3B": this pass is the
+server-side end and the hard stop only. The §9 control-bar toggles and the
+80%-TTL token renewal were explicitly excluded and are **not stubbed**.
+
+No migration. `bookings.ended_at` and `bookings.billed_minutes` have existed
+since `drizzle/0000` (lines 137–138) and `booking_status` already carried
+`completed`. Nothing under `drizzle/` was touched and no `db:*` script was run
+against the shared project.
+
+### 1. Four actors enforce the deadline, and the token route is NOT the primary
+
+The obvious design makes `/api/agora/token` the enforcer: it already re-runs on
+every join and, later, every renewal. That is right about the shape and wrong
+about the timing. **Without renewal, a token is minted once at join and reported
+valid for ~55 minutes**, so for a 30- or 60-minute session the route fires
+exactly once — *before* the deadline. A deadline check there, alone, enforces
+nothing for the most common durations.
+
+So the actor *at* the deadline is `getSessionState` (`src/actions/sessions.ts`),
+called when the cosmetic countdown reaches zero. The token route is the
+**re-entry** guard — refresh, second tab, reconnect — and becomes the continuous
+guard for free when renewal lands, at which point it is the one path a hostile
+client cannot skip. The end-session action covers early exit. In order of when
+they actually fire: `getSessionState`, the token route, `endSession`, the room
+read, and (not built here) Part 3C's cron.
+
+*Why it matters:* "runs on every request" is only enforcement if a request
+happens at the moment enforcement is needed. *How to apply:* when picking an
+enforcement point, ask when it fires, not how often it could.
+
+**The hard stop must not rest on the token's own one-hour expiry.** That would
+half-work for a 120-minute session by accident and not at all for a 30-minute
+one — the kind of thing that looks like coverage until someone books the wrong
+duration.
+
+### 2. The room's server read refuses but does not write
+
+`/session/[bookingId]` computes `hasElapsed` and renders an honest panel instead
+of mounting the SDK — the same reasoning the existing `NotLive` branch already
+carries: raising a microphone prompt for a session that cannot be joined is worse
+than an explanation. It deliberately performs **no transition**.
+
+A render is reachable by a Next.js prefetch from the bookings list, by a crawler
+holding a session cookie, and twice over in React's development double-render.
+The write is idempotent so none of that would be *unsafe* — but the freshness it
+buys is a few minutes of dashboard accuracy that Part 3C delivers anyway, and
+"renders don't write" is worth more than that.
+
+### 3. Both parties offline is left to Part 3C, as a decision rather than a gap
+
+A booking whose duration elapses with nobody watching stays `in_progress` until
+Part 3C's cron. This is the same structural argument §12 already makes for
+`expire-requests` ("tidy-up, not enforcement"):
+
+- **No money moves at the transition.** Credits were charged at accept. This pass
+  touches no ledger, computes no refund, releases nothing.
+- **The harm the hard stop prevents requires a person in the room.** Bubble's
+  leak is "close the tab and the meter stops while the room stays open" (Decision
+  2). Being tutored requires being present, and every path to being present runs
+  through one of the actors above.
+- **A lingering `in_progress` instant booking blocks nothing.** Checked, not
+  assumed: the accept-time scheduled-collision read filters
+  `eq(bookings.type, "scheduled")` (`db/queries/session-requests.ts`), so it
+  cannot lock a tutor out of accepting the next request — the failure mode §7.4's
+  `scheduled_end_at > now()` amendment was written to prevent does not recur.
+
+The one cost that is not cosmetic — a late `ended_at` starting the tutor's
+earnings hold late — is removed by the cap in the next entry.
+
+### 4. `billed_minutes = duration_minutes` — a SPEC-vs-SPEC conflict, resolved
+
+§4.3 said `billed_minutes` is "instant: actual". §7.4 specifies flat upfront
+billing with no metering, no proration and no refund. Both cannot be true.
+
+**Resolved in favour of §7.4, and §4.3 amended in this commit.** "Actual" is a
+survivor of the metering/hold model that migration `0014` dismantled — it dropped
+`instant_rate_credits_per_minute` and the `instant_hold`/`release`/`capture`
+ledger enum values. Under flat billing the minutes *billed* are the minutes
+*booked*: a student who leaves after five minutes of a paid sixty-minute session
+was billed sixty, and writing `5` into a column called "billed" would record a
+number nothing charges by.
+
+The clincher is that it loses nothing: elapsed time is always recoverable as
+`ended_at - started_at`, whereas what the student was charged for is recorded
+nowhere else.
+
+*Why it matters:* this was a conflict between two spec sections, not an
+implementation preference — recorded explicitly so it is not re-opened later by
+someone reading §4.3's old wording. *How to apply:* when two sections disagree,
+resolve it in the document, in the same commit, and say which one governed and
+why.
+
+### 5. `started_at IS NOT NULL` — a never-started session cannot reach `completed`
+
+The WHERE excludes bookings whose pair never completed. Without it, a student
+whose tutor never arrived could click End, the booking would land `completed`,
+and Part 3C would write `tutor_earnings` paying a tutor who was never in the room
+— while §7.4 forbids refunding the student. **A double loss with no recovery
+path**, since there is no refund mechanism to correct it after the fact.
+
+The cost is that `endSession` on such a booking returns `{ ok: true,
+transitioned: false }` and closes nothing. Nothing traps the participant — they
+close the tab, and no clock is running against them. Leaving the row
+`in_progress` with both `*_joined_at` intact is precisely what lets Part 3C
+classify it `no_show_student` / `no_show_tutor` from full information (§12).
+
+The UI copy on that path was written to be **honest rather than reassuring**: it
+must not imply the student is getting anything back, because they are not.
+
+### 6. The deadline is a pair, and §12 could not have inherited it by accident
+
+`lib/sessions/deadline.ts` (pure) and `sessionElapsedSql` (`db/queries/
+sessions.ts`) are two artefacts expressing one rule. They cannot be collapsed:
+the authoritative comparison must be inside the statement, and the displayed
+deadline must run in a browser. `tests/integration/session-end-concurrency.test.ts`
+pins them to the same answer at `t - 1s`, `t` and `t + 1s` — the boundary is
+inclusive on both sides (SQL `<=`, TypeScript `>=`), which is the one place a
+silent one-millisecond disagreement could live.
+
+This is not hygiene. **SPEC §12's `complete-sessions` line described only the
+scheduled predicate** (`scheduled_end_at + 30m`), and `scheduled_end_at` is NULL
+for every instant booking — so a Part 3C written from §12 alone would have had to
+invent an instant predicate, which is exactly where a second notion of "elapsed"
+comes from. §12 is amended in this commit to name the instant predicate and point
+at the shared fragment.
+
+### 7. Realtime was not used, because it would have been a migration
+
+The other party learns the session ended from the Agora SDK's `user-left`, which
+Part 3A's client already surfaces. `bookings` is **not** in the
+`supabase_realtime` publication (`drizzle/0006` adds `session_requests`,
+`messages`, `notifications`, `conversations`, `tutor_profiles`), and adding it is
+a migration this pass was not authorized to make. At the deadline neither party
+needs the signal at all: both countdowns reach zero independently and each makes
+its own guarded call.
+
+### What is NOT here
+
+No §9 toggles, no screen share, no chat, no `network-quality`, no token renewal,
+no `tutor_earnings`, nothing in `lib/credits/`, no `is_live` write (§7.5 makes
+that an explicit non-behaviour), no `leaveSession` on `beforeunload` — under this
+design nothing needs it, because leaving does not end a session and closing a tab
+must not end a paid one.
+
+## `ended_at` is capped at the deadline (Phase 6 Part 3B, 2026-08-24)
+
+Its own entry, because it is the property **Part 3C depends on silently** and the
+one most likely to be "simplified" by someone who cannot see what it protects.
+
+**The rule.** When a session ends because its booked duration ran out, `ended_at`
+is `started_at + duration_minutes` — not the moment an actor noticed. An early
+exit records the actual moment (`else now()`). One `CASE` in the SET clause does
+both, so the participant-end and deadline paths share it.
+
+**The reasoning.** A cron running twenty minutes late must write the
+**byte-identical** `ended_at` that the deadline actor would have written at the
+deadline. §7.11 derives `tutor_earnings.available_at = ended_at +
+earnings_hold_hours`, so an `ended_at` that encodes *when somebody noticed*
+instead of *when the session ended* moves every late-swept tutor's withdrawal
+date — by however long the sweep was delayed. Since §3 above deliberately leaves
+the both-parties-offline case to Part 3C's cron, that delay is not hypothetical;
+it is the normal path for any session both parties walk away from.
+
+The cap is what makes §3's decision cost nothing. Without it, "leave it to the
+cron" would silently become "penalise the tutor by the cron's latency."
+
+**What proves it.** `tests/integration/session-end-concurrency.test.ts`, two
+tests: a row whose deadline passed twenty minutes ago records `started_at + 30m`
+rather than `now()`, and the same row shape closed by a *participant* records the
+identical offset — the record does not depend on which actor noticed. The
+falsification pass replaced the `CASE` with a bare `now()` and exactly those two
+tests failed, each off by 1,200,3xx ms — the twenty minutes, to the millisecond.
+
+*Why it matters:* a timestamp that records observation rather than occurrence is
+indistinguishable from a correct one until something derives money from it. *How
+to apply:* when a cron and a live path can both perform the same transition, the
+row they write must not reveal which one did.
+
+## Phase 6 Part 3B — the falsification pass, including the break that proved nothing
+
+Five deliberate breaks, each applied to the shipped statement, run against the
+whole end-session file, then restored. Reported as run — including the two that
+did not behave as the plan predicted, which are the informative ones.
+
+| # | Break | Predicted | Actual |
+|---|---|---|---|
+| 1 | read-then-write instead of the conditional `UPDATE` | the 2 concurrent tests | ✅ exactly those 2 — `expected {…} to be null`, i.e. two transitions |
+| 2 | drop `and status = 'in_progress'` | the idempotence test | ✅ that one, **plus both concurrent tests** — the guard protects all three |
+| 3 | `ended_at` from a pre-write snapshot (the CTE defect) | the racing test | ❌ **nothing failed — 13/13 passed** |
+| 4 | `ended_at = now()` unconditionally | the 2 capping tests | ✅ exactly those 2, off by 1,200,314 ms and 1,200,729 ms |
+| 5 | drop `and started_at is not null` | the never-started test | ✅ exactly that one, and only it |
+
+### Break 1 first failed for the wrong reason, and was re-expressed rather than accepted
+
+Its first form used `db.select()` for the pre-read and failed all nine tests with
+`TypeError: db.select is not a function` — a gap in the test file's `@/db` mock,
+which forwards `execute` and `update` only. **That is not a falsification**: it
+proves the mock is incomplete, not that the guard works. Re-expressed through
+`db.execute()` — same read-then-write shape, a path the mock forwards — it then
+failed exactly the two predicted tests with the predicted damage. Recorded
+because the first result was the kind that gets quietly rounded up to "the test
+caught it."
+
+### Break 3 proved nothing, and that is a real finding
+
+Rewriting the SET expressions to read a pre-write snapshot — precisely the defect
+Part 3A item 3 records — left **all thirteen tests passing**. The reason is
+structural: the `status = 'in_progress'` guard means a blocked writer matches zero
+rows and never evaluates those expressions at all, so snapshot-vs-live is
+unobservable.
+
+So the no-CTE property in `endInstantSession` is **defence in depth, upheld by
+review and not by the suite** — which is what its comment already claimed, now
+confirmed empirically rather than asserted. It cannot usefully be tested on its
+own: making it observable requires removing the status guard too, and a test that
+only fails under two simultaneous breaks guards nothing.
+
+The consequence is written into the code comment where an editor will meet it:
+**remove the status guard and the CTE property stops being defence in depth and
+becomes load-bearing, with nothing to catch you.**
+
+*Why it matters:* a passing suite under a deliberate break is information, not a
+failed experiment. *How to apply:* report the break that proved nothing; the
+temptation is to reshape it until it fails, which converts a finding into
+theatre.

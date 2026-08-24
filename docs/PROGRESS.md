@@ -4,7 +4,24 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-24)
 
-**Four PRs merged this session: #27 (CI build gate), #28 (Bubble live-app investigation), #29
+**Phase 6 Part 3B — the server-side end and the elapsed hard stop — is BUILT and
+open as a PR (`feat/phase6-part3b-end-session`).** Scope was deliberately
+narrower than "Part 3B" as this file previously described it: the §9 control-bar
+toggles (mic/camera/screen share), chat, credits consumed/earned and the 80%-TTL
+token renewal are **not** in it and are still absent rather than stubbed. It
+needed **no migration** — `ended_at` and `billed_minutes` have existed since
+`0000`. See "What Phase 6 Part 3B built" below, and `DECISIONS.md` for the three
+SPEC amendments it carries (§4.3 `billed_minutes`, §12 `complete-sessions`, §9
+step 2) and the falsification table.
+
+**PRs #32 and #33 are MERGED** (`df9d249`, `582e83a`). #32 was squash-merged while
+#33 still carried #32's original commit, which left #33 `CONFLICTING` against
+`main`; it was rebased (`--onto origin/main`, dropping the duplicate) and
+force-pushed, and the rebased tree was verified byte-identical to the one CI had
+already passed. **If Part 3C stacks on Part 3B, the same rebase will be needed —
+or land the lower PR with a merge commit instead of a squash.**
+
+**Four PRs merged earlier this session: #27 (CI build gate), #28 (Bubble live-app investigation), #29
 (Phase 6 Part 3A — session room), #30 (student `/dashboard` fix).** See their own sections below for
 detail; `DECISIONS.md` and `SPEC.md` are already current for #28 (no further doc changes needed
 there).
@@ -212,6 +229,72 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
 - Run by hand from the Supabase SQL editor as `postgres`: `create extension` and the Vault writes
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
+
+## What Phase 6 Part 3B built
+
+**The server-side end of a session, and the hard stop that holds when nobody is
+watching.** Not the control bar: the §9 mic/camera toggles, screen share, chat,
+credits consumed/earned and the token renewal are a separate pass and are absent
+rather than stubbed.
+
+**No migration, no RLS change, nothing in `lib/credits/`, no `tutor_earnings`, no
+`is_live` write, nothing under `drizzle/`.**
+
+- **One conditional `UPDATE`** — `endInstantSessionByParticipant` and
+  `endElapsedInstantSession` in `db/queries/sessions.ts`, sharing one SET clause.
+  `status = 'in_progress'` in the WHERE is the entire exactly-once guarantee: a
+  second writer blocks on the row lock, re-evaluates under READ COMMITTED, and
+  matches zero rows. No CTE, no read-then-write, no wrapping transaction.
+  Written through the query builder so `.returning()` decodes real `Date`s and
+  no second `toDate`-style boundary is introduced.
+- **`ended_at` is capped at the deadline** — a late close records
+  `started_at + duration`, not when it was noticed, so Part 3C's cron writes the
+  same record the deadline actor would have. Its own `DECISIONS.md` entry.
+- **`billed_minutes = duration_minutes`** — resolved a SPEC-vs-SPEC conflict
+  (§4.3's "actual" against §7.4's flat billing) in favour of §7.4; §4.3 amended
+  in the same commit so it is not re-opened from the old wording.
+- **`started_at IS NOT NULL`** — a session whose pair never completed cannot
+  reach `completed`, so Part 3C keeps its `no_show_*` classification.
+- **Four enforcement actors**, in the order they fire: `getSessionState` (the
+  actor *at* the deadline), `POST /api/agora/token` (re-entry guard; becomes the
+  continuous guard when renewal lands), `endSession` (early exit), and the room's
+  server read, which **refuses without writing**. Both parties offline is left to
+  Part 3C by decision, not omission.
+- **The deadline is a pair** — `lib/sessions/deadline.ts` (pure) and
+  `sessionElapsedSql` (authoritative). §12 amended to make Part 3C's cron call the
+  shared fragment rather than invent an instant predicate; §12 previously
+  described only the scheduled half, and `scheduled_end_at` is NULL for every
+  instant booking.
+- **No polling.** The countdown is cosmetic and makes no network call; the client
+  asks the server at three *events* (mount, other party arrives, countdown hits
+  zero). The other party is told by the Agora SDK's `user-left` — `bookings` is
+  not in the Realtime publication and adding it would have been a migration.
+
+### Phase 6 Part 3B — shipped state
+
+- **`pnpm lint`, `pnpm typecheck` and `pnpm test` green** — 269 unit tests across
+  22 files (25 new: `session-deadline`, plus elapsed cases on
+  `agora-session-access`).
+- **`pnpm test:db:test` green — 17 tests, 2 files**: the 4 pre-existing
+  `stampSessionJoin` properties plus 13 new in
+  `tests/integration/session-end-concurrency.test.ts` (concurrent ends, end
+  racing the deadline, idempotence, the `ended_at` cap both ways, early-exit
+  `now()`, never-started, non-participant, not-yet-elapsed, and four
+  SQL/TypeScript boundary-agreement cases). Still deliberately **not in CI**.
+- **The suite was proved capable of failing** against five deliberate breaks.
+  Three matched the prediction exactly; **two did not, and are recorded as run** —
+  break 1 first failed for the wrong reason (a gap in the test's `@/db` mock, not
+  the guard) and was re-expressed, and **break 3 failed nothing at all**: the
+  no-CTE property is unobservable while the status guard stands, so it is defence
+  in depth upheld by review, not by the suite. Full table in `DECISIONS.md`.
+- **Nothing was run against the shared project.** No migration, seed, reset or
+  `db:verify-rls`. The DB-backed lane targets the disposable test project only,
+  guarded by the hardcoded `TEST_PROJECT_REF`.
+- **Still unverified: the Agora media path** — two live participants publishing in
+  one channel needs two authenticated browsers and real devices. Unchanged from
+  Part 3A, a §15 E2E concern, and not a blocker for Part 3C.
+- **§15 E2E path 2** ("session ends → earnings appear") becomes assertable at
+  Part 3C; nothing in the E2E suite was touched here.
 
 ## What Phase 6 Part 3A built
 

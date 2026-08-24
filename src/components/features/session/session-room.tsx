@@ -9,15 +9,27 @@ import {
   VideoTile,
   type PlayableVideoTrack,
 } from "@/components/features/session/video-tile";
+import { SessionTimer } from "@/components/features/session/session-timer";
+import { EndSessionButton } from "@/components/features/session/end-session-button";
+import { getSessionState } from "@/actions/sessions";
 import { cn } from "@/lib/utils";
 
 /**
  * The instant-session room (SPEC §7.4 in-session UI, §9).
  *
- * **Part 3A scope: get both people connected and get out cleanly.** The elapsed
- * timer, credits consumed/earned, mute and camera toggles, screen share, text
- * chat and end-session are Part 3B, and are deliberately absent rather than
- * stubbed — an inert control that looks live is worse than one that isn't there.
+ * **Scope: connect both people, count the booked time down, and stop.** Part 3A
+ * built the join; this pass adds the session timer and end-session. The mute and
+ * camera toggles, screen share, text chat, credits consumed/earned and the
+ * 80%-TTL token renewal are still absent rather than stubbed — an inert control
+ * that looks live is worse than one that isn't there.
+ *
+ * **The countdown is cosmetic and this component never decides the session is
+ * over.** It ticks a deadline the server computed from `bookings.started_at`,
+ * and asks the server what is true at exactly three moments: on mount, when the
+ * SDK reports the other party arrived (so a `started_at` written after the page
+ * rendered is picked up), and once when the countdown reaches zero. Three
+ * event-driven calls, no interval — CLAUDE.md's ban on polling is intact, and a
+ * browser with a fast clock gets corrected rather than obeyed.
  *
  * Everything about *what this participant publishes* comes from the token
  * response, which derives it from the booking server-side. `viewerIsTutor` below
@@ -33,6 +45,13 @@ export interface SessionRoomProps {
   viewerAvatarUrl?: string | null;
   otherPartyName: string;
   otherPartyAvatarUrl?: string | null;
+  /**
+   * ISO-8601 hard stop, server-computed from `started_at` (§7.4). Null when the
+   * pair has not completed yet — the clock has not started.
+   */
+  initialDeadline: string | null;
+  /** Booked duration, for the timer's proportion. */
+  durationMinutes: number | null;
 }
 
 type Phase = "connecting" | "joining" | "live" | "error";
@@ -48,6 +67,8 @@ export function SessionRoom({
   viewerAvatarUrl,
   otherPartyName,
   otherPartyAvatarUrl,
+  initialDeadline,
+  durationMinutes,
 }: SessionRoomProps) {
   const [phase, setPhase] = React.useState<Phase>("connecting");
   const [error, setError] = React.useState<string | null>(null);
@@ -58,6 +79,62 @@ export function SessionRoom({
   const [remoteVideo, setRemoteVideo] = React.useState<PlayableVideoTrack | null>(null);
   const [remotePresent, setRemotePresent] = React.useState(false);
   const [connection, setConnection] = React.useState<ConnectionState | null>(null);
+  /** Server-issued. Replaced whenever the server tells us a truer one. */
+  const [deadline, setDeadline] = React.useState<string | null>(initialDeadline);
+  /** Terminal: the session is over and the room has been torn down. */
+  const [finished, setFinished] = React.useState(false);
+
+  /**
+   * Held so the room can be torn down from outside the join effect — when the
+   * session ends, the devices must be released immediately rather than at the
+   * next unmount. `close()` on the local tracks is what turns the camera light
+   * off, and leaving it on after a session has ended is not acceptable.
+   */
+  const clientRef = React.useRef<SessionClient | null>(null);
+
+  const finish = React.useCallback(() => {
+    setFinished(true);
+    void clientRef.current?.leave();
+  }, []);
+
+  /**
+   * Ask the server what is actually true. This is the only call this component
+   * makes about session state, and it is never on a timer — see the note at the
+   * top of the file for the three moments that trigger it.
+   *
+   * At the deadline this is also the *actor*: `getSessionState` performs the
+   * transition server-side when the booked duration has run out. A failure here
+   * is deliberately silent — the room stays up, the token route will refuse the
+   * next credential anyway, and Part 3C's cron closes the row regardless. There
+   * is nothing a person in the room could do about it.
+   */
+  const refreshState = React.useCallback(async () => {
+    try {
+      const result = await getSessionState(bookingId);
+      if ("error" in result) return;
+      setDeadline(result.state.deadline);
+      if (result.state.finished) finish();
+    } catch {
+      // Intentionally ignored; see above.
+    }
+  }, [bookingId, finish]);
+
+  // On mount: the page rendered from a read that may predate the other party's
+  // arrival, so the deadline it handed down can already be stale.
+  React.useEffect(() => {
+    void refreshState();
+  }, [refreshState]);
+
+  // The other party arrived. Their join is what writes `started_at` and so what
+  // creates the deadline — the SDK telling us they published is the push signal
+  // that it now exists. `bookings` is not in the Realtime publication (drizzle/
+  // 0006) and putting it there would be a migration, so the media layer's own
+  // event is the notification, and the guarded read above is the data.
+  const wasPresent = React.useRef(false);
+  React.useEffect(() => {
+    if (remotePresent && !wasPresent.current) void refreshState();
+    wasPresent.current = remotePresent;
+  }, [remotePresent, refreshState]);
 
   React.useEffect(() => {
     // Constructed synchronously so the cleanup below can always dispose it —
@@ -71,6 +148,7 @@ export function SessionRoom({
       onError: (err) => setNotice(describeJoinError(err)),
     });
 
+    clientRef.current = client;
     let cancelled = false;
 
     void (async () => {
@@ -112,6 +190,7 @@ export function SessionRoom({
 
     return () => {
       cancelled = true;
+      if (clientRef.current === client) clientRef.current = null;
       // Stops tracks, closes devices, leaves the channel. Safe mid-join.
       void client.leave();
     };
@@ -128,6 +207,10 @@ export function SessionRoom({
     setPhase("connecting");
     setAttempt((n) => n + 1);
   };
+
+  // Terminal, and checked before the error branch: a token refusal that arrives
+  // *because* the session ended should read as "it's over", not as a failure.
+  if (finished) return <SessionEnded viewerIsTutor={viewerIsTutor} />;
 
   if (phase === "error") {
     return (
@@ -191,6 +274,23 @@ export function SessionRoom({
   return (
     <div className="flex flex-col gap-4">
       <ConnectionBanner phase={phase} connection={connection} />
+      {/*
+        The control bar. §9's mic/camera toggles and screen share belong here and
+        are a separate pass — the bar carries the timer and end-session only, and
+        shows nothing where those controls will go rather than showing them inert.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
+        <SessionTimer
+          deadline={deadline}
+          durationMinutes={durationMinutes}
+          onExpired={refreshState}
+        />
+        <EndSessionButton
+          bookingId={bookingId}
+          viewerIsTutor={viewerIsTutor}
+          onEnded={finish}
+        />
+      </div>
       {notice && (
         <p
           role="status"
@@ -204,6 +304,34 @@ export function SessionRoom({
         {tutorTile}
         {studentTile}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The room after it closes.
+ *
+ * Deliberately says nothing about a refund, because there isn't one: credits are
+ * charged upfront and §7.4 refunds nothing on early exit or at the hard stop.
+ * Copy that thanked someone vaguely and left the money unmentioned would read as
+ * reassurance, and the first time a student went looking for a partial refund
+ * they would find this screen had implied one.
+ */
+function SessionEnded({ viewerIsTutor }: { viewerIsTutor: boolean }) {
+  return (
+    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
+      <h2 className="text-h3 font-bold text-white">This session has ended</h2>
+      <p className="mt-2 max-w-prose text-body text-ink-300">
+        The room is closed and your camera and microphone have been released.
+        {viewerIsTutor
+          ? " It'll show up in your bookings, and the earnings from it follow once it's been closed out."
+          : " It'll show up in your bookings. The session was paid for in full when it started, so there's nothing outstanding and nothing to refund."}
+      </p>
+      <Button className="mt-4" variant="ink" asChild>
+        <a href={viewerIsTutor ? "/tutor/bookings" : "/dashboard/bookings"}>
+          Back to bookings
+        </a>
+      </Button>
     </div>
   );
 }
