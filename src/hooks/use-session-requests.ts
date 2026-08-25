@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { useRealtimeDiagnostic } from "@/hooks/use-realtime-diagnostic";
 
 /**
  * The two `session_requests` Realtime subscriptions (SPEC §8), one per side of
@@ -279,6 +280,13 @@ export function useIncomingSessionRequests(
 ): RealtimeStatus {
   const ref = React.useRef(handlers);
   ref.current = handlers;
+
+  // Instrumentation, and inert unless `NEXT_PUBLIC_RT_DIAG === "1"` — with the
+  // flag unset its effect returns on its first statement, so no client is
+  // constructed and no socket is opened. It runs BESIDE the subscription
+  // below on its own clients and feeds nothing back into it; deleting this one
+  // line removes the diagnostic entirely. See `use-realtime-diagnostic.ts`.
+  useRealtimeDiagnostic(tutorId);
 
   const build = React.useCallback(
     (supabase: BrowserClient) =>
