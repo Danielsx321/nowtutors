@@ -1,0 +1,13 @@
+import postgres from "postgres";
+const sql = postgres(process.env.DIRECT_URL ?? process.env.DATABASE_URL, { prepare: false, max: 1 });
+const u = "98c19f1a-52f7-427c-bfd3-4ca9d14e33aa";
+const [w] = await sql`select credit_balance from wallets where user_id = ${u}`;
+const [s] = await sql`select coalesce(sum(delta),0)::int as total, count(*)::int as n from credit_transactions where user_id = ${u}`;
+console.log("wallet balance:", w?.credit_balance, "| sum(deltas):", s.total, "| ledger rows:", s.n);
+console.log("DRIFT:", (w?.credit_balance ?? 0) - s.total);
+const orphan = await sql`select id, delta, reference_id, created_at from credit_transactions where type='session_earning' and reference_id not in (select booking_id from tutor_earnings)`;
+console.log("session_earning rows with no tutor_earnings row:", orphan.length);
+for (const o of orphan) console.log("  ", o.id, o.delta, o.reference_id, o.created_at);
+const [bk] = await sql`select count(*)::int as n from bookings where id = 'e1297d5e-6274-4df1-98a9-4d07b1b0314e'`;
+console.log("referenced booking still exists?", bk.n === 1);
+await sql.end();
