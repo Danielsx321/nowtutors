@@ -4,6 +4,11 @@ import { db } from "@/db";
 import { bookings, profiles, subjects } from "@/db/schema";
 import { sessionChannel } from "@/lib/session-requests/accept";
 import type { SessionBookingRow } from "@/lib/agora/session-access";
+import {
+  joinStampAssignments,
+  toDate,
+  type JoinStampTimestamps,
+} from "./join-stamp";
 
 /**
  * The session room's reads and its two writes (SPEC §7.4, §4.3).
@@ -124,59 +129,15 @@ export async function getSessionRoomView(
   };
 }
 
-/**
- * Postgres timestamp text → `Date`, at the one boundary that produces it.
- *
- * Drizzle's raw `execute()` hands `timestamptz` back as the text Postgres
- * printed — `2026-08-24 11:18:57.085553+00` — not a `Date`. The query builder
- * and `.returning()` both decode the same column into a real `Date`; only the
- * raw path does not (all three probed against the test project, 2026-08-24 —
- * see docs/DECISIONS.md for the control table).
- *
- * `JoinStamp` is this module's public shape and it promises `Date`, so the
- * conversion belongs here, **once**. It is deliberately not solved by widening
- * `JoinStamp` to `Date | string`: `started_at` is the clock Part 3B's hard stop
- * measures against, and a coercion repeated at every consumer is a coercion one
- * consumer eventually gets wrong — on the column that decides what a student is
- * billed.
- *
- * Sub-millisecond precision is dropped, exactly as the query builder drops it
- * (`.085553+00` → `.085Z` both ways, floored not rounded), so a value read
- * through here and the same value read through the builder compare equal.
- *
- * A `Date` passes through untouched: if a future drizzle release decodes raw
- * `execute()` the way the builder already does, this becomes a no-op rather
- * than a second bug.
- */
-function toDate(value: string | Date | null): Date | null {
-  if (value === null) return null;
-  if (value instanceof Date) return value;
+// `toDate` — the raw-`execute()` timestamp boundary this file used to own — now
+// lives in `./join-stamp`, alongside the SQL rule whose output it decodes: the
+// scheduled join write (`db/queries/classroom.ts`, §7.7) is the same raw path
+// and makes the same `Date` promise, and a second decode on the billing clock
+// is a second thing to get wrong. One decode, one place; see that file.
 
-  // `timestamptz` always prints an offset. Requiring one is what stops a
-  // hypothetical offset-less value from being silently read as local time —
-  // which `Date` would do happily, and which would be a wrong billing clock
-  // rather than a loud failure.
-  if (!/(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value)) {
-    throw new Error(
-      `Timestamp from Postgres carries no UTC offset: ${JSON.stringify(value)}`,
-    );
-  }
-  // Postgres prints `YYYY-MM-DD HH:MM:SS[.ffffff]+HH`; `Date` needs the `T`
-  // separator and a two-part offset.
-  const parsed = new Date(value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(
-      `Unparseable timestamp from Postgres: ${JSON.stringify(value)}`,
-    );
-  }
-  return parsed;
-}
-
-export interface JoinStamp {
+/** What {@link stampSessionJoin} returns: the shared three, plus the channel. */
+export interface JoinStamp extends JoinStampTimestamps {
   agoraChannel: string | null;
-  studentJoinedAt: Date | null;
-  tutorJoinedAt: Date | null;
-  startedAt: Date | null;
 }
 
 /**
@@ -204,19 +165,18 @@ export interface JoinStamp {
  *    in practice this never fires; it is here because a null channel would
  *    otherwise be an unrecoverable dead room, and `sessionChannel()` derives the
  *    same value the accept path used rather than inventing a second scheme.
- *  - `student_joined_at` / `tutor_joined_at` — stamped for the arriving side
- *    only, and only when null. First arrival wins; a refresh does not restamp.
- *  - `started_at` — **set only on the write that makes BOTH joined-at columns
- *    non-null**, which is why it tests the *other* party's column: after this
- *    statement the arriving side is stamped by definition, so the pair is
- *    complete exactly when the other side already was. SPEC §4.3 defines
- *    `started_at` as "first moment both were present" and §7.4 makes it the clock
- *    the hard stop is computed from. Starting it on first arrival instead would
- *    bill a student for minutes spent alone in the room waiting for a tutor who
- *    hadn't shown up — with no refund and no grace period (§7.4), that is money.
+ *  - `student_joined_at` / `tutor_joined_at` / `started_at` — the shared rule,
+ *    defined **once** in `./join-stamp` ({@link joinStampAssignments}) and
+ *    imported by both this statement and the scheduled/LessonSpace one
+ *    (`db/queries/classroom.ts`, §7.7 step 4). `started_at` is set only on the
+ *    write that makes BOTH joined-at columns non-null; the arriving side is
+ *    stamped only when null. The reasoning for each lives with the fragment, so
+ *    there is exactly one place to read — and exactly one to change.
  *
- * `now()` is the transaction timestamp, so the joined-at stamp and the
- * `started_at` it completes are the same instant rather than microseconds apart.
+ * **What this statement adds beyond the shared rule, and what it deliberately
+ * does not.** It backfills `agora_channel`, and it **never writes `status`** —
+ * see the note below. The scheduled path's `confirmed → in_progress` transition
+ * is its own statement's business, not a parameter threaded through this one.
  *
  * The WHERE re-checks participation and `in_progress` even though
  * `checkSessionAccess` already did: that guard ran against a row read a moment
@@ -250,20 +210,7 @@ export async function stampSessionJoin(
   }>(sql`
     update bookings b
        set agora_channel     = coalesce(b.agora_channel, ${channel}),
-           student_joined_at = case when b.student_id = ${userId}
-                                    then coalesce(b.student_joined_at, now())
-                                    else b.student_joined_at end,
-           tutor_joined_at   = case when b.tutor_id = ${userId}
-                                    then coalesce(b.tutor_joined_at, now())
-                                    else b.tutor_joined_at end,
-           started_at        = case
-                                 when b.started_at is not null then b.started_at
-                                 when b.student_id = ${userId}
-                                  and b.tutor_joined_at is not null then now()
-                                 when b.tutor_id = ${userId}
-                                  and b.student_joined_at is not null then now()
-                                 else null
-                               end,
+           ${joinStampAssignments(userId)},
            updated_at        = now()
      where b.id = ${bookingId}
        and b.status = 'in_progress'
