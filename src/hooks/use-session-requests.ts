@@ -51,6 +51,21 @@ function reportSubscriptionStatus(
   });
 }
 
+/* -------------------------------------------------------------------------
+ * [ir-trace] TEMPORARY INSTRUMENTATION — REMOVE.
+ *
+ * Added on debug/incoming-requests-trace to make the tutor's never-painting
+ * instant-request modal observable. The subscription reports SUBSCRIBED and
+ * rows are written, so the fault is somewhere between a frame arriving and the
+ * modal rendering. Every step of that chain now says out loud that it ran.
+ *
+ * Grep `[ir-trace]` to find and delete all of it. It changes no behaviour.
+ * ------------------------------------------------------------------------- */
+function irTrace(step: string, detail?: unknown): void {
+  if (detail === undefined) console.log(`[ir-trace] ${step}`);
+  else console.log(`[ir-trace] ${step}`, detail);
+}
+
 /** The row shape Realtime delivers (REPLICA IDENTITY FULL, drizzle/0006). */
 interface SessionRequestPayloadRow {
   id?: string;
@@ -79,6 +94,7 @@ export function useIncomingSessionRequests(
 
   React.useEffect(() => {
     if (!tutorId) return;
+    irTrace("hook: effect running, subscribing", { tutorId });
     const supabase = createClient();
     const channel = supabase
       .channel(`session-requests:tutor:${tutorId}`)
@@ -91,8 +107,28 @@ export function useIncomingSessionRequests(
           filter: `tutor_id=eq.${tutorId}`,
         },
         (payload) => {
+          // [ir-trace] 1 — the INSERT callback fired at all, and the whole row.
+          irTrace("1. INSERT callback fired; payload.new =", payload.new);
           const row = payload.new as SessionRequestPayloadRow;
-          if (row?.id && row.status === "pending") ref.current.onIncoming(row.id);
+          irTrace("1b. row fields", {
+            id: row?.id ?? null,
+            status: row?.status ?? null,
+            tutor_id: row?.tutor_id ?? null,
+          });
+          // [ir-trace] 2 — the status guard: what it saw and whether it passed.
+          const id = row?.id;
+          const passed = !!id && row.status === "pending";
+          irTrace("2. status guard", {
+            statusSeen: row?.status ?? null,
+            hasId: !!id,
+            passed,
+          });
+          if (id && passed) {
+            irTrace("2b. calling onIncoming", id);
+            ref.current.onIncoming(id);
+          } else {
+            irTrace("2b. GUARD REJECTED — onIncoming NOT called");
+          }
         },
       )
       .on(
@@ -104,17 +140,29 @@ export function useIncomingSessionRequests(
           filter: `tutor_id=eq.${tutorId}`,
         },
         (payload) => {
+          // [ir-trace] UPDATEs drain the queue — an early/unexpected one would
+          // close a modal that had only just opened, so log them too.
+          irTrace("U. UPDATE callback fired; payload.new =", payload.new);
           const row = payload.new as SessionRequestPayloadRow;
           if (row?.id && row.status && row.status !== "pending") {
+            irTrace("U2. calling onSettled", { id: row.id, status: row.status });
             ref.current.onSettled(row.id, row.status);
+          } else {
+            irTrace("U2. UPDATE ignored", { status: row?.status ?? null });
           }
         },
       )
       .subscribe((status, err) => {
+        // [ir-trace] reportSubscriptionStatus is silent on SUBSCRIBED/CLOSED;
+        // this says every status out loud so "silent" and "fine" are distinct.
+        irTrace("0. subscribe status", { status, error: err?.message ?? null });
         reportSubscriptionStatus(`session-requests:tutor:${tutorId}`, status, err);
       });
 
     return () => {
+      // [ir-trace] a teardown here means the channel went away — if this fires
+      // right after subscribing, the effect is re-running and dropping frames.
+      irTrace("0b. effect cleanup — removing channel", { tutorId });
       void supabase.removeChannel(channel);
     };
   }, [tutorId]);

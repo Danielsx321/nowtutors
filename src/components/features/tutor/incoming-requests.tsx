@@ -23,6 +23,22 @@ import {
   type SerializedIncomingRequest,
 } from "@/actions/session-requests";
 
+/* -------------------------------------------------------------------------
+ * [ir-trace] TEMPORARY INSTRUMENTATION — REMOVE.
+ *
+ * The tutor's modal does not paint even though `session_requests` rows are
+ * written, the channel reports SUBSCRIBED and websocket frames are arriving.
+ * This traces every step between the INSERT callback and the modal's render so
+ * a silent early return, a rejected fire-and-forget, or an empty queue is
+ * visible in the console instead of being inferred.
+ *
+ * Grep `[ir-trace]` to find and delete all of it. It changes no behaviour.
+ * ------------------------------------------------------------------------- */
+function irTrace(step: string, detail?: unknown): void {
+  if (detail === undefined) console.log(`[ir-trace] ${step}`);
+  else console.log(`[ir-trace] ${step}`, detail);
+}
+
 export interface IncomingRequestsProps {
   tutorId: string;
   /** `instant_request_ttl_seconds`, for the ring's full sweep. */
@@ -61,18 +77,65 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
 
   useIncomingSessionRequests(tutorId, {
     onIncoming: (requestId) => {
+      // [ir-trace] 3 — onIncoming reached, and the read-back about to be made.
+      irTrace("3. onIncoming entered", { requestId });
       void (async () => {
+        irTrace("3a. calling getIncomingRequest", { requestId });
         const res = await getIncomingRequest(requestId);
+        irTrace("3b. getIncomingRequest resolved; res =", res);
         // A request that vanished between the event and this read is simply not
         // shown — there is nothing for the tutor to answer.
-        if ("error" in res || res.request.status !== "pending") return;
-        setQueue((q) =>
-          q.some((r) => r.id === res.request.id) ? q : [...q, res.request],
-        );
-      })();
+        // [ir-trace] the two silent early returns, logged separately so which
+        // one swallowed the request is not a guess.
+        if ("error" in res) {
+          irTrace("3c. EARLY RETURN — 'error' in res", { error: res.error });
+          return;
+        }
+        if (res.request.status !== "pending") {
+          irTrace("3d. EARLY RETURN — status !== 'pending'", {
+            status: res.request.status,
+            id: res.request.id,
+          });
+          return;
+        }
+        irTrace("3e. read-back OK, enqueueing", {
+          id: res.request.id,
+          expiresAt: res.request.expiresAt,
+        });
+        setQueue((q) => {
+          // [ir-trace] 5 — queue length before and after.
+          const next = q.some((r) => r.id === res.request.id)
+            ? q
+            : [...q, res.request];
+          irTrace("5. setQueue", {
+            before: q.length,
+            after: next.length,
+            duplicate: next === q,
+          });
+          return next;
+        });
+      })().catch((err: unknown) => {
+        // [ir-trace] 4 — the fire-and-forget's rejection. `getIncomingRequest`
+        // calls requireRole("tutor") with requireApproval defaulting true, so a
+        // NEXT_REDIRECT thrown in there would otherwise be an INVISIBLE
+        // unhandled rejection. Make it speak.
+        irTrace("4. FIRE-AND-FORGET REJECTED", {
+          requestId,
+          name: err instanceof Error ? err.name : typeof err,
+          message: err instanceof Error ? err.message : String(err),
+          digest:
+            typeof err === "object" && err !== null && "digest" in err
+              ? (err as { digest?: unknown }).digest
+              : undefined,
+          error: err,
+        });
+      });
     },
     // Expired, cancelled, or auto-declined by an accept elsewhere: stop showing it.
-    onSettled: (requestId) => drop(requestId),
+    onSettled: (requestId) => {
+      irTrace("U3. onSettled — dropping from queue", { requestId });
+      drop(requestId);
+    },
   });
 
   const current = queue[0] ?? null;
@@ -81,9 +144,30 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     ttlSeconds,
   );
 
+  // [ir-trace] 6 — what this render actually decided, every render.
+  irTrace("6. render", {
+    tutorId,
+    ttlSeconds,
+    queueLength: queue.length,
+    currentIsNull: current === null,
+    currentId: current?.id ?? null,
+    expiresAt: current?.expiresAt ?? null,
+    secondsLeft,
+    fraction,
+    elapsed,
+  });
+
   // The ring reaching zero closes the modal. The row itself is moved to
   // `expired` by the cron (§12) — this is the local consequence, not the write.
   React.useEffect(() => {
+    // [ir-trace] the countdown-closes-the-modal path — if this fires on the
+    // first render that has a deadline, the modal is being dropped, not missed.
+    if (current && elapsed) {
+      irTrace("6b. elapsed effect DROPPING current", {
+        id: current.id,
+        expiresAt: current.expiresAt,
+      });
+    }
     if (current && elapsed) drop(current.id);
   }, [current, elapsed, drop]);
 
@@ -112,7 +196,12 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     if ("error" in res) toast.error(res.error);
   }
 
-  if (!current) return null;
+  if (!current) {
+    irTrace("6c. RETURNING NULL — no current request, modal not rendered");
+    return null;
+  }
+
+  irTrace("6d. MODAL BRANCH REACHED — rendering dialog", { id: current.id });
 
   return (
     <Modal open onOpenChange={(open) => !open && drop(current.id)}>
