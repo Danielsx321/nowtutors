@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { DbTransaction } from "@/db";
@@ -269,7 +269,36 @@ export interface FixtureBookingOptions {
   /** Booked duration. Defaults to 30. */
   durationMinutes?: number;
   /** Defaults to `in_progress`, as the accept transaction leaves it. */
-  status?: "in_progress" | "completed";
+  status?: "in_progress" | "completed" | "confirmed";
+  /** Defaults to `instant`. `scheduled` needs the window options below. */
+  type?: "instant" | "scheduled";
+  /**
+   * Minutes before `now()` for `created_at`. Added in Part 3C: it is the clock
+   * for a never-started instant booking (`created_at + duration_minutes`), so a
+   * fixture for that sweep has to be able to backdate it. Defaults to the
+   * column's own `now()`.
+   */
+  createdMinutesAgo?: number;
+  /**
+   * Join stamps, independently of `started_at`. Both default to the
+   * `started_at` offset, which is the state the shipped join path produces (a
+   * pair that met). `null` forces the column null — the absence Part 3C's
+   * `no_show_*` classification reads.
+   */
+  studentJoinedMinutesAgo?: number | null;
+  tutorJoinedMinutesAgo?: number | null;
+  /**
+   * For `scheduled`: minutes before `now()` that the booking was due to end.
+   * `scheduled_start_at` is derived as that end minus `durationMinutes`, so the
+   * window is a real one and `bookings_no_overlap` sees what it expects.
+   */
+  scheduledEndMinutesAgo?: number;
+  /**
+   * Gross credits on the booking. Defaults to 500. `null` writes a NULL
+   * `price_credits` — a row that predates the guarantee that every booking gets
+   * one at creation, and the fixture for Part 3C's `priceCredits === null` skip.
+   */
+  priceCredits?: number | null;
 }
 
 export async function createFixtureBooking(
@@ -299,26 +328,59 @@ export async function createFixtureBooking(
     startedMinutesAgo,
     durationMinutes = 30,
     status = "in_progress",
+    type = "instant",
+    createdMinutesAgo,
+    studentJoinedMinutesAgo,
+    tutorJoinedMinutesAgo,
+    scheduledEndMinutesAgo,
+    priceCredits = 500,
   } = options;
 
-  // `started_at` and both `*_joined_at` move together: `started_at` is defined
-  // as the moment BOTH were present (§4.3), so a fixture with one set and not
-  // the others would be a state the shipped join path cannot produce.
+  const minutesAgo = (minutes: number | null | undefined, fallback: SQL) =>
+    minutes === null
+      ? sql`null`
+      : minutes === undefined
+        ? fallback
+        : sql`now() - make_interval(mins => ${minutes})`;
+
+  // `started_at` and both `*_joined_at` move together by default: `started_at`
+  // is defined as the moment BOTH were present (§4.3), so a fixture with one set
+  // and not the others would be a state the shipped join path cannot produce.
+  // Part 3C's no-show cases are exactly the states where they legitimately
+  // differ, which is why the two join stamps can now be overridden.
   const startedAt =
     startedMinutesAgo === undefined
       ? sql`null`
       : sql`now() - make_interval(mins => ${startedMinutesAgo})`;
+  const studentJoinedAt = minutesAgo(studentJoinedMinutesAgo, startedAt);
+  const tutorJoinedAt = minutesAgo(tutorJoinedMinutesAgo, startedAt);
+
+  const createdAt =
+    createdMinutesAgo === undefined
+      ? sql`now()`
+      : sql`now() - make_interval(mins => ${createdMinutesAgo})`;
+
+  const scheduledEndAt =
+    scheduledEndMinutesAgo === undefined
+      ? sql`null`
+      : sql`now() - make_interval(mins => ${scheduledEndMinutesAgo})`;
+  const scheduledStartAt =
+    scheduledEndMinutesAgo === undefined
+      ? sql`null`
+      : sql`now() - make_interval(mins => ${scheduledEndMinutesAgo + durationMinutes})`;
 
   const bookingId = randomUUID();
   await conn.db.execute(sql`
     insert into bookings (
       id, student_id, tutor_id, type, status, duration_minutes, price_credits,
-      started_at, student_joined_at, tutor_joined_at
+      started_at, student_joined_at, tutor_joined_at, created_at,
+      scheduled_start_at, scheduled_end_at
     )
     values (
-      ${bookingId}, ${studentId}, ${tutorId}, 'instant', ${status},
-      ${durationMinutes}, 500,
-      ${startedAt}, ${startedAt}, ${startedAt}
+      ${bookingId}, ${studentId}, ${tutorId}, ${type}::booking_type, ${status}::booking_status,
+      ${durationMinutes}, ${priceCredits},
+      ${startedAt}, ${studentJoinedAt}, ${tutorJoinedAt}, ${createdAt},
+      ${scheduledStartAt}, ${scheduledEndAt}
     )
   `);
 
@@ -335,7 +397,60 @@ export async function deleteFixtureBooking(
   conn: TestConnection,
   bookingId: string,
 ): Promise<void> {
+  // Earnings first: `tutor_earnings.booking_id` is an FK, so a booking Part 3C's
+  // sweep paid out on cannot be deleted while its row is there. Unconditional
+  // rather than conditional — the DELETE is a no-op for the fixtures that never
+  // earned anything, and a teardown that has to know which is which is a
+  // teardown that eventually gets it wrong and leaves a row behind.
+  await conn.db.execute(
+    sql`delete from tutor_earnings where booking_id = ${bookingId}`,
+  );
   await conn.db.execute(sql`delete from bookings where id = ${bookingId}`);
+}
+
+/**
+ * The `tutor_earnings` row for a booking, if any — Part 3C's money assertion.
+ *
+ * Query builder, for the reason `readEndColumns` gives: the decode path differs
+ * from the one the code under test writes through, so comparing the two is
+ * comparing independently-decoded values rather than agreeing with itself.
+ */
+export async function readEarnings(conn: TestConnection, bookingId: string) {
+  const [row] = await conn.db
+    .select({
+      tutorId: schema.tutorEarnings.tutorId,
+      grossCredits: schema.tutorEarnings.grossCredits,
+      platformFeeCredits: schema.tutorEarnings.platformFeeCredits,
+      netCredits: schema.tutorEarnings.netCredits,
+      status: schema.tutorEarnings.status,
+      availableAt: schema.tutorEarnings.availableAt,
+    })
+    .from(schema.tutorEarnings)
+    .where(eq(schema.tutorEarnings.bookingId, bookingId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Every column the completion sweep classifies from, plus what it wrote. */
+export async function readClassification(
+  conn: TestConnection,
+  bookingId: string,
+) {
+  const [row] = await conn.db
+    .select({
+      status: schema.bookings.status,
+      startedAt: schema.bookings.startedAt,
+      endedAt: schema.bookings.endedAt,
+      billedMinutes: schema.bookings.billedMinutes,
+      studentJoinedAt: schema.bookings.studentJoinedAt,
+      tutorJoinedAt: schema.bookings.tutorJoinedAt,
+      scheduledEndAt: schema.bookings.scheduledEndAt,
+      priceCredits: schema.bookings.priceCredits,
+    })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId))
+    .limit(1);
+  return row;
 }
 
 /**

@@ -2471,3 +2471,241 @@ evidence that it was — verify against the source branch before deleting it, th
 claimed-done item gets verified. This was only catchable because the branches still existed on
 `origin`; had they been deleted on the strength of the "carried forward" claim, both gaps would have
 been unrecoverable.
+
+## Phase 6 Part 3C — `complete-sessions` + `tutor_earnings` (`phase-6-part3c-complete-sessions`, 2026-08-25)
+
+The completion sweep and the first `tutor_earnings` writer in the codebase. No
+migration: `tutor_earnings` has existed since `drizzle/0000` with exactly the
+columns this pass writes, `booking_id` already carried its UNIQUE, and
+`no_show_tutor` / `no_show_student` were already values in the shipped
+`booking_status` enum. Nothing under `drizzle/` was touched.
+
+### 1. The never-started instant clock — an omission found by trying to build from the spec
+
+§12 said an instant booking with `started_at` NULL "never elapses and is the
+cron's `no_show_*` case". Both halves are true and together they describe no
+work set at all: `sessionElapsedSql` is null-safe so it matches none of those
+rows, and `scheduled_end_at` is NULL on every instant booking so the scheduled
+predicate cannot reach them either. Nothing anywhere said what made such a
+booking *due*. Left as-is they would have sat `in_progress` forever, which is
+precisely the state §12 claims this cron exists to clear.
+
+**Decided: `created_at + duration_minutes <= now()`, with `started_at IS NULL` in
+the predicate rather than only in the classification.** An instant booking is
+created by the accept transaction and begins immediately (§7.4), so `created_at`
+is the instant analogue of `scheduled_start_at` and this is the **same booked
+window** the hard stop measures — not a second definition of it. A pair that
+connected late has a `started_at`, so it is swept by the elapsed path with its
+capped `ended_at` instead of landing here; the two work sets cannot both claim a
+row.
+
+**No new platform setting, and no grace.** A tunable
+`instant_no_show_after_minutes` would be a second definition of "the instant
+window is over" that can drift from `duration_minutes` — the exact failure
+`sessionElapsedSql` was extracted to prevent. And a grace period would be paid
+for by the tutor: `ended_at` for these rows is `now()` at classification and
+§7.11 derives `available_at` from `ended_at`, so every minute of grace is a
+minute added to the withdrawal date for a session that never happened.
+
+§12 is amended in this commit to state the clock. *Why it matters:* "X is the
+cron's job" is not a specification of X until something says when X becomes due.
+*How to apply:* when a spec names a case without naming its predicate, that is
+the half most likely to be invented differently by whoever implements it.
+
+### 2. `no_show_student` pays the tutor in full; `no_show_tutor` pays nothing
+
+The asymmetry looks like an oversight to anyone meeting it without the reasoning,
+so it is written down in three places (§7.11, `lib/sessions/completion.ts`, and
+here) and pinned by a unit test that fails if either half is "tidied".
+
+- **`no_show_student` → an earnings row, identical to `completed`.** The tutor
+  held the slot and was in the room. The student's credits were taken at booking
+  and §7.4 refunds nothing on any path — so the alternative is the platform
+  keeping the entire charge, which would make **a session that never happens the
+  platform's most profitable outcome**. That is not a rounding preference; it is
+  an incentive pointed the wrong way.
+- **`no_show_tutor` → nothing.** Paying a tutor who was not in the room while the
+  student cannot be refunded is a **double loss with no recovery path**, the same
+  sentence Part 3B used to justify `started_at IS NOT NULL` in the end-session
+  statement. This pass is where that clause finally pays off: those bookings
+  arrive here with both `*_joined_at` intact and get classified from full
+  information.
+
+### 3. Tutor-absence takes precedence, so both-NULL lands `no_show_tutor`
+
+The classification reads `started_at`, then `tutor_joined_at`, then
+`student_joined_at`. A booking neither party joined therefore lands
+`no_show_tutor` and pays nothing.
+
+Deliberate, and a money decision rather than a tie-break: **an empty room is not
+evidence that the tutor was there.** The opposite default would pay in full on
+exactly no evidence. The falsification pass confirms this is the only case the
+precedence decides — swapping the two arms failed exactly one test, the both-NULL
+one, because with one party present the order cannot matter.
+
+### 4. The wallet is credited at RELEASE, not at completion
+
+This cron writes `tutor_earnings` and touches no wallet. No `creditWallet`, no
+`debitWallet`, no `credit_transactions` row, no `session_earning` transaction —
+nothing on this path **calls** anything from the ledger. **That is not the same
+claim as "not imported": `lib/credits/ledger.ts` is in the transitive closure**
+(`db/queries/complete-sessions.ts` → `db/queries/sessions.ts` →
+`lib/session-requests/accept.ts`, which value-imports `debitWallet` for
+`sessionChannel`'s reuse — pre-existing from Part 3B, not introduced here). An
+earlier draft of this entry, and of the route's and the sweep's own doc
+comments, said "not imported, transitively or otherwise", which a `grep` for the
+import path disproves. Corrected in this commit to the claim that is actually
+checkable: the ledger is reachable in the graph and unused on this path.
+
+**A `held` earnings row is a promise; the ledger entry is the money.** It is
+written when `release-earnings` flips `held` → `available` (Phase 8).
+`wallets.credit_balance` means "credits this person can spend or withdraw" —
+crediting it at completion would put credits there that the hold deliberately
+makes unwithdrawable, breaking that number for every other reader, including
+`reconcile-wallets`, whose whole job is to assert `credit_balance = sum(deltas)`.
+Credits would be present with no transaction to back them: the drift alarm would
+fire on its first run, correctly.
+
+### 5. Idempotence is asserted twice, and the second one is the real guarantee
+
+Every predicate moves its rows out of the status it matches on, so a second run
+matches nothing. That is necessary and **not sufficient**: there is a real window
+between a transition committing and its earnings insert running, and a retry that
+lands in it would see already-classified bookings — but a crashed-then-retried
+run, or two overlapping runs, could still attempt the same insert twice.
+
+So `tutor_earnings.booking_id`'s UNIQUE is used directly, with `ON CONFLICT DO
+NOTHING`. The **database** refuses the second payment rather than the application
+remembering not to attempt it. `earningsCreated` counts what the insert actually
+returned, so it is what the database did rather than what the run intended.
+
+The distinction is visible in the falsification table: removing `ON CONFLICT DO
+NOTHING` left the plain idempotence test **green** (a second run finds no rows to
+classify, so it never reaches the insert) and failed only the test written for
+the window itself.
+
+### 6. The elapsed instant path calls the shipped statement per booking, not a bulk UPDATE
+
+`findElapsedInstantSessionIds` is a **read**; the transition is
+`endElapsedInstantSession`, called once per id. A bulk `UPDATE` in the cron would
+have had to restate the `ended_at` cap and the `status = 'in_progress'` guard,
+and the cap is the property Part 3C was explicitly told it depends on silently. A
+cron running twenty minutes late must write the byte-identical `ended_at` a
+participant would have written at the deadline.
+
+One statement per elapsed session is the price of not owning a second copy of
+that rule, and on a 15-minute cadence with a handful of rows it costs nothing
+worth having. The shipped signature was **not** widened to take a set of ids —
+the same choice Part 3A made when it declined to widen `stampSessionJoin` for a
+test.
+
+A null return from that call is not an error: a participant closing the room
+between the read and the write is exactly what the guard is for, and their
+transition is the one that stands.
+
+### 7. The sweep lives in `lib/`, and the integration test does not mock `@/db`
+
+`runCompleteSessionsSweep` is in `lib/sessions/complete-sessions.ts`; the route is
+a bearer check, a call and a structured log, exactly like the other two crons.
+That is what lets the money decisions be exercised against a real Postgres
+without going through a handler that pulls in Supabase auth.
+
+**`tests/integration/complete-sessions.test.ts` deliberately does not mock
+`@/db`.** The other two files in the lane mock it to bind statements to two held
+transactions and make them contend for a row lock; there is no contest here, and
+binding this sweep to one held transaction would **misrepresent it** — the
+shipped run is a sequence of autocommitted statements, and its idempotence claim
+is about a second *run*, not a second statement inside one transaction. Reads
+that verify a write still go through the file's own separate connection.
+
+Assertions are `toContain` rather than array equality: the sweep is global by
+nature and has no notion of "this test's rows", so equality would be a claim
+about the whole test project's contents and would fail for the wrong reason the
+first time a leftover row existed.
+
+### 8. The `@/db` mock in the end-session lane now forwards `select`
+
+Extended before any of this pass's coverage was written, because the gap has
+already cost one misdiagnosis: Part 3B's first falsification break used
+`db.select()`, failed all nine tests with `db.select is not a function`, and
+looked exactly like a guard holding (see "Break 1 first failed for the wrong
+reason"). A mock that omits a method the code under test calls produces failures
+that read like real refusals.
+
+### 9. A NULL `price_credits` skips the earnings row rather than writing a zero one
+
+A booking that pays out (`completed` or `no_show_student`) but has NULL
+`price_credits` — a row predating the guarantee that both booking-creation paths
+write it — no longer coalesces to a 0-credit earnings row. **It is skipped, is
+logged at `console.error` with the booking id, and is counted in the sweep's new
+`earningsSkippedNoPriceIds` (surfaced on the route as `earningsSkippedNoPrice`).**
+The booking's status transition still happens; only the earnings write is
+withheld.
+
+A skipped row beats a zero row for one reason: `tutor_earnings.booking_id` is
+UNIQUE with `ON CONFLICT DO NOTHING` (§7.11, and item 5 above), so a wrong
+zero-credit row written now would **permanently** occupy that booking's one
+earnings slot — nothing can ever insert the correct amount over it — and it would
+be indistinguishable from a session that was legitimately free. A skipped row is
+still recoverable: the booking stays without an earnings row, an operator reading
+the error log or the count can act, and a manual insert of the right number is
+still possible. Corrected in this commit: PR #39's original code coalesced a
+NULL `price_credits` to `0` (`row.priceCredits ?? 0`) before the PR merged to
+`main`; this replaces that coalesce.
+
+### What is NOT here
+
+No `release-earnings`, no withdrawals, nothing in `lib/credits/ledger.ts`, no
+screen share, no chat, no emails, no `/admin/settings` "run now" button, and **no
+`pg_cron` snippet or RUNBOOK step** — scheduling is gated on the CRON_SECRET
+rotation, which is still open. Absent rather than stubbed. Until it is scheduled
+the route is invocable by hand with the bearer header, and nothing about
+correctness waits on it: the four Part 3B actors still end any elapsed session
+with a person in the room, and a late run writes the same `ended_at` an on-time
+one would.
+
+### The falsification pass — five breaks, one of which proved the suite wrong first
+
+Each break applied to the shipped code one at a time, the whole DB-backed lane
+run against it, then restored. Reported as run.
+
+| # | Break | Predicted | Actual |
+|---|---|---|---|
+| a | remove `ON CONFLICT DO NOTHING` | the double-pay test | ✅ exactly that one — `PostgresError 23505, duplicate key … tutor_earnings_booking_id_unique`. The plain idempotence test stayed **green**, which is the point of having both. |
+| b | swap the no-show precedence (student-absence wins) | the both-NULL test | ✅ exactly that one — `expected [] to include '3a6a5c…'`. Both single-absence tests stayed green, correctly: with one party present the order cannot matter. |
+| c | write an earnings row for `no_show_tutor` | the no-show payment tests | ✅ 1 unit + 3 integration: `statusEarnsPayout`, and all three `no_show_tutor` cases (instant tutor-absent, instant both-absent, scheduled) — `expected { …(6) } to be null`. |
+| d | replace the `ended_at` CASE with a bare `now()` | Part 3C's cap test | ✅ that one **plus both of Part 3B's cap tests** — off by 1,200,905 ms / 1,200,333 ms / 1,210,199 ms, the twenty minutes to the millisecond. Part 3C's coverage catches the regression independently of Part 3B's. |
+| e | inline `Math.floor` → round-half-up instead of calling `splitEarnings` | the split assertions | ❌ **nothing failed — 29/29 passed.** See below. |
+
+### Break (e) proved nothing, and the fault was the suite's
+
+Unlike Part 3B's break 3, this was **not** structurally untestable — it was a
+badly chosen fixture. The two gross amounts in the money assertions were 41
+(25% = 10.25) and 60 (25% = 15.0), and **neither straddles a half**, so floor and
+round-half-up give identical answers on both. The tests asserted against
+`splitEarnings`'s own output as well, which agreed with itself no matter which
+rule was in force.
+
+Fixed by choosing grosses whose fee lands exactly on the half — 50 (12.5) and 30
+(7.5) — and pinning the expected numbers literally (`toBe(12)`, "NOT 13")
+alongside the derived comparison, so a helper that started rounding the other way
+cannot drag the expectation along with it. **Re-run with the identical break: 3
+tests failed** — `expected 13 to be 12`, `expected 8 to be 7`, `expected 37 to be
+38`. One credit, taken from the tutor, in each.
+
+Both runs are reported because the first one is the finding. The break was not
+re-expressed; the fixtures were. *Why it matters:* an assertion computed from the
+same helper it is checking can pass under any rule that helper implements — the
+number has to be pinned somewhere a change would have to walk past. *How to
+apply:* when testing a rounding rule, the test data must be able to tell the
+rounding rules apart, or the test is only asserting that arithmetic happened.
+
+### One thing extended beyond the brief, flagged rather than assumed
+
+Both sweeps write `billed_minutes = duration_minutes` on every row they
+transition, including the `no_show_*` ones. §4.3 makes this the definition for
+both types ("instant: the booked duration; scheduled: planned"), and under §7.4's
+flat upfront billing it is honest on a no-show too: the student **was** charged
+the full price and nothing refunds it, so the minutes billed are the minutes
+booked whether or not anyone showed up. The brief specified only `status` and
+`ended_at`; this is recorded here because it is a column write nobody asked for.

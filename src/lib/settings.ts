@@ -57,6 +57,45 @@ export async function getBookingSettings(): Promise<BookingSettings> {
   };
 }
 
+export interface EarningsSettings {
+  /** Percent of gross the platform keeps. Fed to `splitEarnings` (§7.11). */
+  platformFeePercent: number;
+  /** Hours between `ended_at` and `available_at` on a held earnings row. */
+  earningsHoldHours: number;
+}
+
+/**
+ * The two earnings tunables from `platform_settings` (SPEC §7.11, §18), coerced
+ * and defaulted to the seeded values exactly as {@link getBookingSettings} does.
+ *
+ * Neither key had an accessor before Phase 6 Part 3C, because nothing in `src/`
+ * read them — `platform_fee_percent` and `earnings_hold_hours` were seeded in
+ * `platform-settings-defaults.ts` and used only by the seed. The
+ * complete-sessions cron is their first caller, and it is the wrong place for an
+ * untyped `getSettings()` lookup: these two numbers decide what a tutor is paid
+ * and when they may withdraw it, so a missing row or a garbage admin edit must
+ * fall back to the seeded value rather than reach `splitEarnings` as `undefined`
+ * (which would make the fee `NaN`) or reach the hold arithmetic as a string.
+ *
+ * The percent is deliberately **not** clamped to 0–100 beyond finiteness here:
+ * `splitEarnings` is the authority on the split and this accessor's job is
+ * coercion, not policy. It is defaulted, though, so the authority is never
+ * handed a non-number.
+ */
+export async function getEarningsSettings(): Promise<EarningsSettings> {
+  const s = await getSettings();
+  return {
+    platformFeePercent: asNumber(
+      s.platform_fee_percent,
+      seededSetting<number>("platform_fee_percent"),
+    ),
+    earningsHoldHours: asNumber(
+      s.earnings_hold_hours,
+      seededSetting<number>("earnings_hold_hours"),
+    ),
+  };
+}
+
 /**
  * The instant-request accept window in seconds (SPEC §7.4, §4.3): a request's
  * `expires_at` is `now() + this`. Read from `platform_settings`

@@ -1066,6 +1066,10 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 > DECISIONS, Decision 4.
 
 - Session completes → `tutor_earnings` row, `status = held`, `available_at = ended_at + earnings_hold_hours`.
+- **A `held` earnings row is a promise, not money. The wallet is credited at RELEASE, never at completion (Phase 6 Part 3C).** `complete-sessions` writes `tutor_earnings` and touches no wallet: no `creditWallet`, no `credit_transactions` row, nothing from `lib/credits/ledger.ts` on that path. The ledger entry — the thing that *is* the money — is written when `release-earnings` flips `held` → `available` (Phase 8). `wallets.credit_balance` means "credits this person can spend or withdraw"; crediting it at completion would put credits there that the hold deliberately makes unwithdrawable, and would break that number for every other reader of it, including `reconcile-wallets`.
+- **Which outcomes pay (Phase 6 Part 3C).** `completed` → an earnings row. **`no_show_student` → an earnings row, identical treatment to `completed`**: the tutor held the slot and was present, the student's credits were taken at booking, and §7.4 refunds nothing on any path — so not paying would make a session that never happened the platform's most profitable outcome. **`no_show_tutor` → no earnings row at all**: paying a tutor who was not in the room, while §7.4 forbids refunding the student, is a double loss with no recovery path. Nothing else in the `booking_status` enum pays.
+- **Tutor-absence takes precedence in the classification, so a booking where NEITHER party joined lands `no_show_tutor` (Phase 6 Part 3C).** It is a money decision rather than a tie-break: an empty room is not evidence the tutor was there, and the safe direction is the one that does not pay. The classification reads `started_at` first (non-null ⇒ the pair met ⇒ `completed`, §4.3), then `tutor_joined_at`, then `student_joined_at`.
+- **`available_at` derives from `ended_at`, and `ended_at` records occurrence, not observation.** For a completed instant session that is the capped `started_at + duration_minutes` (§4.3); for a scheduled one it is `scheduled_end_at`. **The single exception is `no_show_student` on an instant booking, where `ended_at` is `now()` at classification** — there is no session end to record because there was no session. A late sweep therefore moves nobody's withdrawal date.
 - **Fee split (authoritative).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`, `net_credits = gross_credits − platform_fee_credits`. The fee **rounds down; the remainder goes to the tutor.** Rounding against the payee would accumulate in the platform's favour across many small sessions, so the split rounds down instead. This is implemented once in `src/lib/credits/fees.ts` (`splitEarnings`) and called by both the seed and the earnings pipeline so they cannot diverge. (`platform_fee_percent = 25` → tutor keeps ≥75%.)
 - Cron flips `held` → `available` when due.
 - `/tutor/withdrawals`: available balance, minimum from settings, PayPal email shown with an edit link. Request creates `withdrawal_requests` (`requested`) and a `withdrawal_hold` ledger entry so the credits can't be double-spent.
@@ -1339,7 +1343,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
 | `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
-| `/api/cron/complete-sessions` | `*/15 * * * *` | Phase 6 Part 3C |
+| `/api/cron/complete-sessions` | `*/15 * * * *` | **built** (Phase 6 Part 3C) — not yet scheduled, see below |
 | `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
@@ -1352,8 +1356,10 @@ from `/admin/settings` with a "run now" button for debugging.
 - **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`, releasing the slot.
-- **complete-sessions** — two predicates, because the two booking types have
-  different clocks. **Scheduled:** past `scheduled_end_at + 30m` still
+- **complete-sessions** — separate predicates, because the booking types have
+  different clocks: one scheduled, and two instant (started, and never started —
+  the third was implicit here until Part 3C made it explicit below).
+  **Scheduled:** past `scheduled_end_at + 30m` still
   `confirmed`/`in_progress` → `completed` (or `no_show_*` if one party never
   joined). **Instant:** `scheduled_end_at` is NULL for every instant booking
   (§4.3), so the scheduled predicate matches none of them — the instant clock is
@@ -1364,11 +1370,31 @@ from `/admin/settings` with a "run now" button for debugging.
   subtly different notion of "elapsed" gets into the codebase on the one column
   that decides what a student is billed. An instant booking with `started_at`
   NULL never elapses and is the cron's `no_show_*` case, classified from
-  `student_joined_at` / `tutor_joined_at`. Both predicates then create
-  `tutor_earnings` (§7.11) from the `completed` row's `price_credits` and
-  `ended_at`. This line previously described only the scheduled half; that half
-  was written down and the instant half was not, which is the half that could
-  have been implemented wrongly. Amended in Phase 6 Part 3B.
+  `student_joined_at` / `tutor_joined_at`. **Its clock is `created_at +
+  duration_minutes <= now()`, with `started_at IS NULL` in the predicate itself**
+  — an instant booking is created by the accept transaction and begins
+  immediately (§7.4), so `created_at` is the instant analogue of
+  `scheduled_start_at` and this is the *same* booked window, not a second
+  definition of it. There is **no grace period** on it: `ended_at` for these rows
+  is `now()` at classification and §7.11 derives `available_at` from `ended_at`,
+  so a grace would add its own length to the tutor's withdrawal date for a
+  session that never happened. Both predicates then create `tutor_earnings`
+  (§7.11) from the row's `price_credits` and `ended_at` — for `completed` and
+  `no_show_student` only; see §7.11. This line previously described only the
+  scheduled half; that half was written down and the instant half was not, which
+  is the half that could have been implemented wrongly. Amended in Phase 6 Part
+  3B, and again in Part 3C, which found that the never-started instant case was
+  named as this cron's job without anything saying what made it due.
+
+  **Built in Phase 6 Part 3C, and deliberately not yet scheduled.** The route,
+  the three predicates, the classification and the earnings write are complete
+  and covered by `tests/integration/complete-sessions.test.ts`. The `pg_cron`
+  snippet and its RUNBOOK step are **not** in that pass: scheduling is gated on
+  the CRON_SECRET rotation, which is still open. Until it is scheduled the route
+  is invocable by hand with the bearer header, and nothing about correctness
+  waits on it — the four Part 3B actors still end any elapsed session with a
+  person in the room, and a late run writes the same `ended_at` an on-time one
+  would.
 - **release-earnings** — `held` → `available` where `available_at <= now()`.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.
