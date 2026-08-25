@@ -1009,9 +1009,8 @@ Server-side only; the API key never reaches the browser.
 
 > **Part 1 implementation (Phase 7, `feat/phase7-part1-lessonspace-join`).** The server half is
 > built: `lib/lessonspace/client.ts` (server-only), `lib/lessonspace/session-access.ts` (pure),
-> `db/queries/classroom.ts`, and the route. The page (step 5's render), `/classroom/[bookingId]`
-> and the join-window UI states are **Part 2**. What the build settled, where the steps above left
-> a choice open:
+> `db/queries/classroom.ts`, and the route. Step 5's render is **Part 2**, below. What the build
+> settled, where the steps above left a choice open:
 >
 > - **Steps 2 and 3 are one call, not two.** `spaces/launch/` is idempotent on the `id` we send
 >   (the booking id), so the first launch creates the space and every later launch returns that
@@ -1053,6 +1052,50 @@ Server-side only; the API key never reaches the browser.
 > credential and is never returned to the browser or stored. `LESSONSPACE_ORG_ID` (§2.1) is
 > **correctly unused** — the organisation is identified by the API key itself, not by a body field,
 > so there is no field for it to fill. This no longer blocks Part 2.
+
+> **Part 2 implementation (Phase 7, `feat/phase7-part2-classroom`).** Step 5 is built, and with
+> it Phase 7. `/classroom/[bookingId]` (a Server Component), the iframe, the join-window UI
+> states and the scheduled-booking entry points. What it settled:
+>
+> - **The classroom lives in the existing `(session)` route group**, beside `/session/[bookingId]`,
+>   not in a group of its own and not under `(student)` or `(tutor)`. The reason that group exists
+>   is exactly the reason a classroom needs it: it is an authenticated area **both** roles enter, so
+>   a `requireRole` in the layout would redirect half of every room away from it. The layout's guard
+>   stops at "signed in, onboarded, not suspended" and leaves participation to the page, because
+>   only the page knows which booking. §6 already lists both routes under one "SESSION
+>   (participants only)" heading.
+> - **The page renders the *same* decision the route enforces.** `checkLessonSpaceAccess` now
+>   carries a machine-readable refusal tag (`not_found` / `not_scheduled` / `not_joinable` /
+>   `too_early` / `too_late`) alongside the status and message it already returned; the page
+>   switches its panels on that tag. The window is not recomputed in the page and nothing about it
+>   is evaluated in the browser — a second definition could disagree with the route that actually
+>   grants entry. The tag is **not** returned to the browser by the join route: its response is
+>   unchanged.
+> - **`joinWindowFor` returns the window's edges as instants**, and `withinJoinWindow` is now
+>   expressed through it. The "too early" panel and the booking-detail button say *when* the
+>   classroom opens; naming that moment and enforcing it are one value, not two subtractions.
+> - **Not-found is the same for a missing booking and a non-participant**, as in `/session` and
+>   `/api/agora/token`. The page cannot be walked to discover which booking ids exist.
+> - **The link is fetched by the client on mount, not embedded server-side.** The page has already
+>   run the access decision, so the round trip is not the authorization — it is what makes step 4's
+>   join *write* happen. Rendering the URL into the HTML would have launched a space (and stamped
+>   an arrival) for every prefetch, crawl, and React double-render.
+> - **The join button on the booking detail pages is now real** (§7.3 "Joining"): same pure
+>   decision, so an enabled button and a granted link cannot disagree. A disabled button is a
+>   courtesy — the route re-decides regardless.
+> - **`/session/[bookingId]` redirects a scheduled booking to `/classroom/[bookingId]`** rather
+>   than linking to it, and `/classroom/[bookingId]` redirects an instant booking to
+>   `/session/[bookingId]`. A booking has exactly one room; the other URL is a stale link, not a
+>   place, and only a participant ever reaches the redirect. The Part 3A placeholder that stood at
+>   `/session` for scheduled bookings is deleted, not repurposed.
+> - **A `setTimeout` fires one `router.refresh()` at each window edge**, so a page left open at
+>   2:49 does not still read "opens at 2:50" a minute later. It is a single scheduled wake-up at a
+>   known instant, not a repeating question, and the server re-decides — CLAUDE.md's ban on polling
+>   is intact and a fast browser clock cannot talk itself into a classroom.
+>
+> **What Part 2 does NOT prove.** Both parties in one LessonSpace room with correct roles, and the
+> `confirmed → in_progress` transition firing on the second arrival, are unexercised by any
+> automated pass — the same standing gap as the Agora media path. See PROGRESS.
 
 **Waiting room** is a LessonSpace dashboard setting, not code — note it in the runbook (Section 17) as a deployment checklist item.
 

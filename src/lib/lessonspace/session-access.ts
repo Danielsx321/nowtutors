@@ -38,6 +38,33 @@ export interface LessonSpaceBookingRow {
 /** LessonSpace's roles. The tutor leads; everyone else attends. */
 export type LessonSpaceRole = "teacher" | "student";
 
+/**
+ * Why a join was refused, as a tag rather than a sentence.
+ *
+ * Added in Part 2 (the UI). The refusal already *knew* each of these — it
+ * computed `tooEarly` and threw the answer away into prose — and the page needs
+ * to render a different panel for each. Matching on a message string would have
+ * been a second, weaker copy of the decision, and re-computing the window in the
+ * page would have been a second copy of the window. The tag is the same decision,
+ * exported.
+ *
+ * `status` and `message` are unchanged; `POST /api/lessonspace/join` still maps
+ * only those two onto its response, and the tag is deliberately **not** returned
+ * to the browser by that route — a caller who is refused learns no more than they
+ * did before.
+ */
+export type LessonSpaceRefusal =
+  /** No such booking, or the caller is not in it. Indistinguishable, on purpose. */
+  | "not_found"
+  /** An instant booking (§7.4) — it has an Agora room, not a classroom. */
+  | "not_scheduled"
+  /** Not `confirmed` or `in_progress`: pending payment, completed, cancelled… */
+  | "not_joinable"
+  /** Before `scheduled_start_at − 10m` (§7.3). */
+  | "too_early"
+  /** After `scheduled_end_at + 30m` (§7.3). */
+  | "too_late";
+
 export type LessonSpaceAccess =
   | {
       ok: true;
@@ -48,6 +75,7 @@ export type LessonSpaceAccess =
     }
   | {
       ok: false;
+      reason: LessonSpaceRefusal;
       status: number;
       message: string;
     };
@@ -86,17 +114,45 @@ export type JoinWindowTiming = Pick<
  * returning null rather than doing arithmetic on a null clock.
  */
 export function withinJoinWindow(timing: JoinWindowTiming, now: Date): boolean {
+  const window = joinWindowFor(timing);
+  if (!window) return false;
+  const t = now.getTime();
+  return t >= window.opensAt.getTime() && t <= window.closesAt.getTime();
+}
+
+/** The two instants the window runs between. */
+export interface JoinWindow {
+  /** `scheduled_start_at − 10m`. Inclusive. */
+  opensAt: Date;
+  /** `scheduled_end_at + 30m`. Inclusive. */
+  closesAt: Date;
+}
+
+/**
+ * The join window's edges as instants, or null when the booking has no schedule.
+ *
+ * Added in Part 2, which needs to *say* when a classroom opens ("Opens at 3:50
+ * PM") and not merely whether it is open. It is the same arithmetic
+ * {@link withinJoinWindow} was already doing internally, lifted out and then
+ * consumed by it — so the page's clock and the guard's clock cannot disagree,
+ * which they would the moment the page did the subtraction itself.
+ *
+ * Null on either timestamp missing or unparseable, for the same reason
+ * `withinJoinWindow` answers false there: a booking with no scheduled window has
+ * no edges to name.
+ */
+export function joinWindowFor(timing: JoinWindowTiming): JoinWindow | null {
   const { scheduledStartAt, scheduledEndAt } = timing;
-  if (scheduledStartAt === null || scheduledEndAt === null) return false;
+  if (scheduledStartAt === null || scheduledEndAt === null) return null;
 
   const start = scheduledStartAt.getTime();
   const end = scheduledEndAt.getTime();
-  if (Number.isNaN(start) || Number.isNaN(end)) return false;
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
 
-  const opensAt = start - JOIN_WINDOW_BEFORE_MINUTES * MS_PER_MINUTE;
-  const closesAt = end + JOIN_WINDOW_AFTER_MINUTES * MS_PER_MINUTE;
-  const t = now.getTime();
-  return t >= opensAt && t <= closesAt;
+  return {
+    opensAt: new Date(start - JOIN_WINDOW_BEFORE_MINUTES * MS_PER_MINUTE),
+    closesAt: new Date(end + JOIN_WINDOW_AFTER_MINUTES * MS_PER_MINUTE),
+  };
 }
 
 /**
@@ -123,6 +179,11 @@ export function withinJoinWindow(timing: JoinWindowTiming, now: Date): boolean {
  *    early vs. too late; same status, since neither leaks anything a participant
  *    isn't entitled to know.
  *
+ * Every refusal also carries a {@link LessonSpaceRefusal} tag, which is what
+ * `/classroom/[bookingId]` switches its panels on. The page therefore renders
+ * "not open yet" / "window closed" from **this** decision rather than from a
+ * second copy of the window — see that file, and DECISIONS Phase 7 Part 2.
+ *
  * On admission the role is `teacher` for the tutor and `student` for the student
  * — derived here, never taken from the request.
  */
@@ -134,12 +195,18 @@ export function checkLessonSpaceAccess(
   const isStudent = row?.studentId === userId;
   const isTutor = row?.tutorId === userId;
   if (!row || (!isStudent && !isTutor)) {
-    return { ok: false, status: 404, message: "Session not found." };
+    return {
+      ok: false,
+      reason: "not_found",
+      status: 404,
+      message: "Session not found.",
+    };
   }
   if (row.type !== "scheduled") {
     // Instant bookings use the Agora session room (§7.4), not a classroom.
     return {
       ok: false,
+      reason: "not_scheduled",
       status: 400,
       message: "This booking doesn't use the scheduled classroom.",
     };
@@ -147,22 +214,30 @@ export function checkLessonSpaceAccess(
   if (row.status !== "confirmed" && row.status !== "in_progress") {
     return {
       ok: false,
+      reason: "not_joinable",
       status: 409,
       message: "This session isn't ready to join.",
     };
   }
-  if (!withinJoinWindow(row, now)) {
-    const tooEarly =
-      row.scheduledStartAt !== null &&
-      now.getTime() <
-        row.scheduledStartAt.getTime() -
-          JOIN_WINDOW_BEFORE_MINUTES * MS_PER_MINUTE;
+  const window = joinWindowFor(row);
+  if (!window || now.getTime() < window.opensAt.getTime()) {
+    // Early is the only answer a scheduled booking with no usable window can
+    // give: there is nothing to have missed. In practice unreachable — a
+    // `scheduled` row carries both timestamps (§4.3) — but the tag has to be one
+    // of the five, and "too late" would be a lie.
     return {
       ok: false,
+      reason: "too_early",
       status: 409,
-      message: tooEarly
-        ? "The classroom isn't open yet."
-        : "The join window for this session has closed.",
+      message: "The classroom isn't open yet.",
+    };
+  }
+  if (now.getTime() > window.closesAt.getTime()) {
+    return {
+      ok: false,
+      reason: "too_late",
+      status: 409,
+      message: "The join window for this session has closed.",
     };
   }
 

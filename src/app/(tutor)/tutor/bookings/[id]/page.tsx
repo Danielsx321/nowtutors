@@ -26,6 +26,7 @@ export default async function TutorBookingDetailPage({
   return (
     <BookingDetailView
       booking={booking}
+      viewerId={user.id}
       viewerTimeZone={me?.timezone ?? "UTC"}
       backHref="/tutor/bookings"
     />

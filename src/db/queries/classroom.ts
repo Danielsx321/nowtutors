@@ -1,7 +1,7 @@
 import "server-only";
 import { aliasedTable, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookings, profiles } from "@/db/schema";
+import { bookings, profiles, subjects } from "@/db/schema";
 import type { LessonSpaceBookingRow } from "@/lib/lessonspace/session-access";
 import {
   joinStampAssignments,
@@ -29,6 +29,10 @@ export interface ClassroomBookingRow extends LessonSpaceBookingRow {
   /** Already resolved through the same fallbacks `getSessionRoomView` uses. */
   studentName: string;
   tutorName: string;
+  /** Heading on `/classroom/[bookingId]`. Null when the booking has no subject. */
+  subjectName: string | null;
+  /** Shown beside the other party's name, as on the instant room. */
+  durationMinutes: number | null;
 }
 
 /**
@@ -39,6 +43,16 @@ export interface ClassroomBookingRow extends LessonSpaceBookingRow {
  * **caller's** display name (§7.7 step 3) and which party that is isn't known
  * until the access check has run. Reading both in this trip avoids a second
  * round trip to fetch a name we already had a join away.
+ *
+ * **One read serves the route and the page**, unlike `db/queries/sessions.ts`,
+ * which has a narrow `getSessionBooking` for `/api/agora/token` and a wide
+ * `getSessionRoomView` for `/session/[bookingId]`. That pair exists because the
+ * view resolves participation and viewer-relative labels the route does not
+ * want; here the two callers need the *same* row — `checkLessonSpaceAccess`
+ * decides for both, and both then pick a name off it with `access.isTutor`.
+ * Part 2 added `subject_name` and `duration_minutes` for the page's heading; a
+ * second near-identical query would have been two places to keep in step for the
+ * sake of two columns the join route simply ignores.
  */
 export async function getClassroomBooking(
   bookingId: string,
@@ -56,12 +70,15 @@ export async function getClassroomBooking(
       // The join window is computed from these two (§7.3, §7.7 step 1).
       scheduledStartAt: bookings.scheduledStartAt,
       scheduledEndAt: bookings.scheduledEndAt,
+      durationMinutes: bookings.durationMinutes,
+      subjectName: subjects.name,
       studentName: student.displayName,
       studentFullName: student.fullName,
       tutorName: tutor.displayName,
       tutorFullName: tutor.fullName,
     })
     .from(bookings)
+    .leftJoin(subjects, eq(subjects.id, bookings.subjectId))
     .innerJoin(student, eq(student.id, bookings.studentId))
     .innerJoin(tutor, eq(tutor.id, bookings.tutorId))
     .where(eq(bookings.id, bookingId))
@@ -76,6 +93,8 @@ export async function getClassroomBooking(
     type: row.type,
     scheduledStartAt: row.scheduledStartAt,
     scheduledEndAt: row.scheduledEndAt,
+    durationMinutes: row.durationMinutes,
+    subjectName: row.subjectName,
     // Same fallback chain as `getSessionRoomView`: a participant always has a
     // label to show the other side, even with an empty profile.
     studentName: row.studentName ?? row.studentFullName ?? "Student",

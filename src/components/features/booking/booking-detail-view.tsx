@@ -7,21 +7,42 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { bookingStatusMeta } from "@/lib/bookings/status";
 import type { BookingDetail } from "@/db/queries/bookings";
+import {
+  checkLessonSpaceAccess,
+  joinWindowFor,
+  JOIN_WINDOW_BEFORE_MINUTES,
+} from "@/lib/lessonspace/session-access";
+import { JoinWindowRefresh } from "@/components/features/classroom/join-window-refresh";
 
 interface BookingDetailViewProps {
   booking: BookingDetail;
+  /** The signed-in participant, so the join state comes from the shared decision. */
+  viewerId: string;
   viewerTimeZone: string;
   backHref: string;
 }
 
 /**
- * Shared booking-detail view for both sides (SPEC §6, §7.3). The join button is
- * a deliberately disabled placeholder — LessonSpace classroom wiring is Phase 7;
- * showing a labelled, inert affordance reads as complete without implying a
- * working flow. There is NO cancel control: cancellation is disabled for both
- * parties (SPEC §7.3, §18).
+ * Shared booking-detail view for both sides (SPEC §6, §7.3).
+ *
+ * **This is the way into the classroom** (§7.3, "Joining"), and Phase 7 Part 2
+ * replaced the inert placeholder that stood here with the real thing. The
+ * button's state is `checkLessonSpaceAccess`'s answer — the *same* pure decision
+ * `/classroom/[bookingId]` renders and `POST /api/lessonspace/join` enforces — so
+ * an enabled button and a granted link cannot disagree, and this file contains no
+ * arithmetic on §7.3's ten-and-thirty minutes. A disabled button is a courtesy,
+ * not a control: the route re-decides regardless (CLAUDE.md — never rely on the
+ * client hiding a button).
+ *
+ * There is NO cancel control: cancellation is disabled for both parties
+ * (SPEC §7.3, §18).
  */
-export function BookingDetailView({ booking, viewerTimeZone, backHref }: BookingDetailViewProps) {
+export function BookingDetailView({
+  booking,
+  viewerId,
+  viewerTimeZone,
+  backHref,
+}: BookingDetailViewProps) {
   const meta = bookingStatusMeta(booking.status);
   const dateFmt = new Intl.DateTimeFormat("en-US", {
     timeZone: viewerTimeZone,
@@ -112,14 +133,11 @@ export function BookingDetailView({ booking, viewerTimeZone, backHref }: Booking
 
           {isUpcoming && (
             <div className="space-y-2 border-t border-gray-100 pt-4">
-              <Button className="w-full" disabled>
-                <Video className="size-4" aria-hidden />
-                Join classroom
-              </Button>
-              <p className="text-center text-caption text-gray-500">
-                The join button opens 10 minutes before the session. The classroom
-                arrives in a later release.
-              </p>
+              <JoinControl
+                booking={booking}
+                viewerId={viewerId}
+                timeFmt={timeFmt}
+              />
             </div>
           )}
 
@@ -133,6 +151,87 @@ export function BookingDetailView({ booking, viewerTimeZone, backHref }: Booking
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * The join affordance, in whichever of its four states applies right now.
+ *
+ * Everything it switches on comes from {@link checkLessonSpaceAccess}: the page
+ * hands it the booking row and the viewer, and the shared decision says open,
+ * too early, too late, or "that is an instant booking". `JoinWindowRefresh` then
+ * re-asks the server at the boundary, so a page left open at 2:49 does not still
+ * read "opens at 2:50" a minute later — the client re-renders the server's
+ * answer, it never computes its own.
+ */
+function JoinControl({
+  booking,
+  viewerId,
+  timeFmt,
+}: {
+  booking: BookingDetail;
+  viewerId: string;
+  timeFmt: Intl.DateTimeFormat;
+}) {
+  const access = checkLessonSpaceAccess(
+    {
+      id: booking.id,
+      studentId: booking.studentId,
+      tutorId: booking.tutorId,
+      status: booking.status,
+      type: booking.bookingType,
+      scheduledStartAt: booking.scheduledStartAt,
+      scheduledEndAt: booking.scheduledEndAt,
+    },
+    viewerId,
+  );
+  const joinWindow = joinWindowFor(booking);
+
+  if (access.ok) {
+    return (
+      <>
+        <Button className="w-full" asChild>
+          <Link href={`/classroom/${booking.id}`}>
+            <Video className="size-4" aria-hidden />
+            Join classroom
+          </Link>
+        </Button>
+        {joinWindow && <JoinWindowRefresh at={joinWindow.closesAt.toISOString()} />}
+      </>
+    );
+  }
+
+  // An instant booking rendered on a detail page: its room is the Agora session
+  // (§7.4), not a classroom. The list query is scheduled-only, so this is the
+  // rare direct link rather than the normal path.
+  if (access.reason === "not_scheduled") {
+    return (
+      <Button className="w-full" asChild>
+        <Link href={`/session/${booking.id}`}>
+          <Video className="size-4" aria-hidden />
+          Open session room
+        </Link>
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button className="w-full" disabled>
+        <Video className="size-4" aria-hidden />
+        Join classroom
+      </Button>
+      <p className="text-center text-caption text-gray-500">
+        {access.reason === "too_early" && joinWindow
+          ? `Opens ${JOIN_WINDOW_BEFORE_MINUTES} minutes before the session, at ${timeFmt.format(joinWindow.opensAt)}.`
+          : access.reason === "too_late"
+            ? "The join window for this session has closed."
+            : "This session can’t be joined right now."}
+      </p>
+      {access.reason === "too_early" && joinWindow && (
+        <JoinWindowRefresh at={joinWindow.opensAt.toISOString()} />
+      )}
+    </>
   );
 }
 

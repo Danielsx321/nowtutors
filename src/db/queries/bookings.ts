@@ -362,6 +362,15 @@ export interface BookingDetail extends BookingListItem {
   bookingType: string;
   otherPartyRole: "student" | "tutor";
   isStudent: boolean;
+  /**
+   * Both participant ids, so the detail view can run the *same*
+   * `checkLessonSpaceAccess` the classroom and the join route run (Phase 7
+   * Part 2). `isStudent` above already says which side the viewer is on; these
+   * exist so the join button's state comes from that one shared decision instead
+   * of the view re-deriving §7.3's window from the two timestamps.
+   */
+  studentId: string;
+  tutorId: string;
 }
 
 /**
@@ -411,6 +420,8 @@ export async function getBookingDetailForParticipant(
     id: row.id,
     status: row.status,
     bookingType: row.type,
+    studentId: row.studentId,
+    tutorId: row.tutorId,
     scheduledStartAt: row.scheduledStartAt,
     scheduledEndAt: row.scheduledEndAt,
     durationMinutes: row.durationMinutes,

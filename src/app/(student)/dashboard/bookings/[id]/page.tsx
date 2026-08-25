@@ -27,6 +27,7 @@ export default async function StudentBookingDetailPage({
   return (
     <BookingDetailView
       booking={booking}
+      viewerId={user.id}
       viewerTimeZone={me?.timezone ?? "UTC"}
       backHref="/dashboard/bookings"
     />
