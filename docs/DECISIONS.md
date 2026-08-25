@@ -2995,3 +2995,166 @@ iframe, the LessonSpace round trip, and the `confirmed → in_progress` transiti
 firing on the *second* arrival need two authenticated browsers and a configured
 `LESSONSPACE_API_KEY`. Recorded in PROGRESS the same way the Agora media path is:
 unexercised, and a §15 E2E concern rather than a defect.
+
+## Fix — the tutor's modal never painted (`fix/incoming-requests-never-shown`, 2026-08-25)
+
+A tutor sitting on a tutor page, live, never saw an incoming instant request.
+The student's ring ran the full sixty seconds and expired. Nothing was logged,
+nothing threw, and the whole 333-test suite was green throughout.
+
+### 1. The fault, exactly
+
+`useCountdown` held `secondsLeft` in `useState` and seeded it from an **effect**,
+while `deadline` was a `useMemo`. Those two do not update on the same beat. On
+the render where `expiresAt` first became non-null — the render where the tutor's
+queue takes a request — `deadline` had already recomputed to a real timestamp
+while `secondsLeft` was still the previous render's `0`. So
+
+```ts
+elapsed: deadline != null && secondsLeft <= 0   // true, on a countdown at 60
+```
+
+reported an expired countdown for exactly one render. `IncomingRequests` has an
+effect on `elapsed` that drops the request from the queue, and effects for a
+commit run in child-first order in the **same** flush that `useCountdown`'s own
+effect uses to seed the number. The drop and the seed happened together, the
+queue emptied, and the component returned `null` before anything reached the
+screen. Present since `2d792de`; deterministic, not a race.
+
+### 2. Fixed in the hook, and by removing the state rather than guarding it
+
+The obvious patch is at the call site — `if (current && elapsed && secondsLeft > 0)`,
+or a `hasSeeded` ref in `IncomingRequests`. That was rejected. The bug is not
+that one consumer read `elapsed` carelessly; it is that the hook published a
+value belonging to a **previous** deadline and called it this deadline's. Four
+consumers read `elapsed` or the number on the render where the deadline arrives
+(the tutor's modal, the student's waiting ring, `SessionTimer`'s one-shot
+`onExpired`, the classroom's "opens in"), and a guard in one of them leaves the
+same wrong shape in the other three. `SessionTimer` in particular would fire
+`onExpired` the moment a session's deadline is handed down — harmless today only
+because the deadline actor re-asks the server and gets told "not yet".
+
+Of the two fixes the brief allowed — derive from the deadline, or tag the stored
+seconds with the deadline they belong to — **derive** was taken:
+
+```ts
+const secondsLeft = read();     // clock, measured against THIS render's deadline
+```
+
+The interval no longer holds the countdown at all; its only job is to call a
+`useReducer` dispatch so the component re-renders and reads the clock again. The
+tagging alternative (`{ deadline, secondsLeft }` in one state object, recomputed
+during render when the tag does not match) is correct too, but it keeps a stored
+copy of a derived number and therefore keeps the invariant "the tag always
+matches" as something a future edit can break. There is no stale value left to
+be stale. `expiresAt === null` still reads `0`, and a deadline already in the
+past still reads `elapsed` immediately on its first render — the fix removes the
+false positive, not expiry.
+
+**Falsified before it was trusted.** With the old hook restored and the new tests
+unchanged: 5 of 11 fail, and the tutor test fails with *"Unable to find an
+accessible element with the role `dialog`"* — the production symptom, reproduced.
+
+### 3. The testing-lane gap this exposed, which is the larger finding
+
+333 unit tests said nothing about a modal that never rendered, and that is not
+bad luck. `vitest.config.ts` is `environment: "node"` and matches
+`tests/unit/**/*.test.ts` only; **no component in this repo had ever been
+rendered by a test.** Every green test asserts on a pure function's return
+value, and this defect had no pure function in it — it was an ordering property
+of a render against an effect. The suite was not weak here, it was structurally
+blind, and it would have stayed blind however many more unit tests were added.
+
+So `vitest.dom.config.ts` is a **third lane**, not a flag on the existing one.
+`environment: "jsdom"` globally would put 333 pure money-and-scheduling tests
+into a fake browser to serve eleven, and the brief's requirement was that the
+node lane keep running exactly as it does. The separation is the same one
+`vitest.integration.config.ts` already uses and is enforced twice over: disjoint
+`include` globs *and* disjoint file extensions (`tests/unit/**/*.test.ts` cannot
+match `tests/dom/**/*.test.tsx`). Verified after the change: `pnpm test` is
+still 28 files / 333 tests.
+
+Unlike the DB lane, this one **is** in the CI `verify` job. The reason
+`test:db:test` is excluded is missing infrastructure — no Postgres, no
+`.env.test` on the runner. `jsdom` installs like any other dev dependency, so
+that reason does not transfer, and a lane added for a bug CI could not see is
+worth little if CI still cannot see it.
+
+**Dependencies** (SPEC §2, updated in this commit): `jsdom`, `@testing-library/react`,
+`@testing-library/dom` — all `devDependencies`. `@testing-library/dom` is a
+declared peer of `@testing-library/react` v16 and has to be explicit.
+`@testing-library/jest-dom` was deliberately **not** added: it buys
+`toBeInTheDocument()` over `expect(queryByRole(...)).not.toBeNull()` and costs a
+fourth dependency plus a matcher-registration setup file.
+
+Only what leaves the browser is faked in the tutor test — the Supabase channel
+and the Server Actions, which cannot run in jsdom. The real
+`useIncomingSessionRequests`, the real `useCountdown` and the real component are
+under test, which is why the failure had somewhere to live.
+
+### 3b. One unreproduced DOM-lane failure, and what was done about it
+
+Recorded because the next person to see it should not have to rediscover it.
+On one verification sweep the DOM lane reported **2 failed / 9 passed**; every
+run before and since has been 11/11. The failing sweep is the only one where the
+whole machine was starved — the node lane took 39s against a normal 4s, and the
+DOM lane reported `environment 65.73s` against a normal 3.8s.
+
+**It did not reproduce.** 12+ subsequent runs, including two with every core
+deliberately saturated by busy-loops, are all 11/11. The failing run's output was
+not captured, so the specific assertions are unknown — that is a gap in the
+evidence, not a solved question.
+
+The tests themselves are clock-deterministic: every one pins `Date` with
+`vi.useFakeTimers({ now })`, so the numbers asserted (60, 59, 54, 29, 0) do not
+vary with machine speed. What does vary is standing up jsdom and a React renderer
+at all, and Vitest's default budget is **5s per test**. A 65s environment build
+exhausts that while nothing is wrong with the code. So `testTimeout` and
+`hookTimeout` are raised to 30s for this lane — a timeout on the machine, not on
+the assertion, the same reason `vitest.integration.config.ts` raises its own. The
+saturated re-runs now report `environment 28.66s` and pass, where the default
+would have been at risk.
+
+One real defect was found while looking, and fixed: the tests restored the real
+clock in `afterEach` while the component was **still mounted**, so unmounting
+called `clearInterval` on an id the fake timers had issued. Both files now
+`cleanup()` before `vi.useRealTimers()`. `cleanup()` is idempotent, so the setup
+file's own call becomes a no-op — which makes it correct whichever order Vitest
+runs the two hooks in, rather than depending on knowing that order. **This is not
+claimed as the cause of the failure**; it is a genuine fault found on the way and
+removed.
+
+If it recurs, capture the runner's output before anything else — that is exactly
+what this entry could not do.
+
+### 4. Subscription status is reported, and nothing else changed about it
+
+`.subscribe()` took no callback on either side of the handshake, so
+`CHANNEL_ERROR`, `TIMED_OUT` and a binding refused by the `session_requests` RLS
+SELECT policy were all silent — indistinguishable, from the client, from a
+channel with nothing to deliver. A tutor whose subscription never established
+looked exactly like a tutor nobody had requested.
+
+`reportSubscriptionStatus` logs anything that is not `SUBSCRIBED` or `CLOSED`
+(`CLOSED` is what unmounting produces) in the `[scope] message` shape the route
+handlers already use, which Sentry picks up from the browser. **Visibility only,
+deliberately:** no retry, no fallback and no change to what the channel does.
+Realtime reconnects on its own, and a client-side retry loop here would be the
+polling CLAUDE.md forbids wearing a different hat.
+
+### What is NOT here
+
+No change to `IncomingRequests` — the effect at line 86 was reading a hook that
+lied to it, and it is correct against a hook that does not. No change to
+`instant-request-widget.tsx`, `session-timer.tsx` or `join-window-refresh.tsx`;
+all three carried the same latent fault and all three are fixed by the hook.
+No migration, no schema change, nothing in `lib/credits/`.
+
+**Three real defects were found and deliberately left alone**, recorded in
+PROGRESS with enough detail to act on: `IncomingRequests` mounts only in the
+`(tutor)` layout while the presence heartbeat mounts in `AppShell`, so a tutor
+in a session is advertised as available and cannot receive; `getIncomingRequest`
+calls `requireRole("tutor")` with approval enforced inside a fire-and-forget
+async, so an unapproved tutor's `NEXT_REDIRECT` becomes an unhandled rejection;
+and there is still no mount-time query for pending requests, so a refresh
+surfaces nothing. Each needs a decision this fix had no business taking.
