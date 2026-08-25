@@ -14,35 +14,48 @@ import {
   ModalTitle,
 } from "@/components/ui/modal";
 import { ProgressRing } from "@/components/ui/progress-ring";
+import { RealtimeStatusIndicator } from "@/components/features/tutor/realtime-status-indicator";
 import { useCountdown } from "@/hooks/use-countdown";
 import { useIncomingSessionRequests } from "@/hooks/use-session-requests";
 import {
   acceptSessionRequest,
   declineSessionRequest,
   getIncomingRequest,
+  listPendingIncomingRequests,
   type SerializedIncomingRequest,
 } from "@/actions/session-requests";
-
-/* -------------------------------------------------------------------------
- * [ir-trace] TEMPORARY INSTRUMENTATION — REMOVE.
- *
- * The tutor's modal does not paint even though `session_requests` rows are
- * written, the channel reports SUBSCRIBED and websocket frames are arriving.
- * This traces every step between the INSERT callback and the modal's render so
- * a silent early return, a rejected fire-and-forget, or an empty queue is
- * visible in the console instead of being inferred.
- *
- * Grep `[ir-trace]` to find and delete all of it. It changes no behaviour.
- * ------------------------------------------------------------------------- */
-function irTrace(step: string, detail?: unknown): void {
-  if (detail === undefined) console.log(`[ir-trace] ${step}`);
-  else console.log(`[ir-trace] ${step}`, detail);
-}
 
 export interface IncomingRequestsProps {
   tutorId: string;
   /** `instant_request_ttl_seconds`, for the ring's full sweep. */
   ttlSeconds: number;
+}
+
+/**
+ * Merge freshly-read requests into the queue without disturbing it.
+ *
+ * The queue has TWO producers now — the Realtime INSERT and the mount-time
+ * read — and they overlap by design: the read runs again after every successful
+ * (re)subscribe precisely so a request that arrived in the connect window is not
+ * lost, which means the common case is that it returns a row the event already
+ * delivered. Deduplicating by id is what stops that being a second modal.
+ *
+ * Existing entries keep their position and their object identity: `current` is
+ * `queue[0]`, and replacing it with an equal-but-new object would re-seed the
+ * countdown ring mid-answer.
+ *
+ * **Exported for its test.** A double-add is not observable through the modal —
+ * only `queue[0]` ever renders, and `drop` filters by id, so it removes every
+ * copy — which means an assertion made through the DOM would pass whether the
+ * rule held or not. The rule is real, so it is asserted where it can fail.
+ */
+export function mergeIntoQueue(
+  queue: SerializedIncomingRequest[],
+  incoming: SerializedIncomingRequest[],
+): SerializedIncomingRequest[] {
+  const known = new Set(queue.map((r) => r.id));
+  const additions = incoming.filter((r) => !known.has(r.id));
+  return additions.length === 0 ? queue : [...queue, ...additions];
 }
 
 /**
@@ -52,6 +65,17 @@ export interface IncomingRequestsProps {
  * tutor page they happen to be on. It listens on Realtime — nothing polls — and
  * treats the payload as a notification only: the name, subject, note and price
  * shown here come back from a guarded Server Action keyed by the request id.
+ *
+ * **It also reads on mount, and that is not polling.** A subscription delivers
+ * what happens after it is bound; it has nothing to say about a request that was
+ * already waiting. Until this read existed the tutor side depended entirely on
+ * catching the event live, so a request that arrived during a failed or
+ * still-connecting subscribe was gone for good — and refreshing the page could
+ * not recover it, because the refresh only re-subscribed. The read runs once on
+ * mount (which covers the case where the subscription never establishes at all)
+ * and again after each successful (re)subscribe (which closes the window
+ * between the page loading and the channel being live). Two reads per page
+ * load, not one per interval.
  *
  * The 60-second ring is **cosmetic**. Expiry is the server's: an accept past
  * `expires_at` is refused by the accept transaction whatever this ring says, and
@@ -75,68 +99,44 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     setQueue((q) => q.filter((r) => r.id !== requestId));
   }, []);
 
-  useIncomingSessionRequests(tutorId, {
+  /** Ask what is already waiting. Never throws into the caller. */
+  const loadPending = React.useCallback(() => {
+    void (async () => {
+      const res = await listPendingIncomingRequests();
+      if ("error" in res) return;
+      setQueue((q) => mergeIntoQueue(q, res.requests));
+    })().catch((err: unknown) => {
+      // Logged, not swallowed. A guard redirect thrown inside a promise nobody
+      // awaits cannot navigate — it becomes an unhandled rejection, which is
+      // exactly how the approval-guard mismatch below stayed invisible.
+      console.error("[incoming-requests] pending read failed", err);
+    });
+  }, []);
+
+  const status = useIncomingSessionRequests(tutorId, {
     onIncoming: (requestId) => {
-      // [ir-trace] 3 — onIncoming reached, and the read-back about to be made.
-      irTrace("3. onIncoming entered", { requestId });
       void (async () => {
-        irTrace("3a. calling getIncomingRequest", { requestId });
         const res = await getIncomingRequest(requestId);
-        irTrace("3b. getIncomingRequest resolved; res =", res);
         // A request that vanished between the event and this read is simply not
         // shown — there is nothing for the tutor to answer.
-        // [ir-trace] the two silent early returns, logged separately so which
-        // one swallowed the request is not a guess.
-        if ("error" in res) {
-          irTrace("3c. EARLY RETURN — 'error' in res", { error: res.error });
-          return;
-        }
-        if (res.request.status !== "pending") {
-          irTrace("3d. EARLY RETURN — status !== 'pending'", {
-            status: res.request.status,
-            id: res.request.id,
-          });
-          return;
-        }
-        irTrace("3e. read-back OK, enqueueing", {
-          id: res.request.id,
-          expiresAt: res.request.expiresAt,
-        });
-        setQueue((q) => {
-          // [ir-trace] 5 — queue length before and after.
-          const next = q.some((r) => r.id === res.request.id)
-            ? q
-            : [...q, res.request];
-          irTrace("5. setQueue", {
-            before: q.length,
-            after: next.length,
-            duplicate: next === q,
-          });
-          return next;
-        });
+        if ("error" in res) return;
+        if (res.request.status !== "pending") return;
+        setQueue((q) => mergeIntoQueue(q, [res.request]));
       })().catch((err: unknown) => {
-        // [ir-trace] 4 — the fire-and-forget's rejection. `getIncomingRequest`
-        // calls requireRole("tutor") with requireApproval defaulting true, so a
-        // NEXT_REDIRECT thrown in there would otherwise be an INVISIBLE
-        // unhandled rejection. Make it speak.
-        irTrace("4. FIRE-AND-FORGET REJECTED", {
-          requestId,
-          name: err instanceof Error ? err.name : typeof err,
-          message: err instanceof Error ? err.message : String(err),
-          digest:
-            typeof err === "object" && err !== null && "digest" in err
-              ? (err as { digest?: unknown }).digest
-              : undefined,
-          error: err,
-        });
+        console.error("[incoming-requests] read-back failed", { requestId, err });
       });
     },
     // Expired, cancelled, or auto-declined by an accept elsewhere: stop showing it.
-    onSettled: (requestId) => {
-      irTrace("U3. onSettled — dropping from queue", { requestId });
-      drop(requestId);
-    },
+    onSettled: (requestId) => drop(requestId),
+    onSubscribed: loadPending,
   });
+
+  // Mount-time read. Separate from `onSubscribed` on purpose: that one never
+  // fires if the channel never establishes, which is the case this whole change
+  // exists for.
+  React.useEffect(() => {
+    loadPending();
+  }, [loadPending]);
 
   const current = queue[0] ?? null;
   const { secondsLeft, fraction, elapsed } = useCountdown(
@@ -144,30 +144,9 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     ttlSeconds,
   );
 
-  // [ir-trace] 6 — what this render actually decided, every render.
-  irTrace("6. render", {
-    tutorId,
-    ttlSeconds,
-    queueLength: queue.length,
-    currentIsNull: current === null,
-    currentId: current?.id ?? null,
-    expiresAt: current?.expiresAt ?? null,
-    secondsLeft,
-    fraction,
-    elapsed,
-  });
-
   // The ring reaching zero closes the modal. The row itself is moved to
   // `expired` by the cron (§12) — this is the local consequence, not the write.
   React.useEffect(() => {
-    // [ir-trace] the countdown-closes-the-modal path — if this fires on the
-    // first render that has a deadline, the modal is being dropped, not missed.
-    if (current && elapsed) {
-      irTrace("6b. elapsed effect DROPPING current", {
-        id: current.id,
-        expiresAt: current.expiresAt,
-      });
-    }
     if (current && elapsed) drop(current.id);
   }, [current, elapsed, drop]);
 
@@ -196,69 +175,69 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     if ("error" in res) toast.error(res.error);
   }
 
-  if (!current) {
-    irTrace("6c. RETURNING NULL — no current request, modal not rendered");
-    return null;
-  }
+  const indicator = status === "unavailable" ? <RealtimeStatusIndicator /> : null;
 
-  irTrace("6d. MODAL BRANCH REACHED — rendering dialog", { id: current.id });
+  if (!current) return indicator;
 
   return (
-    <Modal open onOpenChange={(open) => !open && drop(current.id)}>
-      <ModalContent size="md" hideClose>
-        <ModalHeader>
-          <ModalTitle>Instant session request</ModalTitle>
-          <ModalDescription>
-            {current.studentName ?? "A student"} wants to start now.
-          </ModalDescription>
-        </ModalHeader>
+    <>
+      {indicator}
+      <Modal open onOpenChange={(open) => !open && drop(current.id)}>
+        <ModalContent size="md" hideClose>
+          <ModalHeader>
+            <ModalTitle>Instant session request</ModalTitle>
+            <ModalDescription>
+              {current.studentName ?? "A student"} wants to start now.
+            </ModalDescription>
+          </ModalHeader>
 
-        <div className="flex items-start gap-4">
-          <Avatar
-            src={current.studentAvatarUrl}
-            name={current.studentName ?? "Student"}
-            size="lg"
-          />
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-body font-medium text-gray-700">
-              {current.durationMinutes} minutes
-              {current.subjectName ? ` · ${current.subjectName}` : ""}
-            </p>
-            <p className="text-small text-gray-500">
-              Earns you {current.priceCredits} credits
-            </p>
-            {current.message && (
-              <p className="mt-2 whitespace-pre-line rounded-md bg-gray-50 p-3 text-small text-gray-700">
-                {current.message}
+          <div className="flex items-start gap-4">
+            <Avatar
+              src={current.studentAvatarUrl}
+              name={current.studentName ?? "Student"}
+              size="lg"
+            />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-body font-medium text-gray-700">
+                {current.durationMinutes} minutes
+                {current.subjectName ? ` · ${current.subjectName}` : ""}
               </p>
-            )}
+              <p className="text-small text-gray-500">
+                Earns you {current.priceCredits} credits
+              </p>
+              {current.message && (
+                <p className="mt-2 whitespace-pre-line rounded-md bg-gray-50 p-3 text-small text-gray-700">
+                  {current.message}
+                </p>
+              )}
+            </div>
+            <ProgressRing
+              value={fraction}
+              label={secondsLeft}
+              live
+              aria-label={`${secondsLeft} seconds left to answer`}
+            />
           </div>
-          <ProgressRing
-            value={fraction}
-            label={secondsLeft}
-            live
-            aria-label={`${secondsLeft} seconds left to answer`}
-          />
-        </div>
 
-        <ModalFooter>
-          <Button
-            variant="secondary"
-            onClick={onDecline}
-            disabled={pending !== null}
-            loading={pending === "decline"}
-          >
-            Decline
-          </Button>
-          <Button
-            onClick={onAccept}
-            disabled={pending !== null}
-            loading={pending === "accept"}
-          >
-            Accept and start
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+          <ModalFooter>
+            <Button
+              variant="secondary"
+              onClick={onDecline}
+              disabled={pending !== null}
+              loading={pending === "decline"}
+            >
+              Decline
+            </Button>
+            <Button
+              onClick={onAccept}
+              disabled={pending !== null}
+              loading={pending === "accept"}
+            >
+              Accept and start
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }

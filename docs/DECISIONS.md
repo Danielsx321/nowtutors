@@ -3158,3 +3158,190 @@ calls `requireRole("tutor")` with approval enforced inside a fire-and-forget
 async, so an unapproved tutor's `NEXT_REDIRECT` becomes an unhandled rejection;
 and there is still no mount-time query for pending requests, so a refresh
 surfaces nothing. Each needs a decision this fix had no business taking.
+
+## Fix — the instant request never reached the tutor, because the SUBSCRIPTION never established (`fix/realtime-subscription-resilience`, 2026-08-25)
+
+The previous fix ("The tutor's modal never painted") was correct and did not finish the job. It
+repaired what happens **after** a frame arrives; this one repairs the fact that on some page loads
+no frame ever could.
+
+### 1. What the instrumentation established, so nobody re-derives it
+
+The `[ir-trace]` logging deployed in `#48` — removed again in this commit — answered the question
+it was added for, and the answer moved the fault:
+
+- **When the subscription resolves `SUBSCRIBED`, the ENTIRE chain works.** Verified live: request
+  sent, INSERT callback fired, `getIncomingRequest` resolved, queue populated, modal painted. The
+  countdown fix was necessary for that and is correct.
+- **The fault is subscription ESTABLISHMENT.** For some page loads `.subscribe()`'s callback
+  resolves `TIMED_OUT`; for others it **never fires at all**. Observed across three tutor accounts
+  and three browsers, so it is not an account, a session or a browser.
+- **Nothing retried.** A failed subscribe was permanent for that page's lifetime — and invisible:
+  the tutor still showed as live and simply never received anything, while the student watched a
+  ring run out.
+
+### 2. Why it fails: the Realtime tenant sleeps, and that is a PER-PROJECT property
+
+Supabase shuts a project's Realtime tenant down on the free tier when nobody is connected — the
+log line is *"Stop tenant because of no connected users"* — and starting it again does real work:
+replication slot creation, publication validation, partition creation. That cold start outlasts the
+client's connect timeout, so **the first tutor to open `/tutor` after a quiet period is the one who
+loses**, and a second page load moments later usually succeeds because the tenant is now warm. That
+is exactly the shape of "it works sometimes" this presented as.
+
+**This is the same class of surprise as the `pg_cron` / Vault state, and it deserves the same
+warning.** Neither travels between Supabase projects. The cron jobs, the `pg_cron`/`pg_net`
+extensions and the Vault secrets exist **only** on the shared dev/prod project
+(`mipnoxlhurdbaahmvhhx`) and deliberately not on the test project (RUNBOOK, "No cron on the test
+project"); tenant sleep is likewise a property of a *project's plan and traffic*, not of this
+repository. Nothing in `git` records either one, and nothing in a migration chain reproduces them.
+The Phase 10 production project will start with a cold, sleeping Realtime tenant and no cron at all,
+and will present this identical symptom on its first tutor login unless someone remembers. The
+lesson generalises: **when behaviour depends on Supabase project state rather than on code, the
+repository cannot be the record of it — RUNBOOK has to be.**
+
+The retry below is the right fix regardless of plan. Upgrading off the free tier would make the
+cold start rarer, not impossible, and a subscription that gives up permanently on its first failure
+is wrong on any plan.
+
+### 3. Retry, reversing "visibility only" — and why it is not the polling CLAUDE.md forbids
+
+The earlier entry (#4 of "the tutor's modal never painted") decided **against** a retry, on the
+reasoning that Realtime reconnects on its own and a client-side retry loop would be "the polling
+CLAUDE.md forbids wearing a different hat". The first half of that is falsified: it does not
+reconnect from a subscribe that never established, and the deployed evidence is that the failure is
+permanent. The second half was a category error, and it is worth being precise about why, because
+the rule it invoked is a real rule:
+
+> Polling is *asking for data on an interval*. This retries **establishing a push channel**, it
+> makes no request for data at any point, it runs only while the channel is NOT up, and it stops the
+> moment it is. It exists so that nothing has to poll.
+
+`useRetryingChannel` in `src/hooks/use-session-requests.ts` is one helper used by both sides of the
+handshake. Four properties it has to have, each of which is a way the naive version is wrong:
+
+- **Bounded backoff, unbounded attempts.** 1s doubling to a 30s cap. The cap is on the *delay*, not
+  on the number of tries: a tutor sitting on `/tutor` marked live has no other way to receive a
+  request, so giving up would restore the exact silent failure this removes. One attempt per 30s is
+  two orders of magnitude off polling.
+- **The previous channel is removed BEFORE the backoff**, not after it and not at the next connect
+  — a page that fails ten times must hold one socket, not ten, and must not hold a dead one for the
+  length of the wait.
+- **A callback that never fires is a failure.** A 15s watchdog runs alongside every connect,
+  because half of what was observed live reports *nothing at all* and a retry hung off the status
+  callback alone is structurally unable to see it. 15s sits past the client's own 10s connect
+  timeout so a real `TIMED_OUT` is still what gets reported when the client can report anything.
+- **`CLOSED` is not retried**, and a teardown mid-backoff cancels the pending retry. `CLOSED` is
+  what unmounting produces; retrying it would fight the navigation that caused it.
+
+One ordering bug was found by the tests and is worth recording because it is not obvious: the
+watchdog must be armed **before** `.subscribe()`, not after. `.subscribe()` may invoke its callback
+synchronously, and a watchdog set afterwards is set *after* the `SUBSCRIBED` that was meant to clear
+it — it then fires on a healthy channel and tears it down. Same reason the channel is assigned to
+its variable before `.subscribe()` is called.
+
+**The student side gets the same treatment**, though the brief only named the tutor's. It is the
+same file, the same helper and the identical fault on the other leg: a student whose channel never
+established watches a ring run out on a request the tutor may well have accepted. No indicator is
+surfaced there — a student's request lives 60 seconds and the waiting modal already has its own
+expiry message, so a "reconnecting" badge inside that window has nothing honest to add.
+
+### 4. A mount-time read, because a subscription is not a source of truth
+
+There was **no mount-time read on the tutor side at all** — the queue was fed by the Realtime INSERT
+and by nothing else. That is why refreshing never helped: a refresh re-subscribed and asked nothing.
+`getPendingRequestsForTutor` (query layer) → `listPendingIncomingRequests` (guarded action) →
+`IncomingRequests` now reads every still-`pending`, not-yet-expired request on mount **and** after
+every successful (re)subscribe.
+
+Both, deliberately, and they are not redundant:
+
+- **On mount** covers the case the whole change exists for — if the channel never establishes,
+  `onSubscribed` never fires and a read hung off it would never run.
+- **After each subscribe** closes a window a retry alone cannot: a request that arrived while the
+  channel was down is not going to be delivered by the channel that comes up afterwards.
+
+Two reads per page load, not one per interval. Filtered `pending AND expires_at > now()`, the same
+way `getPendingRequestForStudent` filters — a row past its deadline is expired by the only clock
+that counts, whatever the cron has got round to.
+
+`mergeIntoQueue` deduplicates by request id, because the event and the query now overlap **by
+design** and the common case is that the read returns a row the event already delivered. It returns
+the *same array* when there is nothing to add: `current` is `queue[0]`, and replacing it with an
+equal-but-new object would re-seed the countdown ring mid-answer. It is exported and asserted
+directly, because a double-add is **not observable through the DOM** — only `queue[0]` renders and
+`drop` filters by id, so an assertion made through the modal would pass whether the rule held or
+not.
+
+### 5. The tutor is told, and only when there is something to tell
+
+"You are live but not receiving requests" was true, and visible only in a `console.error` nobody has
+open. `RealtimeStatusIndicator` renders in the `(tutor)` shell **only** while the subscription is
+`unavailable` — meaning an attempt has already failed and a retry is scheduled. The first connect
+shows nothing: a warning that flashes on every page load is a warning people learn to look past, and
+normal startup is not news. It clears itself when a retry succeeds; there is nothing to dismiss and
+no action to offer, so it offers none.
+
+Hence the three-state `RealtimeStatus` (`connecting` / `subscribed` / `unavailable`) rather than a
+boolean — `connecting` and `unavailable` are both "not subscribed", and the whole point is that they
+must not look the same to a person.
+
+Tokens only (§10.1): `ink-900` fill with an `ink-700` border, since elevation-by-lightness is
+unavailable on ink; white body text (9.29:1), `ink-300` secondary (4.69:1), and `warning` amber for
+the non-text dot — **4.55:1 on `ink-900`**, past the 3:1 non-text floor. Deliberately not
+live-green: green here would be a second meaning for the colour §10.1 reserves for live status.
+
+### 6. `SUBSCRIBED` is now logged, which reverses the earlier "success is not news"
+
+`reportSubscriptionStatus` returned early on `SUBSCRIBED` and `CLOSED` alike. During this
+investigation that made a console with no `[realtime/…]` line in it mean **either** "the
+subscription is healthy" **or** "the subscribe callback never ran" — the two opposite answers to the
+question being asked. Health that says nothing cannot be told apart from silence. `SUBSCRIBED` logs
+at `console.info`; `CLOSED` stays quiet because it is what unmounting produces on every navigation.
+
+### 7. The layout guard and the action guard now agree
+
+The `(tutor)` layout guards with `requireRole("tutor", { requireApproval: false })` — it has to, or
+`/tutor/pending-approval`, which lives under it, redirect-loops. `getIncomingRequest` called
+`requireRole("tutor")` with approval defaulting to **true**. So an unapproved tutor could
+legitimately be mounted under that layout while every enrichment call `redirect()`ed — and because
+the call is a fire-and-forget, the `NEXT_REDIRECT` had nothing to navigate: it became an unhandled
+promise rejection, silent in production.
+
+Resolved in the action's favour: `getIncomingRequest` and the new `listPendingIncomingRequests` both
+pass `{ requireApproval: false }`. **Approval is not what authorizes these reads — ownership is**,
+and both are scoped to `tutor_id = me`. An unapproved tutor is not in the `live_tutors` view (§3.1),
+so no request can be addressed to them and both reads return nothing for them anyway. The opposite
+resolution — enforcing approval in the layout — is not available, because it reintroduces the
+redirect loop the layout's relaxed guard exists to prevent. `acceptSessionRequest` /
+`declineSessionRequest` keep approval enforced: they create a booking and charge a student, and
+neither runs unawaited. The rule is now in SPEC §5 rather than only here.
+
+The `.catch` stays and still logs — it is not swallowing, it is the only place a rejection from an
+unawaited promise can be seen at all.
+
+### 8. Falsification — four breaks, all four caught
+
+The suite is 24 DOM tests (up from 11) across three files. Each break was applied to the shipped
+code, the lane run, then reverted:
+
+| Break | Result |
+|---|---|
+| `TIMED_OUT` treated as non-retryable (the pre-fix behaviour) | **3 failed** — "retries a `TIMED_OUT` subscribe" (`removeChannel` never called), "tells the tutor once a connect has failed" (*Unable to find an accessible element with the role "status"*), "delivers a request on the retried channel" (no second channel to deliver on) |
+| Watchdog removed — retry depends solely on the status callback | **1 failed** — "retries when the status callback never fires at all": *expected [ { …(6) } ] to have a length of 2 but got 1* |
+| Mount-time read removed | **3 failed** — both "the mount-time read" cases (*Unable to find an accessible element with the role "dialog"* — the production symptom, reproduced) and the mount half of "re-reads what is already waiting" |
+| `dropChannel()` removed from the failure path (retry still happens) | **1 failed** — "removing the dead channel first": the socket is not released before the backoff |
+
+The fourth is the one worth keeping: it leaves the retry *working* and fails only on the socket
+being held through the backoff, which is precisely the kind of leak a test asserting "it
+reconnected" would have missed.
+
+### What is NOT here
+
+No migration and no schema change — `getPendingRequestsForTutor` is a read against columns and
+indexes that already exist (`session_requests_tutor_status_idx` covers it). No change to the
+countdown, the accept transaction, the ledger or any cron. No change to `usePresence` — the known
+gap that `IncomingRequests` mounts in the `(tutor)` layout while the heartbeat mounts in `AppShell`,
+so a tutor already in a session still advertises as available, is untouched and still recorded in
+PROGRESS. No upgrade off the Supabase free tier: the retry is correct on any plan, and buying a
+warmer tenant is not a substitute for a subscription that does not give up.

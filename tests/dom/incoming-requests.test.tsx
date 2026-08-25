@@ -33,10 +33,12 @@ vi.mock("next/navigation", () => ({
 const getIncomingRequest = vi.fn();
 const acceptSessionRequest = vi.fn();
 const declineSessionRequest = vi.fn();
+const listPendingIncomingRequests = vi.fn();
 vi.mock("@/actions/session-requests", () => ({
   getIncomingRequest: (id: string) => getIncomingRequest(id),
   acceptSessionRequest: (id: string) => acceptSessionRequest(id),
   declineSessionRequest: (id: string) => declineSessionRequest(id),
+  listPendingIncomingRequests: () => listPendingIncomingRequests(),
 }));
 
 /** The `postgres_changes` callbacks the hook registers, keyed by event. */
@@ -56,7 +58,13 @@ vi.mock("@/lib/supabase/client", () => ({
           bound.set(opts.event, cb);
           return channel;
         },
-        subscribe() {
+        subscribe(cb: (status: string) => void) {
+          // Report SUBSCRIBED, as the real client does on a healthy connect.
+          // The hook now retries anything that is not SUBSCRIBED and treats a
+          // callback that never fires as a failure too, so a fake that stayed
+          // silent would put every test in this file into a retry loop it is
+          // not about. The failure paths are `realtime-resilience.test.tsx`.
+          cb("SUBSCRIBED");
           return channel;
         },
       };
@@ -115,6 +123,10 @@ beforeEach(() => {
   vi.useFakeTimers({ now: NOW });
   bound.clear();
   getIncomingRequest.mockReset();
+  listPendingIncomingRequests.mockReset();
+  // Nothing already waiting, unless a test says otherwise: this file is about
+  // what an INSERT does.
+  listPendingIncomingRequests.mockResolvedValue({ ok: true, requests: [] });
   push.mockReset();
 });
 
@@ -130,10 +142,13 @@ afterEach(() => {
 });
 
 describe("IncomingRequests", () => {
-  it("shows nothing until a request arrives", () => {
+  it("shows nothing until a request arrives", async () => {
     render(<IncomingRequests tutorId={TUTOR_ID} ttlSeconds={TTL_SECONDS} />);
+    await settle();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bound.has("INSERT")).toBe(true);
+    // Healthy subscribe: no "reconnecting" indicator on a normal page load.
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("paints the modal on an INSERT and keeps it painted on the next flush", async () => {
@@ -146,8 +161,8 @@ describe("IncomingRequests", () => {
 
     // Visible at all — this is the assertion the whole file exists for. Before
     // the `useCountdown` fix, `elapsed` was true on the render that first had a
-    // deadline, and the effect at incoming-requests.tsx:86 dropped the request
-    // in the same flush; the dialog never reached the document.
+    // deadline, and the elapsed effect dropped the request in the same flush;
+    // the dialog never reached the document.
     const dialog = screen.getByRole("dialog");
     expect(dialog).not.toBeNull();
     expect(screen.getByText("Instant session request")).not.toBeNull();

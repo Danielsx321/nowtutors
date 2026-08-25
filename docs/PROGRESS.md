@@ -4,6 +4,15 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-25)
 
+**Most recent work: `fix/realtime-subscription-resilience`** (one commit, branched off
+`main` at `8a6396b`, **not pushed, no PR**). The instant request never reached the tutor
+because the Realtime **subscription** never established — Supabase's free-tier Realtime
+tenant sleeps and its cold start outlasts the client's connect timeout, and nothing
+retried. Ships a retrying subscription (both sides), a mount-time read of what is already
+pending (tutor side), and a tutor-facing "reconnecting" indicator; removes the `[ir-trace]`
+instrumentation from PR #48; fixes the `(tutor)` layout / `getIncomingRequest` approval
+mismatch. **Not yet re-tested against the live app.** See the dated section below.
+
 **Phase 7 is COMPLETE — both parts.** Part 1 (the server half) is **merged to
 `main`** via **PR #44 (`18b0ed8`)**, with the wire-format correction in **PR #45
 (`96f251d`)**. Part 2 — the classroom UI — is **BUILT on the branch
@@ -360,6 +369,80 @@ below.
   "Phase 7 Part 1".
 - **Phase 7 Part 2 — the classroom UI.** **BUILT, not merged, not pushed**
   (`feat/phase7-part2-classroom`). See the top of this file and DECISIONS, "Phase 7 Part 2".
+
+## 2026-08-25 — the instant request never reached the tutor: the SUBSCRIPTION never established (`fix/realtime-subscription-resilience`)
+
+**Branched off `main` at `8a6396b` (PR #48, the `[ir-trace]` instrumentation). One
+commit. NOT pushed, no PR.** This is the sequel to the countdown fix below, and the
+instrumentation from #48 is removed in this same commit — grep `ir-trace` returns
+nothing in `src/`.
+
+**What the instrumentation settled, so it is never re-derived.** When the channel
+reaches `SUBSCRIBED` the **entire** chain works — verified live: request sent, INSERT
+callback fired, `getIncomingRequest` resolved, queue populated, modal painted. The
+countdown fix was necessary for that and is correct. The fault is one step earlier:
+`.subscribe()`'s callback resolved `TIMED_OUT` on some page loads and **never fired at
+all** on others, across three tutor accounts and three browsers — and **nothing
+retried**. A failed subscribe was permanent for that page's lifetime and invisible: the
+tutor still showed as live and simply never received anything.
+
+**Why it fails, and it is not a code property.** Supabase shuts a project's Realtime
+tenant down on the free tier when nobody is connected (*"Stop tenant because of no
+connected users"*), and the cold start — replication slot, publication validation,
+partition creation — outlasts the client's connect timeout. **The first tutor to open
+`/tutor` after a quiet period is the one who loses**, which is why it read as
+intermittent. Like the `pg_cron`/Vault state, this is **per-project** and does not
+travel: the Phase 10 production project will start with a cold tenant and no cron, and
+will present this same symptom on its first tutor login. See DECISIONS for the full
+entry, and RUNBOOK for the operational note.
+
+**Three things built:**
+1. **The subscription retries** (`useRetryingChannel`, used by BOTH sides of the
+   handshake). Bounded exponential backoff, 1s → 30s cap, no attempt limit; the previous
+   channel is removed **before** the backoff so repeated failure costs one socket, not
+   many; a **15s watchdog** treats a status callback that never fires as a failure,
+   because a retry hung off that callback alone cannot see a connect that hangs; `CLOSED`
+   is never retried and an unmount mid-backoff cancels the pending retry. This **reverses**
+   the "visibility only, no retry" decision recorded below — it is not polling: it asks for
+   no data, runs only while the channel is down, and stops when it is up.
+2. **A mount-time read.** `getPendingRequestsForTutor` (query layer) →
+   `listPendingIncomingRequests` (guarded action) → read on mount **and** after each
+   successful (re)subscribe, merged into the queue by id. On mount covers "the channel
+   never establishes"; after subscribe covers "the request arrived while it was down".
+3. **The tutor is told.** `RealtimeStatusIndicator` in the `(tutor)` shell, shown **only**
+   after an attempt has failed — never during the first connect — and clearing itself when
+   a retry succeeds. §10 tokens only: `ink-900` fill, `ink-700` border, white/`ink-300`
+   text, `warning` amber dot (4.55:1 on ink, past the 3:1 non-text floor).
+
+**Also fixed:** the `(tutor)` layout guard and `getIncomingRequest` disagreed about
+approval, so a mounted-but-unapproved tutor's every enrichment threw `NEXT_REDIRECT` into
+a fire-and-forget — an invisible unhandled rejection. Both reads now pass
+`{ requireApproval: false }`, matching the layout; accept/decline keep approval enforced.
+`reportSubscriptionStatus` now logs `SUBSCRIBED` too, because a console with no
+`[realtime/…]` line meant either "healthy" or "the callback never ran".
+
+**Tests: 24 DOM (up from 11), 3 files.** `tests/dom/realtime-resilience.test.tsx` is new
+and its fake channel is deliberately **inert** — it records the status callback instead of
+calling it, so "the callback never fires" is a state a test can actually reach.
+`incoming-requests.test.tsx`'s fake now reports `SUBSCRIBED`, as a healthy client does.
+**Four breaks, all four caught:** `TIMED_OUT` non-retryable → 3 failures (including
+*Unable to find an accessible element with the role "status"*); watchdog removed → 1;
+mount-time read removed → 3 (including *…role "dialog"* — the production symptom
+reproduced); `dropChannel()` removed from the failure path while the retry still works →
+1, which is the one worth keeping, since a test asserting only "it reconnected" would have
+missed the leak.
+
+**Gates (all local, this machine):** `pnpm typecheck` clean, `pnpm lint` clean,
+`pnpm build` exit 0, `pnpm test` 28 files / **333 passed**, `pnpm test:dom` 3 files /
+**24 passed**. `pnpm test:db:test` and `pnpm db:verify-rls` were **not** run — no schema,
+RLS policy or SQL-enforced rule changed, and the new read is a plain SELECT on existing
+indexes.
+
+**NOT closed by this:** the tutor-in-a-session mount gap (below, first carry-forward item)
+is untouched — `IncomingRequests` still mounts in `(tutor)` while the heartbeat mounts in
+`AppShell`. And **the live re-test is still owed**: everything above is asserted in jsdom
+against a fake socket. Nobody has yet watched a real tutor page recover from a real cold
+tenant.
 
 ## 2026-08-25 — the tutor's modal never painted (`fix/incoming-requests-never-shown`)
 
@@ -998,8 +1081,14 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   about whether a tutor already teaching should appear live at all — §7.4 does not say — and it
   interacts with the accept path, which would be starting a second session on top of the one they
   are in. Not a rename; do not patch it as one.
-- **An unapproved tutor's `NEXT_REDIRECT` becomes a silent unhandled rejection.**
-  `getIncomingRequest` (`actions/session-requests.ts:264`) calls `requireRole("tutor")` with the
+- ~~**An unapproved tutor's `NEXT_REDIRECT` becomes a silent unhandled rejection.**~~ **FIXED
+  2026-08-25 (`fix/realtime-subscription-resilience`).** `getIncomingRequest` — and the new
+  `listPendingIncomingRequests` — now pass `{ requireApproval: false }`, agreeing with the
+  `(tutor)` layout that mounts their caller. Approval is not what authorizes those reads;
+  ownership is, and both are scoped to `tutor_id = me`. The `.catch` stays and now logs rather
+  than tracing. The rule is in SPEC §5. The accept/decline actions keep approval enforced. Original
+  finding kept below for the reasoning:
+  `getIncomingRequest` (`actions/session-requests.ts:264`) called `requireRole("tutor")` with the
   default `requireApproval: true`, and `requireRole` calls Next's `redirect()`, which **throws**.
   Its one caller is `onIncoming` in `incoming-requests.tsx:64`, which is a fire-and-forget
   `void (async () => { … })()` with no `catch`. So an unapproved tutor whose subscription does fire
@@ -1013,8 +1102,12 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   unapproved tutor instead of redirecting (it already returns `{ error }` for every other refusal),
   or whether the caller should catch. The first changes a guard shared with the accept/decline
   actions and needs a look at all three together.
-- **There is still no mount-time query for pending requests — the tutor side relies on the Realtime
-  event alone.** `IncomingRequests` starts with an empty queue and only ever fills it from an
+- ~~**There is still no mount-time query for pending requests — the tutor side relies on the
+  Realtime event alone.**~~ **FIXED 2026-08-25 (`fix/realtime-subscription-resilience`).**
+  `getPendingRequestsForTutor` → `listPendingIncomingRequests` → read on mount **and** after every
+  successful (re)subscribe, deduplicated by request id (`mergeIntoQueue`). Not a `setInterval`:
+  two reads per page load. Original finding kept below:
+  `IncomingRequests` started with an empty queue and only ever filled it from an
   INSERT payload. Nothing reads `session_requests` on mount. So any request that arrived while the
   tutor was between pages, mid-navigation, disconnected, or on a route where the component is not
   mounted (see the first item) is gone for good — **and a refresh surfaces nothing**, which is why
