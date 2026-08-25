@@ -70,18 +70,45 @@ verified live rather than assumed: the specific chat-exposed value now returns *
 recent response is **200**, which is only possible if the Vault's current secret matches what the
 deployed app checks against. No value, old or new, is recorded anywhere in the repository.
 
-**`expire-requests` remains UNSCHEDULED — outstanding, not blocked.** Its snippet
-(`drizzle/snippets/pg_cron_expire_requests.sql`) has existed since Phase 6 Part 2, and the only
-thing that was ever gating it — the CRON_SECRET rotation — closed on 2026-08-23. `cron.job` on
-`mipnoxlhurdbaahmvhhx` holds `sweep-presence` and `complete-sessions` only; `expire-requests` is a
-one-shot SQL run away, same as the other two were. It is tidy-up, not correctness (§12) — the
-accept transaction refuses an expired request on its own — so this is a real gap in operational
-tidiness, not a functional one, unlike `complete-sessions`'s absence was.
+**All three built crons are now SCHEDULED AND VERIFIED LIVE on `mipnoxlhurdbaahmvhhx`, 2026-08-25.**
+`cron.job` holds all three, all `active = true`:
 
-**Repo hygiene held through two real phase merges this session.** PR #39 (feature) and PR #40
-(docs) both squash-merged cleanly; `git fetch --prune` + a content-identity check (`git diff main
-<branch> --stat` empty) before each `-D` confirmed no work was lost before deleting the local
-branch. `origin` and the local checkout both hold `main` only — no stray branches, no divergence.
+| Job | Schedule | `net._http_response` |
+|---|---|---|
+| `sweep-presence` | `*/5 * * * *` | 200, `{"ok":true,"job":"sweep-presence","swept":0,…}` |
+| `complete-sessions` | `*/15 * * * *` | 200, `{"ok":true,"job":"complete-sessions","completed":0,…}` |
+| `expire-requests` | `* * * * *` | 200, `{"ok":true,"job":"expire-requests","expired":0,…}` |
+
+Three things worth recording beyond the table:
+
+- **`expire-requests` was observed firing on consecutive minutes** — four rows in
+  `net._http_response`, `01:56:00Z` through `01:59:00Z`, each 200. That's what confirms the
+  schedule is actually *running*, not merely *registered*: `cron.job.active = true` plus one manual
+  invocation would look identical for a job that has never once fired on its own clock.
+- **`sweep-presence` returning 200 is the FIRST captured evidence that it works**, not a
+  re-confirmation. It has been scheduled since Phase 6 Part 1 with nothing beyond a generic "200
+  with `{"ok":true,…}`" ever recorded against it — the actual response body was never captured
+  until this session. "It's been running since Phase 6 Part 1" had quietly become an assumption,
+  not a verified fact; see `docs/RUNBOOK.md`'s sweep-presence item for the correction.
+- **Zeros in every count are the correct result, not a weak one.** The deployed data has no live
+  tutors, no pending requests, and no in-progress bookings past their deadline — so `swept: 0`,
+  `expired: 0`, and `completed: 0` are exactly what should come back. A zero proves the *pipe*
+  (route reached, guard passed, response captured, logged correctly) rather than the *sweep logic*,
+  which is what the DB-backed and unit test suites prove instead. See `docs/RUNBOOK.md` for the
+  full verification queries, including the rotation-trap and Vault-dependency notes on the
+  `complete-sessions` item, which apply to all three.
+
+**A fresh environment will need all three snippets run again.** `cron.job` and the Vault secrets
+are per-project state — nothing about them travels when `NEXT_PUBLIC_SUPABASE_URL` and friends get
+repointed at a real production project (the launch-blocker item). `pg_cron_sweep_presence.sql`
+must run first there too, since it creates the extensions and the two Vault secrets
+(`app_base_url`, `cron_secret`) the other two snippets read by name rather than create.
+
+**Repo hygiene held through three real phase merges this session.** PR #39 (feature), PR #40
+(docs), and PR #41 (docs) all squash-merged cleanly; `git fetch --prune` + a content-identity check
+(`git diff main <branch> --stat` empty) before each `-D` confirmed no work was lost before deleting
+the local branch. `origin` and the local checkout both hold `main` only — no stray branches, no
+divergence.
 
 Screen share, chat and credits-consumed/earned remain the open Part 3 remainder;
 `release-earnings` and withdrawals are Phase 8.

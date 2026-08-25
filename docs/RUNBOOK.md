@@ -212,6 +212,18 @@ already-running script.
   - **Verified 2026-08-23:** job scheduled and **active** (`jobid` 1, schedule `*/5 * * * *`); a
     manual `net.http_post` invocation returned **200** with `{"ok":true,…}`, confirming the Vault
     `cron_secret` and Vercel's `CRON_SECRET` agree.
+  - **The full response body was not actually captured until 2026-08-25 — this job had been
+    scheduled and assumed working since Phase 6 Part 1, with no more than "200 with `{"ok":true,…}`"
+    ever recorded against it.** `select id, status_code, content, created from net._http_response
+    where content->>'job' = 'sweep-presence' order by created desc limit 5;` (or just filter the
+    general log) now shows real scheduled firings, e.g.
+    `{"ok":true,"job":"sweep-presence","swept":0,"sweptUserIds":[],"pendingRequestsExpired":0,
+    "agoraWarmPing":{"ok":true,"status":200,"durationMs":147},"durationMs":840}` — every five
+    minutes, going back through the whole session. **`swept: 0` is the correct answer, not an
+    absence of evidence:** the deployed data has no live tutors to sweep, so a zero proves the pipe
+    (route reached, guard passed, response captured) rather than the sweep logic itself, which is
+    what the test suites prove. Recorded here because "it's been running since Phase 6 Part 1" had
+    quietly become a load-bearing assumption nothing in this file had actually verified.
   - **Target URL:** `https://nowtutors-brown.vercel.app` — the production deployment, stored in
     Vault as `app_base_url`. Not localhost, not a preview URL. (Note `nowtutors.vercel.app`,
     without `-brown`, belongs to an unrelated third party — see the DNS item below.)
@@ -222,24 +234,25 @@ already-running script.
     `select … from vault.decrypted_secrets` subqueries, not a 64-char hex string.
   The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
   (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
-- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done, and now
-  a one-shot SQL run rather than a blocked one.** The only reason this was ever gated — the
-  original `CRON_SECRET` rotation — closed on 2026-08-23, well before this line was last touched;
-  what remains is purely running the snippet once per environment, as `postgres`, from the Supabase
-  SQL editor. `cron.job` on `mipnoxlhurdbaahmvhhx` currently holds `sweep-presence` and
-  `complete-sessions` only (see below) — `expire-requests` is the one job on this list still
-  outstanding, and it is outstanding because nobody has run its snippet yet, not because anything is
-  blocking them.
-  - **Run `pg_cron_sweep_presence.sql` first.** This snippet deliberately contains **only** the
-    `cron.schedule` call: the extensions and the two Vault secrets (`app_base_url`, `cron_secret`)
-    are created there and reused here. `vault.create_secret` **raises on a duplicate name**, so a
-    self-contained copy would fail on every environment already set up correctly.
+- [x] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Done 2026-08-25
+  on `mipnoxlhurdbaahmvhhx`.** Ran `drizzle/snippets/pg_cron_expire_requests.sql` once, as
+  `postgres`, from the Supabase SQL editor, after `pg_cron_sweep_presence.sql` (already run
+  2026-08-23 — same extensions and the same two Vault secrets, reused rather than re-created).
   - Schedule is `* * * * *` (§12) — a minute, not five: a 60-second request that sits `pending` for
     five minutes is visibly wrong in the tutor's inbox even though nothing incorrect follows from it.
-  - Verify the same way as the sweep: `select jobid, jobname, schedule, active from cron.job;` then
-    `select status_code, content from net._http_response order by created desc limit 5;` — healthy
-    is `{"ok":true,"job":"expire-requests","expired":N,…}`. **401** = the Vault secret and Vercel's
-    `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
+  - **Verified 2026-08-25, and to a stronger standard than "scheduled and returns 200" alone:**
+    `select jobid, jobname, schedule, active from cron.job;` shows `expire-requests` (`jobid` 3) at
+    `* * * * *`, `active = true`. `net._http_response` then shows it **firing on consecutive
+    minutes** — four rows in a row, `2026-08-25T01:56:00Z` through `01:59:00Z`, each **200** with
+    `{"ok":true,"job":"expire-requests","expired":0,"expiredIds":[],"durationMs":172}` (durations
+    172–665ms). Four consecutive firings is what confirms the schedule is actually **running**, not
+    merely registered in `cron.job` — a job can show `active = true` and a single successful manual
+    invocation while never once firing on its own clock; watching it land on its own cadence, twice
+    or more in a row, is the check that rules that out. `expired: 0` is correct, not incomplete: the
+    deployed data has no pending `session_requests` to expire, so a zero here proves delivery, not
+    the expiry logic — that's the test suites' job.
+  - **401** = the Vault secret and Vercel's `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset
+    on the deployment.
   - Like the sweep, this job is **tidy-up, not correctness**: the accept transaction refuses (and
     terminally expires) a request past its deadline on its own, and the "one pending request at a
     time" read ignores rows past theirs, so an unscheduled job is not an outage.
@@ -257,9 +270,14 @@ already-running script.
     `{"ok":true,"job":"complete-sessions","completed":0,"noShowTutor":0,"noShowStudent":0,
     "earningsCreated":0,"earningsSkippedNoPrice":0,"completedIds":[],"noShowTutorIds":[],
     "noShowStudentIds":[],"earningsCreatedIds":[],"earningsSkippedNoPriceIds":[],
-    "durationMs":636}`. **This is the first cron in the deployed app proven working end to end** —
-    `sweep-presence` and `expire-requests` were verified as scheduled and returning 200, but neither
-    has this snippet's specific-invocation-to-specific-response trace recorded.
+    "durationMs":636}`. **This was the first cron in the deployed app proven working end to end** —
+    at the time this was written, `sweep-presence` and `expire-requests` were verified only as
+    scheduled and returning *some* 200, with no specific-invocation-to-specific-response trace on
+    record for either. Both have since been closed to the same standard: see `sweep-presence`'s
+    "full response body was not actually captured until 2026-08-25" note and `expire-requests`'s
+    consecutive-minute-firing verification, both above. All three crons this repo has built are now
+    verified to the same evidentiary standard — a captured request/response pair, not a description
+    of one.
   - **`pg_net.http_post` returns a request id, not a status code — the call itself always
     "succeeds."** `select net.http_post(...)` hands back an integer (`506` above) the instant the
     request is queued; it says nothing about what the target route returned. The actual
@@ -340,6 +358,18 @@ already-running script.
   `DATABASE_URL`, `DIRECT_URL`), redo the Google OAuth redirect URIs and the same-email linking
   setting for the new project, and re-run `pnpm db:verify-rls` against it. See DECISIONS,
   "Production 404".
+  - **All three `drizzle/snippets/pg_cron_*.sql` files must be run again on the new project.**
+    `cron.job`, the Vault secrets, and everything scheduled from them are **per-project state** —
+    none of it is carried by a migration, and none of it follows the app when
+    `NEXT_PUBLIC_SUPABASE_URL` and friends get repointed. As of 2026-08-25 every snippet that
+    exists (`pg_cron_sweep_presence.sql`, `pg_cron_expire_requests.sql`,
+    `pg_cron_complete_sessions.sql`) has been run and verified live on `mipnoxlhurdbaahmvhhx` — a
+    fresh production project starts with none of that. **Run `pg_cron_sweep_presence.sql` first, on
+    the new project, exactly as on this one**: it creates the `pg_cron`/`pg_net` extensions and the
+    two Vault secrets (`app_base_url`, `cron_secret`) the other two snippets read by name and do not
+    re-create — running either of the other two first fails outright, since their
+    `vault.decrypted_secrets` lookups find nothing. `app_base_url` on the new project must point at
+    whatever URL is now serving production, not at `nowtutors-brown.vercel.app`.
 - [ ] First-admin promotion SQL — Phase 1/8.
 - [ ] Rollback procedure.
 
