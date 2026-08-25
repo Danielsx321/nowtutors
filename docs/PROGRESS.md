@@ -361,6 +361,58 @@ below.
 - **Phase 7 Part 2 — the classroom UI.** **BUILT, not merged, not pushed**
   (`feat/phase7-part2-classroom`). See the top of this file and DECISIONS, "Phase 7 Part 2".
 
+## 2026-08-25 — the tutor's modal never painted (`fix/incoming-requests-never-shown`)
+
+**Branched off `main` at `1e715ac` (PR #46, Phase 7 Part 2 merged — the "BUILT, not
+merged" note above and at the top of this file predates that merge and is stale).
+One commit. NOT pushed, no PR.**
+
+**The symptom.** A live tutor on a tutor page never saw an incoming instant
+request. The student's ring ran the full sixty seconds and the request expired
+unanswered. Nothing logged, nothing threw, 333 tests green.
+
+**The cause, deterministic and present since `2d792de`.** In `use-countdown.ts`
+`secondsLeft` was `useState` seeded from an **effect** while `deadline` was a
+`useMemo`. On the render where `expiresAt` first became non-null, `deadline` was
+already real and `secondsLeft` was still the previous `0`, so
+`elapsed = deadline != null && secondsLeft <= 0` was **true on a countdown at
+sixty**. The effect at `incoming-requests.tsx:86` dropped the request in the
+same flush that seeded the number, the queue emptied, and the component returned
+`null` before anything reached the screen. Not a race — it happened every time.
+
+**The fix is in the hook.** `secondsLeft` is now derived during render
+(`read()`, the clock against *this* render's deadline) and the interval only
+forces a re-render. There is no stored countdown left to be stale, so a
+freshly-set deadline cannot report itself elapsed — by construction, for all
+four consumers. Deliberately NOT patched at the call site: `SessionTimer` and
+the student's waiting ring read `elapsed` on the same render and carried the
+same latent fault. See DECISIONS, "The tutor's modal never painted".
+
+**A DOM test lane now exists — `tests/dom/`, `vitest.dom.config.ts`,
+`pnpm test:dom`, and it IS a CI step.** No component in this repo had ever been
+rendered by a test; the unit lane is `environment: "node"`. That is why 333
+green tests said nothing. New dev dependencies (SPEC §2, same commit): `jsdom`,
+`@testing-library/react`, `@testing-library/dom`. The node lane is untouched and
+still 28 files / 333 tests — separate config, disjoint glob, disjoint extension.
+11 DOM tests; with the old hook restored, 5 of them fail and the tutor test
+fails with "Unable to find an accessible element with the role `dialog`", which
+is the production symptom reproduced.
+
+**One DOM-lane failure was seen once and never reproduced** (2 failed / 9 passed,
+on a sweep where the machine was starved — `environment 65.73s` against a normal
+3.8s). 12+ runs since, including two with every core saturated, are 11/11, and
+the failing run's output was not captured. The lane's `testTimeout`/`hookTimeout`
+are now 30s (the tests pin the clock, so what a slow machine threatens is the
+default 5s budget, not the numbers). Do not treat this as closed — **if it
+recurs, capture the runner's output first.** See DECISIONS, item 3b.
+
+**Realtime subscription failures are now logged** (`reportSubscriptionStatus`,
+both sides). Visibility only — no retry, no behaviour change.
+
+**Three defects found in this pass and deliberately NOT fixed here** — each
+needs a decision this fix had no business taking. All three are in "Still open —
+carry forward" below with what would have to be decided.
+
 ## 2026-08-23 — test project, tooling, and the cron going live
 
 Three merged PRs, no application code. Each closed something Phase 6 Part 1 had listed as open.
@@ -928,6 +980,53 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 
 ## Still open — carry forward
 
+- **A tutor in a session is advertised as available and cannot receive.** `IncomingRequests` is
+  mounted in `app/(tutor)/layout.tsx` **only**. The presence heartbeat is mounted a level up, in
+  `AppShell`, which the `(student)`, `(session)`, `(tutor)` and `admin` layouts all render. So on
+  `/session/*` and `/classroom/*` — both in the `(session)` group — a tutor **keeps heartbeating**,
+  stays inside `live_tutors`' `last_seen_at > now() - interval '2 minutes'` window, and is offered
+  to students on `/tutors?live=1`, while the component that would show them the request is
+  unmounted. Every request sent to them expires unanswered, exactly as if they had walked away.
+  **`/tutors` itself is a different, milder case and the brief's framing of it was wrong:** it
+  lives in `(public)`, which renders `PublicHeader`/`PublicFooter` and **not** `AppShell`, so a
+  tutor browsing there stops heartbeating too and drops out of `live_tutors` after
+  `PRESENCE_STALE_SECONDS` (120). The exposure there is bounded by the staleness window; in a
+  session it is unbounded.
+  **What has to be decided before fixing it, and why this was not done here:** either the modal
+  moves up to `AppShell` (guarded to tutors) so it follows the heartbeat, or `is_live` is cleared
+  on entering a session, or the two are deliberately allowed to differ. That is a product call
+  about whether a tutor already teaching should appear live at all — §7.4 does not say — and it
+  interacts with the accept path, which would be starting a second session on top of the one they
+  are in. Not a rename; do not patch it as one.
+- **An unapproved tutor's `NEXT_REDIRECT` becomes a silent unhandled rejection.**
+  `getIncomingRequest` (`actions/session-requests.ts:264`) calls `requireRole("tutor")` with the
+  default `requireApproval: true`, and `requireRole` calls Next's `redirect()`, which **throws**.
+  Its one caller is `onIncoming` in `incoming-requests.tsx:64`, which is a fire-and-forget
+  `void (async () => { … })()` with no `catch`. So an unapproved tutor whose subscription does fire
+  gets an unhandled promise rejection in the browser and nothing else — no redirect (there is no
+  Server Component render to unwind), no toast, no log. The `(tutor)` layout deliberately relaxes
+  the guard to `requireApproval: false` so `/tutor/pending-approval` does not redirect-loop, and
+  its comment argues the subscription "simply never fires" for an unapproved tutor because
+  `live_tutors` requires approval — true for the normal path, and not a reason for the action to
+  throw into a floating promise when it doesn't hold.
+  **What has to be decided:** whether `getIncomingRequest` should return `{ error }` for an
+  unapproved tutor instead of redirecting (it already returns `{ error }` for every other refusal),
+  or whether the caller should catch. The first changes a guard shared with the accept/decline
+  actions and needs a look at all three together.
+- **There is still no mount-time query for pending requests — the tutor side relies on the Realtime
+  event alone.** `IncomingRequests` starts with an empty queue and only ever fills it from an
+  INSERT payload. Nothing reads `session_requests` on mount. So any request that arrived while the
+  tutor was between pages, mid-navigation, disconnected, or on a route where the component is not
+  mounted (see the first item) is gone for good — **and a refresh surfaces nothing**, which is why
+  refreshing during the investigation showed an empty screen even though a `pending` row existed.
+  With the countdown fixed, the live path works; this is the whole class of requests the live path
+  never sees.
+  **What has to be decided:** a guarded Server Action reading this tutor's `pending`,
+  not-yet-expired requests, called on mount and merged into the queue by id (the existing
+  `q.some(r => r.id === …)` dedupe already covers the overlap with an INSERT arriving at the same
+  time). Straightforward, but it is a new read on the tutor's hot path and belongs with the mount
+  decision above, not bolted on next to it. Do not implement it as a `setInterval` refresh —
+  CLAUDE.md forbids that, and it is not what is missing.
 - **Phase 7's classroom is unexercised end to end, and `LESSONSPACE_API_KEY` is unset.** No call
   has ever been made to LessonSpace from this codebase — every green test stops at the pure
   decision or at Postgres. Two participants in one room, the tutor holding teacher controls, the

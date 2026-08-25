@@ -38,6 +38,12 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # The DOM lane (jsdom + Testing Library). Separate config, disjoint glob,
+      # no Postgres and no credentials — unlike `test:db:test`, nothing stops it
+      # being a required check. See vitest.dom.config.ts.
+      - name: DOM tests
+        run: pnpm test:dom
+
       - name: Build
         run: pnpm build
         env:

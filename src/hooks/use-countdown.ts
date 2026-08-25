@@ -17,6 +17,17 @@ import * as React from "react";
  * outside the presence heartbeat; what it forbids is asking the server for state
  * on a timer. This ticks a number already in hand and makes no network call —
  * every actual state change on this screen arrives over Realtime.
+ *
+ * **The number is derived, never stored.** It used to be `useState` seeded by an
+ * effect, which meant that on the render where `expiresAt` first became non-null
+ * the deadline was already real while `secondsLeft` was still the previous 0 —
+ * so `elapsed` read `true` for one render on a countdown that had not started.
+ * Any consumer with an effect on `elapsed` acted on that render: the tutor's
+ * incoming-request modal dropped the request in the same flush that seeded the
+ * countdown, and never painted at all. Reading the clock against the deadline
+ * during render removes the window rather than guarding it — there is no stored
+ * value left that can belong to a previous deadline. See docs/DECISIONS.md,
+ * "The tutor's modal never painted".
  */
 export interface Countdown {
   /** Whole seconds remaining, floored at 0. */
@@ -43,20 +54,25 @@ export function useCountdown(
     return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
   }, [deadline]);
 
-  const [secondsLeft, setSecondsLeft] = React.useState(read);
+  // The interval's only job is to re-render; it holds no countdown state, so
+  // there is nothing for it to seed and nothing to be stale between deadlines.
+  const [, tick] = React.useReducer((n: number) => n + 1, 0);
 
   React.useEffect(() => {
-    setSecondsLeft(read());
     if (deadline == null) return;
+    if (deadline - Date.now() <= 0) return;
 
-    const tick = setInterval(() => {
-      const left = read();
-      setSecondsLeft(left);
-      if (left <= 0) clearInterval(tick);
+    const timer = setInterval(() => {
+      tick();
+      if (deadline - Date.now() <= 0) clearInterval(timer);
     }, 1000);
-    return () => clearInterval(tick);
-  }, [deadline, read]);
+    return () => clearInterval(timer);
+  }, [deadline]);
 
+  // Read the clock here, against the deadline this render actually has. A
+  // deadline that arrived this render is measured against it immediately, so a
+  // fresh countdown cannot report itself elapsed.
+  const secondsLeft = read();
   const total = totalSeconds > 0 ? totalSeconds : 1;
   return {
     secondsLeft,

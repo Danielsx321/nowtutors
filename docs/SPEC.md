@@ -76,7 +76,7 @@ Locked unless there is a specific reason to deviate.
 | Transactional email | **Resend** + **react-email** | Booking confirmations, reminders, withdrawal notices |
 | File storage | **Supabase Storage** | Avatars, intro videos, message attachments |
 | Error tracking | **Sentry** | Client + server |
-| Testing | **Vitest** (unit), **Playwright** (E2E critical paths) | See Section 15 |
+| Testing | **Vitest** (unit + DOM), **jsdom** + **@testing-library/react** / **@testing-library/dom** (the DOM lane), **Playwright** (E2E critical paths) | Three Vitest lanes, three configs, disjoint globs — see Section 15 |
 | Timezones | **date-fns + date-fns-tz** | Store UTC, render in the viewer's timezone |
 
 **Not in the stack, deliberately:** Stripe (no cross-border payout support for tutors' region — already ruled out), Prisma (Drizzle is lighter and the SQL stays legible), any headless CMS, any state management library beyond React state and server components.
@@ -1536,7 +1536,9 @@ nowtutors/
 │   ├── actions/                   ← Server Actions, one file per domain
 │   └── hooks/
 └── tests/
-    ├── unit/
+    ├── unit/                      ← node lane, `pnpm test`
+    ├── dom/                       ← jsdom lane, `pnpm test:dom`
+    ├── integration/               ← DB lane, `pnpm test:db:test`
     └── e2e/
 ```
 
@@ -1568,6 +1570,35 @@ Stated so scope stays where it is. Each of these is a separate conversation, and
 - Pricing — the `hourly_rate_credits × duration_minutes / 60` formula (scheduled and instant), round-up behaviour, platform fee.
 - Presence staleness — the `live_tutors` boundary at exactly the threshold.
 - Filter composition — every combination of set/unset filters produces the intended SQL.
+
+**DOM (Vitest + jsdom + Testing Library), non-negotiable coverage:**
+
+Added 2026-08-25, after a defect that no amount of unit coverage could have caught. The unit lane
+runs `environment: "node"` and had never rendered a component, so a fault in the ORDER of a render
+against an effect was invisible to it — and one such fault meant the tutor's incoming-request modal
+**never painted at all** while 333 tests stayed green (`use-countdown.ts`; see DECISIONS.md, "The
+tutor's modal never painted"). Anything whose correctness is "what is on screen after this event"
+belongs here rather than in `tests/unit/`.
+
+- **The instant-request handshake, tutor side (§7.4, §8).** An INSERT arrives → the modal **is in
+  the document**, with the student's name and the full window on the ring; it is **still there** on
+  the next flush and after the clock moves, because a modal that paints for one render is just as
+  broken; it **does** close once the deadline genuinely passes, so the fix cannot have been bought
+  by disabling expiry; and it closes on an UPDATE that takes the row out of `pending`.
+- **`useCountdown` itself.** A deadline that becomes non-null on a *later* render is measured
+  against that render's deadline — `elapsed` is never true on a countdown that has not started, on
+  the first arrival or on the queue's next entry after one expires. This is the hook's property,
+  not one screen's: `SessionTimer`'s one-shot `onExpired` and the student's waiting ring read it on
+  exactly the same render.
+
+Only what leaves the browser is faked — the Supabase channel and the Server Actions. The real hook,
+the real countdown and the real component are under test, so the failure has somewhere to live.
+
+**Run with `pnpm test:dom` (config `vitest.dom.config.ts`, glob `tests/dom/**/*.test.tsx`). It IS
+part of the CI `verify` job** — it needs no database and no credentials, so the reason the DB lane
+stays out does not apply. The globs and the file extensions are disjoint from `tests/unit/**`, so
+`pnpm test` can never collect a DOM test and `pnpm test:dom` can never collect a unit one; the node
+lane's 333 tests run exactly as they did before this lane existed.
 
 **DB-backed integration (Vitest against the test Supabase project), non-negotiable coverage:**
 

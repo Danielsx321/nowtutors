@@ -23,6 +23,34 @@ import { createClient } from "@/lib/supabase/client";
 
 const TABLE = "session_requests";
 
+/**
+ * Report what the socket did with a subscription.
+ *
+ * `.subscribe()` took no callback until now, which meant `CHANNEL_ERROR`,
+ * `TIMED_OUT` and a binding the `session_requests` RLS SELECT policy refuses
+ * were all indistinguishable — from here — from a channel that simply had
+ * nothing to deliver. A tutor whose subscription never established looked
+ * exactly like a tutor nobody had requested, on the screen and in the logs
+ * alike, and the first anyone knew of it was a student watching a ring run out.
+ *
+ * **Visibility only.** No retry, no fallback and no change to what the channel
+ * does — Realtime reconnects on its own, and a client-side retry loop here
+ * would be the polling CLAUDE.md forbids wearing a different hat. This says
+ * out loud what already happened. `console.error` is the same shape the route
+ * handlers use, and Sentry (§2) picks it up from the browser.
+ */
+function reportSubscriptionStatus(
+  scope: string,
+  status: string,
+  err?: Error,
+): void {
+  if (status === "SUBSCRIBED" || status === "CLOSED") return;
+  console.error(`[realtime/${scope}] subscription ${status}`, {
+    status,
+    error: err?.message ?? null,
+  });
+}
+
 /** The row shape Realtime delivers (REPLICA IDENTITY FULL, drizzle/0006). */
 interface SessionRequestPayloadRow {
   id?: string;
@@ -82,7 +110,9 @@ export function useIncomingSessionRequests(
           }
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        reportSubscriptionStatus(`session-requests:tutor:${tutorId}`, status, err);
+      });
 
     return () => {
       void supabase.removeChannel(channel);
@@ -140,7 +170,9 @@ export function useOutgoingSessionRequest(
           });
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        reportSubscriptionStatus(`session-request:${requestId}`, status, err);
+      });
 
     return () => {
       void supabase.removeChannel(channel);
