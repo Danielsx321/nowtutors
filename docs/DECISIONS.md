@@ -2816,15 +2816,28 @@ checked before any third-party call, so a request outside the window never
 reaches LessonSpace, and it is deliberately **not** duplicated in SQL — that
 would be a second definition of the window.
 
-### 7. What is NOT verified, and must be before Part 2
+### 7. The wire format is now verified, and no longer blocks Part 2
 
-The endpoint path and the three payload values come from Finding A. The **host,
-the `Authorization` header scheme, the request JSON nesting and the response
-field names (`room_id`, `url`) are inferred** — nothing in this repo documents
-them, no call has been made to LessonSpace, and no credential is configured. If
-they are wrong, only `lib/lessonspace/client.ts` changes; the access decision,
-the window, the query layer and the route are independent of the wire format.
-`LESSONSPACE_ORG_ID` (§2.1) is currently unused.
+The endpoint path and the three payload values come from Finding A. The host,
+the `Authorization: Organisation <key>` header scheme, the nested request body
+and the response field names were initially **inferred** — nothing in this repo
+documented them, no call had been made to LessonSpace, and no credential was
+configured. That inference is now **confirmed against two independent
+sources: LessonSpace's own developer docs and the live Bubble app's API
+Connector definition.** Two corrections came out of that check:
+
+- The launch host has no `/api` segment: `https://api.thelessonspace.com/v2/spaces/launch/`.
+- The join link field is `client_url`, not `url`. The response also carries
+  `api_base`, `secret` and `session_id`; `secret` is a room credential and is
+  deliberately not extracted by `parseLaunchResponse` — it must never reach
+  the browser or be persisted.
+
+The `Authorization` scheme and the nested `{ id, user: { name, leader } }`
+body were already correct. `lib/lessonspace/client.ts` is still the one place
+this would change if LessonSpace's format ever moves again; the access
+decision, the window, the query layer and the route stayed untouched.
+`LESSONSPACE_ORG_ID` (§2.1) is **correctly unused** — the organisation is
+identified by the API key itself, not by a body field.
 
 ### What is NOT here
 

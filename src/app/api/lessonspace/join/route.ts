@@ -134,7 +134,7 @@ export async function POST(request: Request) {
   // Step 5. The URL is per-user and already carries the caller's role; Part 2
   // renders it in an iframe on /classroom/[bookingId].
   return NextResponse.json({
-    url: launched.url,
+    url: launched.clientUrl,
     // Server-derived, and the reason the page needs no id comparison of its own.
     isTutor: access.isTutor,
     role: access.role,

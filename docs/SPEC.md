@@ -1044,13 +1044,15 @@ Server-side only; the API key never reaches the browser.
 >   `{ url, isTutor, role, startedAt }`; the role and the leader flag are derived server-side and
 >   are not request fields.
 >
-> **Unverified against LessonSpace itself.** The endpoint path and the three payload values are
-> confirmed from the live Bubble app (Finding A), but the **host, the `Authorization` header scheme,
-> the request JSON nesting and the response field names (`room_id`, `url`) are inferred** — no call
-> has been made to LessonSpace from this rebuild and no credential is configured. They must be
-> checked against LessonSpace's API docs (or one manual call with a real key) before Part 2 can
-> work end to end; if they differ, only `lib/lessonspace/client.ts` changes. `LESSONSPACE_ORG_ID`
-> (§2.1) is currently **unused** — the launch call authenticates with the API key alone.
+> **Verified against LessonSpace itself (2026-08-25).** The host, the `Authorization: Organisation
+> <key>` header scheme, the nested request body (`{ id, user: { name, leader } }`) and the response
+> field names are confirmed against two independent sources — LessonSpace's own developer docs and
+> the live Bubble app's API Connector definition — not inferred. The launch response returns
+> `client_url` (the per-user join link the client renders), `room_id` (persisted to
+> `bookings.lessonspace_room_id`), plus `api_base`, `secret` and `session_id`; `secret` is a room
+> credential and is never returned to the browser or stored. `LESSONSPACE_ORG_ID` (§2.1) is
+> **correctly unused** — the organisation is identified by the API key itself, not by a body field,
+> so there is no field for it to fill. This no longer blocks Part 2.
 
 **Waiting room** is a LessonSpace dashboard setting, not code — note it in the runbook (Section 17) as a deployment checklist item.
 
