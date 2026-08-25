@@ -238,11 +238,45 @@ already-running script.
   - Like the sweep, this job is **tidy-up, not correctness**: the accept transaction refuses (and
     terminally expires) a request past its deadline on its own, and the "one pending request at a
     time" read ignores rows past theirs, so an unscheduled job is not an outage.
+- [ ] **pg_cron scheduling for `/api/cron/complete-sessions`** — Phase 6 Part 3C. **Not done.** Run
+  `drizzle/snippets/pg_cron_complete_sessions.sql` once per environment, as `postgres`, from the
+  Supabase SQL editor.
+  - **Run `pg_cron_sweep_presence.sql` first**, for the same reason as `expire-requests`: this
+    snippet contains only the `cron.schedule` call and reuses the extensions and the two Vault
+    secrets (`app_base_url`, `cron_secret`) created there. `vault.create_secret` **raises on a
+    duplicate name**, so a self-contained copy would fail on every environment already set up.
+  - Schedule is `*/15 * * * *` (§12).
+  - Verify the same way as the other two: `select jobid, jobname, schedule, active from cron.job;`
+    then `select status_code, content from net._http_response order by created desc limit 5;` —
+    healthy is `{"ok":true,"job":"complete-sessions","completed":N,"noShowTutor":N,
+    "noShowStudent":N,"earningsCreated":N,…}`. **401** = the Vault secret and Vercel's
+    `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
+  - **Unlike the other two jobs, this one is NOT tidy-up.** `sweep-presence` and `expire-requests`
+    sit on top of correctness enforced elsewhere; `complete-sessions` is the **only** writer of
+    `tutor_earnings` in the codebase (§7.11), and nothing else in the deployed app transitions a
+    `confirmed`/`in_progress` booking to `completed` or a no-show status when both parties have
+    walked away from a session (SPEC §12, docs/DECISIONS.md, Phase 6 Part 3C). **Until this job is
+    scheduled, no tutor is ever paid for a session nobody was left to close, and those bookings sit
+    `confirmed`/`in_progress` indefinitely** — this is the one cron on this list whose absence is a
+    real, ongoing gap rather than a cosmetic one. The four Part 3B server-side actors (`getSessionState`,
+    the token route, `endSession`, the room's server read) still close an instant session while a
+    participant is present; only the both-parties-offline case, and every no-show, depends on this
+    job.
 - [x] **`CRON_SECRET` rotated.** The value set on 2026-08-23 during initial setup was exposed in
   plaintext (printed to a terminal, pasted between stores) and has been rotated and verified
   2026-08-23 across all three stores. See the `CRON_SECRET` item above for detail. This only
-  clears the rotation gate — scheduling `pg_cron_expire_requests.sql` is still a separate,
-  not-yet-done action (above).
+  clears the rotation gate — scheduling `pg_cron_expire_requests.sql` and
+  `pg_cron_complete_sessions.sql` are still separate, not-yet-done actions (above).
+  - **Re-verified live against `/api/cron/complete-sessions` specifically, 2026-08-25** (Phase 6
+    Part 3C, before this route had ever been scheduled or called in production): an
+    **unauthenticated** GET to the deployed route returned **401** — `{"error":"Unauthorized."}`,
+    not the 503 an unset `CRON_SECRET` would produce. A 401 on a request carrying no valid bearer
+    token confirms two things at once: the guard (`cronAuthFailure`, shared by every cron route) is
+    actually wired into this handler, and `CRON_SECRET` reached the production environment rather
+    than being unset there. The secret's **value** is not recorded anywhere in the repository, this
+    file included — only the outcome of the check is. This is the same class of verification the
+    `sweep-presence` item above performs for its own route; `complete-sessions` had not been checked
+    live until now because the route did not exist before Phase 6 Part 3C.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).
