@@ -189,6 +189,15 @@ already-running script.
     the production `PAYPAL_WEBHOOK_ID`, and set `PAYPAL_ENV=live` with the live client id/secret.
     No code change — but it is **not** just flipping `PAYPAL_ENV`.
 - [ ] **LessonSpace waiting-room setting (dashboard, not code)** — Phase 7.
+  - **Both parties joining one room, correct roles, and the `confirmed → in_progress`
+    transition on a real second arrival were LIVE-VERIFIED 2026-08-25** against booking
+    `472e0ef0-e0d0-4334-9f1f-89ec8e359025` — see PROGRESS, "Current state", and SPEC
+    §7.7. **Still unconfirmed:** the tutor's "end session for all" leader control did
+    not respond to a click. Not investigated — check whether this waiting-room/leader
+    setting is involved before assuming it's a code gap.
+  - **`LESSONSPACE_API_KEY` is set in Vercel — confirm it is ticked for Preview as well
+    as Production.** If it's Production-only, preview deployments hit the config-error
+    path instead of actually calling LessonSpace.
 - [x] **`CRON_SECRET`** set in Vercel (per environment) **and** in local `.env.local` — Phase 6
   Part 1. **Done 2026-08-23.** The value now lives in **three** stores that must stay byte-identical:
   1. **Supabase Vault** — secret name **`cron_secret`** (dev/prod project `mipnoxlhurdbaahmvhhx`).
@@ -369,7 +378,12 @@ already-running script.
   launch.** **Verified 2026-08-24: the deployed Vercel app currently authenticates against Supabase
   project `mipnoxlhurdbaahmvhhx`** — dashboard title **"nowtutors-dev"** — confirmed live, not
   inferred from config. Production is running on the development project today. This is acceptable
-  only while there are no real users; it is not a general aspiration to clean up eventually. Create a
+  only while there are no real users; it is not a general aspiration to clean up eventually.
+  **The Supabase region must be chosen deliberately when this project is created — it cannot be
+  changed afterward.** The current dev/prod project's region was never chosen deliberately, and
+  neither tutors nor students are in the US; this is a candidate cause of the app-slowness item
+  carried in PROGRESS ("Still open — carry forward") and should be picked with actual user
+  geography in mind, not left as a default. Create a
   dedicated production project, run the migrations against it, seed `platform_settings` + subjects
   (NOT the dev fixtures), promote the first admin by SQL, repoint the Vercel production env vars
   (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
@@ -388,7 +402,22 @@ already-running script.
     re-create — running either of the other two first fails outright, since their
     `vault.decrypted_secrets` lookups find nothing. `app_base_url` on the new project must point at
     whatever URL is now serving production, not at `nowtutors-brown.vercel.app`.
-- [ ] First-admin promotion SQL — Phase 1/8.
+- [ ] First-admin promotion SQL — Phase 1/8. **The statement itself is verified
+  (2026-08-25) on the current dev/prod project; still unticked because it needs
+  running again on the fresh production project at cutover, not because it's unproven.**
+  `profiles_guard` blocks role changes for non-admins, service role included, so the
+  trigger has to be disabled for the statement and re-enabled immediately after:
+  ```sql
+  begin;
+  alter table public.profiles disable trigger profiles_guard;
+  update public.profiles set role = 'admin', updated_at = now()
+   where id = '<auth user id>';
+  alter table public.profiles enable trigger profiles_guard;
+  commit;
+  ```
+  Verify with a `select role, is_suspended from public.profiles where id = '<auth user id>';`
+  afterward. Needed again on the fresh production project — see the launch-blocker item
+  below.
 - [ ] Rollback procedure.
 
 ## Local setup notes

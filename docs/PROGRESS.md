@@ -4,21 +4,56 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-25)
 
-**Most recent work: `fix/realtime-subscription-resilience`** (one commit, branched off
-`main` at `8a6396b`, **not pushed, no PR**). The instant request never reached the tutor
-because the Realtime **subscription** never established — Supabase's free-tier Realtime
-tenant sleeps and its cold start outlasts the client's connect timeout, and nothing
-retried. Ships a retrying subscription (both sides), a mount-time read of what is already
-pending (tutor side), and a tutor-facing "reconnecting" indicator; removes the `[ir-trace]`
-instrumentation from PR #48; fixes the `(tutor)` layout / `getIncomingRequest` approval
-mismatch. **Not yet re-tested against the live app.** See the dated section below.
+**⚠️ OPEN DEFECT, still NOT resolved: the instant request often never reaches the
+tutor.** PR #47, #48 and #49 (below) each fixed something real, but the symptom
+persists. Live evidence, 2026-08-25, after #49 was merged: fresh tutor page load,
+`reportSubscriptionStatus` logged `SUBSCRIBED`, a student sent a request, the row was
+written, and no modal appeared — nothing in the console either. Reloading the page
+surfaces the request every time (the mount-time read from #49 works as designed). One
+load was also observed where the subscription established and requests then flowed
+live without a reload, so the fault is **inconsistent, not total** — recorded as
+observed, not explained. **ELIMINATED, do not re-derive:** the row is written;
+`session_requests` is in the `supabase_realtime` publication; RLS SELECT is
+`((student_id = auth.uid()) OR (tutor_id = auth.uid()))`; the websocket opens; replica
+identity on `session_requests` is FULL (`relreplident = 'f'`); the tutor is approved,
+live and heartbeating; `IncomingRequests` is mounted; the countdown bug (#47) is fixed
+and DOM-verified. **REMAINING CANDIDATES:** the server-side filter binding
+(`filter: tutor_id=eq.{uuid}`), and Realtime's per-subscriber RLS authorization —
+including whether the socket's JWT is actually applied, since `setAuth` is driven by
+the async `INITIAL_SESSION` event while `.subscribe()` is called synchronously on
+mount. This residual risk was flagged in the first investigation and has never been
+ruled out. **Next step for whoever picks this up: subscribe with NO filter and log
+every INSERT.** If unfiltered events arrive, the filter binding is the fault; if
+nothing arrives unfiltered either, it is the authorization path. **Recoverable, not
+data loss and not a money bug** — the mount-time read means a reload always surfaces
+pending requests — a real UX defect that does **not** block Phase 8. See the dated
+sections below for what each PR fixed and verified.
 
-**Phase 7 is COMPLETE — both parts.** Part 1 (the server half) is **merged to
-`main`** via **PR #44 (`18b0ed8`)**, with the wire-format correction in **PR #45
-(`96f251d`)**. Part 2 — the classroom UI — is **BUILT on the branch
-`feat/phase7-part2-classroom`** (one commit, branched off `main` at `96f251d`),
-**NOT merged and NOT pushed**. No migration in either part: `lessonspace_room_id`
-has existed since `0000` (§4.3).
+**PR #47, #48 and #49 are all MERGED to `main`.** #47 (`22a97fb`) is the countdown fix,
+#48 (`8a6396b`) is the `[ir-trace]` instrumentation (removed again by #49), #49
+(`7746a77`) is the subscription retry + mount-time read + tutor-facing indicator. Any
+older wording in this file describing the resilience work as "not pushed, no PR"
+predates all three merges.
+
+**Phase 7 is COMPLETE — both parts MERGED — and now LIVE-VERIFIED, not only
+test-proven.** Part 1 (the server half) is merged via **PR #44 (`18b0ed8`)**, with the
+wire-format correction in **PR #45 (`96f251d`)**. Part 2 — the classroom UI — is merged
+via **PR #46 (`1e715ac`)**. No migration in either part: `lessonspace_room_id` has
+existed since `0000` (§4.3).
+
+**Verified live, 2026-08-25, against booking `472e0ef0-e0d0-4334-9f1f-89ec8e359025`:**
+student joined alone — `student_joined_at` stamped `08:40:40`, `tutor_joined_at` NULL,
+`started_at` NULL, status still `confirmed` (the clock did not start with one person
+present). Tutor then joined — `started_at` `08:41:49.286351`, identical to the
+microsecond with `tutor_joined_at`, status flipped to `in_progress` on the same
+predicate, `student_joined_at` unchanged (the shared fragment fired from a real second
+arrival for the first time). The LessonSpace iframe loaded, both parties landed in the
+same room, and the launch call succeeded against the real API on the first attempt —
+confirming the corrected wire format (Organisation scheme, nested user object,
+`client_url`). Phase 7's media half is no longer unexercised. **Still unconfirmed:**
+the tutor's "end session for all" leader control did not respond to a click during this
+test. Not investigated — may be a LessonSpace UI quirk or a real gap in the leader flag
+reaching the tutor. Both items are also carried in "Still open — carry forward" below.
 
 **What Part 1 shipped:** `lib/lessonspace/client.ts` (server-only, the API key
 never reaches the browser), `lib/lessonspace/session-access.ts` (the access
@@ -65,14 +100,20 @@ split matters:**
   predicate, `lessonspace_room_id` coalesced and never replaced, and the
   statement's row set disjoint from the instant path's. Breaking the shared
   fragment fails 9 of these across both paths.
-- **NOT proven — needs two real browsers.** Two participants actually in one
-  LessonSpace room; the tutor actually holding teacher controls there; the
-  `confirmed → in_progress` transition firing from a real *second* arrival rather
-  than a test's second call; and the iframe rendering a live `client_url` at all.
-  **No automated pass drives two real browsers**, and `LESSONSPACE_API_KEY` is
-  unset locally, so no call has ever been made to LessonSpace from this codebase.
-  This is recorded exactly as the Agora media path is (below): a §15 E2E concern,
-  not a defect and not a Part 2 blocker.
+- **Live-verified, 2026-08-25, against booking `472e0ef0-e0d0-4334-9f1f-89ec8e359025`
+  (superseding the "not proven" note this bullet used to carry).** Two real
+  participants landed in one LessonSpace room; the shared `*_joined_at`/`started_at`
+  fragment fired from a genuine second arrival — student alone left `started_at` and
+  `tutor_joined_at` NULL and status `confirmed`, the tutor's join stamped `started_at`
+  at the same microsecond as `tutor_joined_at` and flipped status to `in_progress`;
+  and the iframe rendered a live `client_url` from a real, first-attempt API call,
+  confirming the corrected wire format end to end. **Still NOT confirmed:** the
+  tutor actually holding working teacher controls in the room — the "end session for
+  all" leader control did not respond to a click and was not investigated further.
+  This one no longer needs two real browsers to check; it needs a second look at why
+  the leader control didn't fire. `LESSONSPACE_API_KEY` was set for this test; it
+  remains worth confirming it is also ticked for Vercel **Preview**, not just
+  Production (see RUNBOOK).
 - **NOT verified visually.** The 360px / 1440px pass on the new page was **not
   performed** — every classroom state is behind authentication, and reaching the
   *open* state additionally needs a booking whose window is now, which would mean
@@ -1081,6 +1122,49 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   about whether a tutor already teaching should appear live at all — §7.4 does not say — and it
   interacts with the accept path, which would be starting a second session on top of the one they
   are in. Not a rename; do not patch it as one.
+- **⚠️ The instant request often never reaches the tutor — OPEN DEFECT, not resolved by
+  PR #47/#48/#49.** A subscription that reports `SUBSCRIBED` does not reliably deliver
+  INSERT events. See "Current state" at the top of this file for the full elimination
+  list and the next diagnostic step (subscribe unfiltered and log every INSERT). Not
+  data loss, not a money bug — a reload always surfaces the pending request — but it is
+  a real UX defect and does not block Phase 8.
+- **LessonSpace "end session for all" (leader control) did not respond to a click during
+  the 2026-08-25 live verification.** Not investigated. May be a LessonSpace UI/dashboard
+  quirk (e.g. the waiting-room/leader setting, RUNBOOK's unticked checklist item) or a
+  real gap in the leader flag reaching the tutor's client. Everything else about that
+  test passed — see "Current state" and SPEC §7.7.
+- **PayPal sandbox credit purchase is now LIVE-VERIFIED (2026-08-25) — first captured
+  evidence for Phase 5's acceptance criterion.** 100 credits landed in the wallet from a
+  real sandbox checkout against the deployed app. **Still unproven:** the webhook-replay
+  half of the acceptance criterion (a duplicate `PAYMENT.CAPTURE.COMPLETED` delivery must
+  not double-credit the wallet) has not been exercised against the deployed app.
+- **The public header does not reflect sign-in.** A signed-in user still sees Login/Sign
+  up and a stale credit balance on the homepage. Likely a statically-cached server
+  component with no session read. Cosmetic but badly misleading — worth fixing before
+  it's seen by a real user rather than parking it with the Phase 10 polish items.
+- **Two confirmed scheduled bookings exist for the same tutor at overlapping times**
+  (10:58–11:58 and 11:00–11:30) **despite the `bookings_no_overlap` exclusion
+  constraint**, which correctly refused a later test `UPDATE` attempting the same
+  overlap. Either the constraint postdates those two rows or some write path bypasses
+  it. Needs investigation **before cutover** — Bubble bookings get migrated in at that
+  point and the same question applies to every row it brings.
+- **The tutor sidebar links to five routes that don't exist:** `/tutor/withdrawals`,
+  `/tutor/earnings`, `/tutor/broadcasts`, `/tutor/messages`, `/tutor/settings`. All are
+  Phase 8/9 work; today they 404 on prefetch/click. Cosmetic, not a blocker, but leave
+  this note rather than rediscovering it per route as each phase lands.
+- **NEW FEATURE GAP, not a bug: a student cannot cancel a pending instant request.** The
+  waiting modal's only control is an X that closes the modal — the request itself keeps
+  holding the student's one-pending-request slot for the full 60s TTL. No credits are at
+  risk (they're taken at acceptance, not request), but there's no way for a student who
+  changed their mind to withdraw the request early. To be designed and built, not
+  "fixed."
+- **The app is noticeably slow — not investigated, parked for Phase 10 polish.**
+  Candidate causes, none yet checked: Supabase project region vs. the Vercel function
+  region (the build runs in `iad1`); serverless cold starts; whether `DATABASE_URL`
+  points at the pooler or the direct connection. See RUNBOOK's launch-blocker note — the
+  dev/prod Supabase project's region was never chosen deliberately, and choosing the
+  production project's region deliberately at cutover is a candidate fix as well as a
+  one-way decision.
 - ~~**An unapproved tutor's `NEXT_REDIRECT` becomes a silent unhandled rejection.**~~ **FIXED
   2026-08-25 (`fix/realtime-subscription-resilience`).** `getIncomingRequest` — and the new
   `listPendingIncomingRequests` — now pass `{ requireApproval: false }`, agreeing with the

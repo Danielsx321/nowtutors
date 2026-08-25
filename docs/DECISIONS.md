@@ -3345,3 +3345,90 @@ gap that `IncomingRequests` mounts in the `(tutor)` layout while the heartbeat m
 so a tutor already in a session still advertises as available, is untouched and still recorded in
 PROGRESS. No upgrade off the Supabase free tier: the retry is correct on any plan, and buying a
 warmer tenant is not a substitute for a subscription that does not give up.
+
+## Session close, 2026-08-25 — Phase 7 live-verified; the instant-request symptom survives PR #49
+
+Documentation only, no code in this entry. Two things happened after PR #49 merged: Phase 7's
+media path got its first live exercise, and the instant-request fault got re-tested against the
+merged fix — with a result the fix did not close.
+
+### 1. Phase 7's acceptance criterion is now live-verified, not only test-proven
+
+Against booking `472e0ef0-e0d0-4334-9f1f-89ec8e359025`: student joined alone left
+`student_joined_at` stamped `08:40:40`, `tutor_joined_at` and `started_at` NULL, status still
+`confirmed` — the clock did not start with one person present, exactly as SPEC §7.7 and the
+integration tests said it should. The tutor's join then stamped `started_at` `08:41:49.286351`,
+identical to the microsecond written into `tutor_joined_at`, and flipped status to `in_progress`
+on the same predicate — `db/queries/join-stamp.ts`'s shared fragment firing from a real second
+arrival for the first time, not a test's second call. The LessonSpace iframe loaded, both parties
+landed in the same room, and the launch call succeeded against the real API on the first attempt,
+confirming the wire-format correction from PR #45 end to end: Organisation auth scheme, the
+nested `{ id, user: { name, leader } }` body, `client_url` as the join field.
+
+**Not confirmed by this test:** the tutor's "end session for all" leader control did not respond
+to a click. Not investigated this session — candidates are a LessonSpace dashboard/waiting-room
+setting (RUNBOOK carries this as an unticked checklist item) or a real gap in the leader flag
+reaching the tutor's client. Recorded as open, not diagnosed.
+
+### 2. The instant-request fault is still live, after three merged fixes
+
+PR #47 (the countdown derivation), #48 (`[ir-trace]` instrumentation) and #49 (subscription
+retry, mount-time read, tutor-facing indicator) are all merged and each is individually correct —
+see their own DECISIONS entries above. Re-testing after #49 landed: a fresh tutor page load
+logged `SUBSCRIBED` from `reportSubscriptionStatus`, a student sent a request, the row was
+written to `session_requests`, and nothing happened — no modal, nothing in the console. Reloading
+the page surfaced the request immediately, which is #49's mount-time read working exactly as
+designed. A separate load was observed where the subscription established and live requests then
+arrived without a reload. Recorded as an **inconsistency**, not explained — do not assume a
+single root cause without evidence for it.
+
+**What is eliminated, so a future pass does not re-derive it:** the row is written;
+`session_requests` is in the `supabase_realtime` publication; RLS SELECT on it is
+`((student_id = auth.uid()) OR (tutor_id = auth.uid()))`; the websocket opens; replica identity on
+`session_requests` is FULL (`relreplident = 'f'`); the tutor is approved, live, and heartbeating;
+`IncomingRequests` is mounted; the countdown fault (PR #47) is fixed and DOM-verified.
+
+**What remains a candidate, unruled-out:** the server-side filter binding
+(`filter: tutor_id=eq.{uuid}` on the channel subscription), and Realtime's per-subscriber RLS
+authorization — specifically whether the socket's JWT is actually applied by the time
+`.subscribe()` fires, since `setAuth` is driven by the async `INITIAL_SESSION` event while
+`.subscribe()` is called synchronously on mount. This exact risk was flagged during the first
+investigation (see "the SUBSCRIBED does not mean authorized" reasoning above) and has never been
+ruled in or out.
+
+**Next diagnostic step for whoever picks this up:** subscribe with no `filter` at all and log
+every INSERT that arrives. If unfiltered events arrive, the filter binding is the fault. If
+nothing arrives unfiltered either, the fault is in the authorization path, not the filter.
+
+**Severity, so this isn't over- or under-stated:** not data loss, not a money bug — every pending
+request is recoverable by a reload, per the mount-time read. It is a real UX defect (a tutor who
+never reloads misses live requests until they do) and does not block Phase 8.
+
+### 3. New findings recorded this session, none investigated beyond what's noted
+
+- **PayPal sandbox credit purchase live-verified** — 100 credits landed in the wallet from a real
+  sandbox checkout against the deployed app, the first captured evidence for Phase 5's acceptance
+  criterion. The webhook-replay half (a duplicate `PAYMENT.CAPTURE.COMPLETED` must not
+  double-credit) remains unproven against the deployed app.
+- **The public header does not reflect sign-in** — a signed-in user still sees Login/Sign up and a
+  stale credit balance on the homepage. Likely a statically-cached server component with no
+  session read. Not diagnosed further.
+- **Two confirmed scheduled bookings overlap for the same tutor** (10:58–11:58 and 11:00–11:30)
+  despite `bookings_no_overlap`, which correctly refused a later test `UPDATE` attempting the same
+  overlap. Either the constraint postdates those rows or some write path bypasses it — not
+  determined this session. Needs resolving before the Bubble booking migration at cutover.
+- **Five tutor-sidebar links 404**: `/tutor/withdrawals`, `/tutor/earnings`, `/tutor/broadcasts`,
+  `/tutor/messages`, `/tutor/settings` — all Phase 8/9 routes, cosmetic today.
+- **Feature gap, not a bug: a student cannot cancel a pending instant request** before its 60s TTL
+  expires — the waiting modal's only control closes the modal, not the request. No credits are at
+  risk (taken at acceptance). Needs its own design pass, not a quick patch.
+- **The app is noticeably slow; not investigated.** Candidates: Supabase project region vs. the
+  Vercel function region (`iad1`), serverless cold starts, and whether `DATABASE_URL` points at
+  the pooler or the direct connection. Parked for Phase 10 polish; the Supabase region item is now
+  also called out as a one-way decision in RUNBOOK's launch-blocker note.
+
+### What is NOT here
+
+No code change. No migration. No new test. The `LESSONSPACE_API_KEY`-in-Preview check, the
+first-admin-promotion SQL, and the Supabase-region launch-blocker note are recorded in RUNBOOK,
+not repeated here.
