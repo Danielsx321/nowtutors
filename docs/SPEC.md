@@ -1096,9 +1096,22 @@ Server-side only; the API key never reaches the browser.
 >   known instant, not a repeating question, and the server re-decides — CLAUDE.md's ban on polling
 >   is intact and a fast browser clock cannot talk itself into a classroom.
 >
-> **What Part 2 does NOT prove.** Both parties in one LessonSpace room with correct roles, and the
-> `confirmed → in_progress` transition firing on the second arrival, are unexercised by any
-> automated pass — the same standing gap as the Agora media path. See PROGRESS.
+> **Live-verified 2026-08-25** (superseding "What Part 2 does NOT prove," below, which described
+> the state before this test): both parties landed in one LessonSpace room, against booking
+> `472e0ef0-e0d0-4334-9f1f-89ec8e359025`. Student joined alone left `student_joined_at` stamped,
+> `tutor_joined_at`/`started_at` NULL, status still `confirmed`; the tutor's join stamped
+> `started_at` at the same microsecond as `tutor_joined_at` and flipped status to `in_progress` on
+> the same predicate — the `confirmed → in_progress` transition firing from a real second arrival
+> for the first time, not a test's second call. The iframe rendered a live `client_url` from a
+> real, first-attempt API call. **Still NOT confirmed:** the tutor's "end session for all" leader
+> control did not respond to a click during this test — not investigated; may be a LessonSpace
+> UI/dashboard quirk (see RUNBOOK's waiting-room checklist item) or a real gap in the leader flag
+> reaching the tutor's client. See PROGRESS, "Current state" and "Still open — carry forward".
+>
+> **What Part 2 did NOT prove, before the above test.** Both parties in one LessonSpace room with
+> correct roles, and the `confirmed → in_progress` transition firing on the second arrival, were
+> unexercised by any automated pass — the same standing gap as the Agora media path. Kept here for
+> history; superseded by the live verification above.
 
 **Waiting room** is a LessonSpace dashboard setting, not code — note it in the runbook (Section 17) as a deployment checklist item.
 
