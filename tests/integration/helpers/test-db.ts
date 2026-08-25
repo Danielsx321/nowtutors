@@ -431,6 +431,35 @@ export async function readEarnings(conn: TestConnection, bookingId: string) {
   return row ?? null;
 }
 
+/**
+ * What the scheduled/LessonSpace join write touches (SPEC §7.7 steps 2 and 4).
+ *
+ * The classroom sibling of {@link readJoinColumns}, and the query builder for
+ * the same reason: it decodes `timestamptz` through drizzle's own column mapper
+ * rather than the `toDate` boundary the code under test applies, so comparing a
+ * returned stamp against this read compares two independently-decoded values.
+ *
+ * `status` is here because on the scheduled path it is part of the join rule —
+ * `confirmed → in_progress` fires on the same predicate as `started_at`, and a
+ * test that checked only the timestamp would miss the two drifting apart.
+ */
+export async function readScheduledJoinColumns(
+  conn: TestConnection,
+  bookingId: string,
+) {
+  const [row] = await conn.db
+    .select({
+      studentJoinedAt: schema.bookings.studentJoinedAt,
+      tutorJoinedAt: schema.bookings.tutorJoinedAt,
+      startedAt: schema.bookings.startedAt,
+      status: schema.bookings.status,
+      lessonspaceRoomId: schema.bookings.lessonspaceRoomId,
+    })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId));
+  return row;
+}
+
 /** Every column the completion sweep classifies from, plus what it wrote. */
 export async function readClassification(
   conn: TestConnection,

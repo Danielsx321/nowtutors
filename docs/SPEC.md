@@ -1007,6 +1007,51 @@ Server-side only; the API key never reaches the browser.
 4. Stamp `student_joined_at` or `tutor_joined_at`; if both set, `status = in_progress`, `started_at = now()`.
 5. Return the URL; the page renders it in an iframe with `allow="camera; microphone; display-capture; fullscreen"`.
 
+> **Part 1 implementation (Phase 7, `feat/phase7-part1-lessonspace-join`).** The server half is
+> built: `lib/lessonspace/client.ts` (server-only), `lib/lessonspace/session-access.ts` (pure),
+> `db/queries/classroom.ts`, and the route. The page (step 5's render), `/classroom/[bookingId]`
+> and the join-window UI states are **Part 2**. What the build settled, where the steps above left
+> a choice open:
+>
+> - **Steps 2 and 3 are one call, not two.** `spaces/launch/` is idempotent on the `id` we send
+>   (the booking id), so the first launch creates the space and every later launch returns that
+>   same space plus a **fresh per-user link** scoped to the name and leader flag in *that* request.
+>   There is therefore no "if null, create" branch on the request side: every join launches, and
+>   `lessonspace_room_id` is persisted with `coalesce(…)` in step 4's write — written once on the
+>   first join and **never replaced**, since a second room id mid-session would put the two
+>   participants in different rooms.
+> - **The launch happens before the step-4 write.** If LessonSpace fails, nothing has been
+>   recorded and the caller simply did not join. Stamping first could start the billing clock
+>   (`started_at`, on the write completing the pair) for a session neither party can enter.
+> - **The join window is `[scheduled_start_at − 10m, scheduled_end_at + 30m]`, inclusive at both
+>   edges**, per §7.3, evaluated against the **server's** clock and checked *before* any third-party
+>   call. It is a pure function (`withinJoinWindow`) taking `now` as an explicit parameter, so the
+>   edges are unit-testable at pinned instants. Exactly at either boundary the classroom is open;
+>   one second past is not. LessonSpace is not asked to enforce it — see the Finding A note below.
+> - **`confirmed` is the normal state of the *first* arrival**, and admitting it is load-bearing,
+>   not incidental: `createScheduledBooking` (§7.3) inserts scheduled bookings `confirmed`, and
+>   they only become `in_progress` in step 4 once *both* parties have joined. A guard admitting
+>   only `in_progress` would refuse every first joiner and no session could ever start.
+> - **Step 4 reuses the instant path's `started_at` rule rather than restating it.** The rule is
+>   one exported SQL fragment (`db/queries/join-stamp.ts`) imported by both `stampSessionJoin`
+>   (§7.4) and `stampScheduledSessionJoin` (here), because the completion cron (§12) reads
+>   `started_at` and two writers of it drift. The `confirmed → in_progress` transition fires on the
+>   **same predicate** that writes `started_at`, so a scheduled booking is `in_progress` exactly
+>   when it has a `started_at`, by construction. §12's scheduled predicate already accepts both
+>   `confirmed` and `in_progress` and needs no change. See DECISIONS, Phase 7 Part 1.
+> - **A missing booking and a non-participant's booking both return 404**, as in `/api/agora/token`
+>   — a 403 would confirm the booking exists. The response is
+>   `{ url, isTutor, role, startedAt }`; the role and the leader flag are derived server-side and
+>   are not request fields.
+>
+> **Unverified against LessonSpace itself.** The endpoint path and the three payload values are
+> confirmed from the live Bubble app (Finding A), but the **host, the `Authorization` header scheme,
+> the request JSON nesting and the response field names (`room_id`, `url`) are inferred** — no call
+> has been made to LessonSpace from this rebuild and no credential is configured. They must be
+> checked against LessonSpace's API docs (or one manual call with a real key) before Part 2 can
+> work end to end; if they differ, only `lib/lessonspace/client.ts` changes. `LESSONSPACE_ORG_ID`
+> (§2.1) is currently **unused** — the launch call authenticates with the API key alone.
+
 **Waiting room** is a LessonSpace dashboard setting, not code — note it in the runbook (Section 17) as a deployment checklist item.
 
 > **Confirmed against the live app (Bubble live-app investigation, 2026-08-24).** Bubble's own

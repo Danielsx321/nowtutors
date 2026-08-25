@@ -2709,3 +2709,127 @@ flat upfront billing it is honest on a no-show too: the student **was** charged
 the full price and nothing refunds it, so the minutes billed are the minutes
 booked whether or not anyone showed up. The brief specified only `status` and
 `ended_at`; this is recorded here because it is a column write nobody asked for.
+
+---
+
+## Phase 7 Part 1 — LessonSpace server half (`feat/phase7-part1-lessonspace-join`, 2026-08-25)
+
+The server side of §7.7: the LessonSpace client, the access decision, the join
+window, the query layer and `POST /api/lessonspace/join`. No UI —
+`/classroom/[bookingId]`, the iframe and the window's UI states are Part 2.
+
+### 1. `stampSessionJoin` could not be reused as-is, and the blocker was the state guard
+
+The brief asked for the existing idempotent first-join write to be reused rather
+than copied, and to **stop and report** if it could not be. It could not, for
+three couplings, all of them real:
+
+1. **Its WHERE is `b.status = 'in_progress'`.** Scheduled bookings are created
+   **`confirmed`** (`createScheduledBooking`, `src/actions/bookings.ts`) and only
+   reach `in_progress` once both parties have joined. The first joiner on a
+   scheduled booking matches **zero rows** — the statement is structurally unable
+   to serve the case §7.7 step 4 exists for.
+2. **It never writes `status`,** deliberately: instant bookings are inserted
+   `in_progress` by the accept transaction, so there is no earlier state to
+   advance from. The scheduled path needs `confirmed → in_progress`.
+3. **It backfills `agora_channel`,** which is instant-only (§4.3). Scheduled
+   bookings need `lessonspace_room_id` persisted instead.
+
+### 2. One *definition*, two statements — not one statement, and not two copies
+
+The invariant that matters is **one definition of the `started_at` rule**, not
+one statement. The `*_joined_at` / `started_at` decision now lives in a single
+exported SQL fragment, `db/queries/join-stamp.ts`, imported by both
+`stampSessionJoin` (§7.4) and `stampScheduledSessionJoin` (§7.7). Each remains a
+single `UPDATE` referencing the target row directly — never a CTE, which under
+READ COMMITTED would be materialized from the pre-block snapshot and would push
+the other party's stamp back to null (Part 3A item 3; the property holds in the
+new statement too and is tested there).
+
+**The shipped instant statement was not parametrized to take a status write.**
+Threading `confirmed → in_progress` through it would have put a branch that does
+not apply to the instant path *inside* the instant path, and would have cost that
+path its current structural guarantee that the join write touches `status` at
+all. The alternative considered and rejected was a fully generalized single
+statement; the alternative rejected on the other side was an independent sibling
+with its own copy of the rule, which is the drift the brief warned about.
+
+`toDate` — the raw-`execute()` timestamp boundary — moved into the same module
+for the same reason: both statements are raw and both promise `Date`s, and a
+second decode path on the billing clock is a second thing to get wrong.
+
+The refactor is **not byte-identical** SQL, and the one difference is recorded
+here rather than glossed: the `started_at` CASE went from two `when` branches to
+one `when (A) or (B)` using the shared predicate. Rendered against drizzle's
+dialect, every other byte of `stampSessionJoin` is unchanged and the parameter
+list is identical in count, order and value. The predicate is shared with the
+scheduled statement's `status` write precisely so the two cannot disagree about
+when a session began: same predicate, same row, one statement, one pre-write
+snapshot.
+
+### 3. `stampScheduledSessionJoin` is scoped to `type = 'scheduled'` in its own WHERE
+
+So the two statements' row sets are **disjoint by construction**, not by caller
+discipline: the scheduled statement is incapable of writing a
+`lessonspace_room_id` onto an instant booking even if miscalled with its id.
+Covered by its own test rather than left as a claim.
+
+### 4. Falsifying the sharing — and what the unit lane cannot see
+
+The shared fragment was deliberately broken (`started_at` set on the **first**
+join instead of when both are present) and both suites re-run.
+
+**First attempt was an invalid probe and is reported as such.** Writing the break
+as `true and ${userId} is not null` made every join query fail with a parameter
+type-inference error, so all 10 tests failed — but on a query error, which any
+typo would produce, not on the rule. Re-expressed as valid SQL (`b.id is not
+null`, genuine first-arrival semantics) the result is the real one:
+
+- **Integration: 9 failed / 27 passed**, across **both** paths — 6 scheduled and
+  3 instant — with the expected assertion, `expected 2026-08-25T04:43:10.800Z to
+  be null`: `started_at` written while one party was still alone in the room.
+- **Unit: no failures attributable to the break.** The unit lane has no database
+  and no unit test imports `db/queries` at all, so a rule expressed in SQL is
+  invisible to it — the same "Known gap" Part 3A recorded. This is stated rather
+  than worked around: the fragment is load-bearing in **both** paths *in the
+  integration lane*, which is the only lane that can hold it.
+
+Restored, and both lanes re-run green: **318 unit, 36 integration.**
+
+### 5. Steps 2 and 3 are one call, and it happens before the write
+
+`spaces/launch/` is idempotent on the booking id, so create-or-get and the
+per-user link are one round trip, and `lessonspace_room_id` is coalesced in the
+step-4 write rather than by an "if null" branch on the request side. The launch
+runs **before** the stamp: a failed launch must leave nothing recorded, because
+stamping first could start the billing clock for a session neither party can
+enter.
+
+### 6. The join window is ours, pure, and takes `now` as a parameter
+
+`withinJoinWindow` is a pure function with `now` explicit, so §7.3's edges are
+testable at pinned instants. **Both boundaries are inclusive** — exactly at
+`start − 10m` the classroom is open, exactly at `end + 30m` it still is. The
+choice matters only because a boundary needs *an* answer that a test can pin;
+inclusive matches the intuition of "opens at" and "stays open until". It is
+checked before any third-party call, so a request outside the window never
+reaches LessonSpace, and it is deliberately **not** duplicated in SQL — that
+would be a second definition of the window.
+
+### 7. What is NOT verified, and must be before Part 2
+
+The endpoint path and the three payload values come from Finding A. The **host,
+the `Authorization` header scheme, the request JSON nesting and the response
+field names (`room_id`, `url`) are inferred** — nothing in this repo documents
+them, no call has been made to LessonSpace, and no credential is configured. If
+they are wrong, only `lib/lessonspace/client.ts` changes; the access decision,
+the window, the query layer and the route are independent of the wire format.
+`LESSONSPACE_ORG_ID` (§2.1) is currently unused.
+
+### What is NOT here
+
+No migration (`lessonspace_room_id` already exists, §4.3), no RLS change, nothing
+in `lib/credits/`. No `/classroom/[bookingId]`, no iframe, no join-window UI
+states, no scheduled-booking entry points — all Part 2. §12's completion cron
+needed no change: its scheduled predicate already accepts `confirmed` **and**
+`in_progress`, which is exactly the pair this write moves a booking between.

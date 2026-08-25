@@ -4,6 +4,38 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-25)
 
+**Phase 7 Part 1 — the LessonSpace server half — is BUILT, on the branch
+`feat/phase7-part1-lessonspace-join` (one commit, branched off `main` at
+`e7ced89`), NOT merged and NOT pushed.
+Phase 7 is NOT complete: Part 2 (the `/classroom/[bookingId]` page, the iframe,
+the join-window UI states and the scheduled-booking entry points) is not
+started.** What Part 1 shipped: `lib/lessonspace/client.ts` (server-only, the
+API key never reaches the browser), `lib/lessonspace/session-access.ts` (the
+access decision and the join window, both pure), `db/queries/classroom.ts`, and
+`POST /api/lessonspace/join`. No migration — `lessonspace_room_id` has existed
+since `0000` (§4.3).
+
+The one thing a cold session must not re-derive: **`stampSessionJoin` could not
+be reused for the scheduled path.** Its WHERE is `status = 'in_progress'` and
+scheduled bookings are created `confirmed`, so the first joiner matched zero
+rows; it also never writes `status` and backfills `agora_channel`. Rather than
+fork it, the `*_joined_at` / `started_at` rule was extracted into **one shared
+SQL fragment, `db/queries/join-stamp.ts`**, imported by both join statements —
+the completion cron reads `started_at` and two writers of it drift. The shipped
+instant statement was deliberately **not** parametrized to take a status write.
+Breaking the shared fragment fails 9 integration tests across both paths; the
+unit lane has no database and cannot see it. See `DECISIONS.md`, "Phase 7
+Part 1", and SPEC §7.7's Part 1 implementation note.
+
+**Blocking Part 2:** the LessonSpace **wire format is unverified** — the
+endpoint path and the three payload values are confirmed from the live Bubble
+app (Finding A), but the host, `Authorization` header scheme, request JSON
+nesting and response field names (`room_id`, `url`) are **inferred**, no call
+has ever been made to LessonSpace from this rebuild, and no credential is
+configured. Check them against LessonSpace's API docs or one manual call with a
+real key before Part 2. If they differ, only `lib/lessonspace/client.ts`
+changes. `LESSONSPACE_ORG_ID` (§2.1) is currently unused.
+
 **Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
 control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and
 **PR #35 (`974cd7a`)**. #34 shipped the server-side end and the hard stop; #35
