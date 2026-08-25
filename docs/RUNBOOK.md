@@ -66,6 +66,24 @@ files up: the two configs' `include` globs are disjoint.
 schemas on the test project only (guarded as above). There is deliberately no
 plain `db:reset:prod`/dev-and-prod-capable reset variant.
 
+**Supabase Realtime sleeps on the free tier, and that is per-project.** When no clients
+are connected, Supabase stops the project's Realtime tenant — the log line in the
+dashboard is *"Stop tenant because of no connected users"*. Starting it again does real
+work (replication slot creation, publication validation, partition creation) and **takes
+longer than the browser client's connect timeout**, so the first person to load a page
+that subscribes after a quiet period gets `TIMED_OUT` — or no status callback at all —
+while the second load moments later succeeds. This presented as an intermittent
+"instant requests don't reach the tutor" bug and cost a full investigation; see
+DECISIONS, "the instant request never reached the tutor".
+
+The client now retries with backoff (SPEC §8), so this is no longer a user-visible
+failure. It is recorded here because **it is a property of the Supabase project, not of
+this repository** — like the `pg_cron`/`pg_net` extensions and the Vault secrets below,
+it does not travel. The Phase 10 production project will start with a cold, sleeping
+tenant, and `[realtime/…] subscription TIMED_OUT` in a browser console there is expected
+on the first load, not a regression. Check the project's Realtime logs before treating it
+as one.
+
 **No cron on the test project — and none is needed.** The pg_cron + pg_net
 `sweep-presence` job is scheduled **only** on the shared dev/prod project
 (`mipnoxlhurdbaahmvhhx`); the test project has no `cron.job` entries, no

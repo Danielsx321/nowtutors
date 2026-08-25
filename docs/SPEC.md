@@ -548,6 +548,8 @@ Policy summary:
 
 **Layer 2 — route handlers.** Every Server Action and API route independently re-checks the caller's identity and role. `requireUser()`, `requireRole('tutor')`, `requireBookingParticipant(bookingId)` helpers live in `lib/auth/guards.ts` and are the first line of every handler. Never trust a client-supplied `userId`.
 
+> **An action called from a layout must guard the same way that layout does.** `requireRole('tutor')` enforces approval by default; the `(tutor)` LAYOUT passes `{ requireApproval: false }` so `/tutor/pending-approval` — which lives under it — does not redirect-loop. Any action called by a component mounted in that layout therefore has to relax approval too, or the two guards disagree and an unapproved tutor legitimately sitting under the layout gets a `redirect()` from every call. Where that call is a fire-and-forget, the `NEXT_REDIRECT` cannot navigate anything: it becomes an **unhandled promise rejection**, silent in production. This applies today to `getIncomingRequest` and `listPendingIncomingRequests`, both called by `IncomingRequests` (§7.4, §8) and both scoped to `tutor_id = me` — **ownership is what authorizes those reads, not approval**, and an unapproved tutor is not in `live_tutors` (§3.1) so no request can be addressed to them anyway. `acceptSessionRequest` / `declineSessionRequest` keep approval enforced: they create a booking and charge a student, and neither runs unawaited.
+
 Admin access is by `profiles.role = 'admin'` only. There is no admin signup route; the first admin is set by SQL, subsequent ones promoted in the admin panel with an audit entry.
 
 ---
@@ -733,6 +735,7 @@ Rules:
 
 - **Expiry is enforced server-side.** The client countdown is cosmetic. Accepting an expired request fails with a clear error — and moves the row to `expired` there and then, so the student's waiting modal stops waiting immediately rather than at the next cron pass. A cron pass (`/api/cron/expire-requests`, §12, built in Part 2) also sweeps `pending` rows past `expires_at` to `expired` every minute so dashboards stay clean; nothing about correctness waits on it.
 - A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest.
+- **The tutor's queue is not fed by the Realtime event alone.** `IncomingRequests` reads every still-`pending`, not-yet-expired request addressed to it on mount and again after each successful (re)subscribe, and deduplicates against what it already holds by request id. A subscription carries only what happens after it is bound, so an event missed while the channel was down or still connecting was previously lost for good — and refreshing did not help, because the refresh only re-subscribed. See §8 for the subscription's own retry.
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
 - **Duration and price are decided at request time, not accept time (Phase 6 pre-build decision; shipped in migration `0014`).** The student picks a duration from `session_durations` (now **30 / 60 / 90 / 120**, §18 item 1) when sending the request; the server computes `price_credits` via `sessionPriceCredits()` and pins both `duration_minutes` and `price_credits` on the `session_requests` row (§4.3). The accept transaction charges exactly that pinned price — it never re-derives price from the tutor's current `hourly_rate_credits`, so a mid-flight rate change can't move the number the student already saw.
@@ -1185,6 +1188,16 @@ One Supabase Realtime client, subscriptions declared in hooks and cleaned up on 
 
 The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.ts`). Both subscribe through the browser Supabase client, so the socket carries the viewer's JWT and the `session_requests` RLS SELECT policy (participants only, `drizzle/0005`) decides what can reach them — the `filter` is a narrowing convenience, **not** the authorization. Payloads are treated as notifications: anything displayed to a person is read back through a guarded Server Action.
 
+**A subscription that fails to establish is retried, and a subscription is never the only way a state is learned.** Added `fix/realtime-subscription-resilience` after the deployed instrumentation showed that `.subscribe()`'s callback resolves `TIMED_OUT` on some page loads and **never fires at all** on others — Supabase's Realtime tenant sleeps on the free tier ("Stop tenant because of no connected users") and its cold start outlasts the client's connect timeout. Both `session_requests` subscriptions now:
+
+- **retry a failed subscribe** on a bounded exponential backoff (1s → 30s cap, no attempt limit), removing the previous channel before each attempt so a page that fails repeatedly holds one socket rather than many. `CLOSED` — which is what unmounting produces — is not retried, and a teardown mid-backoff cancels the pending retry;
+- **treat a status callback that never fires as a failure.** A 15s watchdog runs alongside the connect, because a retry hung off the status callback alone cannot see a connect that hangs — which was half of what was actually observed;
+- **log `SUBSCRIBED` as well as the failures**, so a console with no `[realtime/…]` line in it is not simultaneously the signature of a healthy subscription and of a callback that never ran.
+
+The tutor side additionally **reads what is already pending on mount and after every successful (re)subscribe** (`getPendingRequestsForTutor` → `listPendingIncomingRequests`), deduplicated against the queue by request id. A subscription carries only what happens after it is bound, so without this read a request that arrived during a failed or still-connecting subscribe was lost permanently — and refreshing could not recover it, because the refresh only re-subscribed. **This is not an exception to the no-polling rule**: it is two reads per page load, not one per interval, and the retry that sits behind it makes no request for data at all — it establishes the push channel that exists so nothing has to poll.
+
+**When the tutor's subscription is not established, the tutor is told** (`RealtimeStatusIndicator`, mounted with `IncomingRequests` in the `(tutor)` shell). "You are live but not receiving requests" was previously visible only in a console nobody has open — the tutor showed as live on the browse page and simply never got a modal. The indicator appears only after an attempt has **failed**, never during the first connect, and clears itself when a retry succeeds.
+
 **No `setInterval` polling anywhere in the codebase except the presence heartbeat.** That single exception is deliberate and documented. The instant-request countdown ring (§7.4) also ticks on a timer, and is **not** an exception to this: it renders a deadline already in hand and makes no network call, so nothing about it is polling.
 
 ---
@@ -1591,6 +1604,22 @@ belongs here rather than in `tests/unit/`.
   not one screen's: `SessionTimer`'s one-shot `onExpired` and the student's waiting ring read it on
   exactly the same render.
 
+- **Subscription ESTABLISHMENT, tutor side (§8)** — added `fix/realtime-subscription-resilience`,
+  after the deployed instrumentation showed the chain works whenever the channel reaches
+  `SUBSCRIBED` and the fault is one step earlier. The existing file above fakes a channel that
+  always succeeds and so is blind to all of it. Asserted: a `TIMED_OUT` subscribe is **retried**,
+  after the dead channel has been removed and after a backoff rather than in the same tick; a
+  connect whose status callback **never fires** is retried too (the watchdog — the other half of
+  what was observed live); the second failure waits longer than the first; an unmount mid-backoff
+  cancels the retry and `CLOSED` is never retried; a retry that **succeeds** delivers a request
+  normally on the new channel, so the fix restores the chain rather than merely silencing the
+  error; the tutor-facing indicator appears only **after** a failure and clears on success; and the
+  **mount-time read** surfaces an already-pending request with no Realtime event of any kind, which
+  is the property that makes a missed event self-healing on refresh.
+- **The queue's dedup rule** (`mergeIntoQueue`) is asserted directly rather than through the DOM.
+  Only `queue[0]` renders and `drop` filters by id, so a double-add is not observable from the
+  outside — an assertion made through the modal would pass whether the rule held or not.
+
 Only what leaves the browser is faked — the Supabase channel and the Server Actions. The real hook,
 the real countdown and the real component are under test, so the failure has somewhere to live.
 
@@ -1598,7 +1627,8 @@ the real countdown and the real component are under test, so the failure has som
 part of the CI `verify` job** — it needs no database and no credentials, so the reason the DB lane
 stays out does not apply. The globs and the file extensions are disjoint from `tests/unit/**`, so
 `pnpm test` can never collect a DOM test and `pnpm test:dom` can never collect a unit one; the node
-lane's 333 tests run exactly as they did before this lane existed.
+lane's 333 tests run exactly as they did before this lane existed. 24 tests across 3 files as of
+`fix/realtime-subscription-resilience`.
 
 **DB-backed integration (Vitest against the test Supabase project), non-negotiable coverage:**
 

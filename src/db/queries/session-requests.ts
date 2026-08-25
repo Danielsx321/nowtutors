@@ -161,6 +161,52 @@ export async function getIncomingRequestDetail(
   return row ?? null;
 }
 
+/**
+ * Every request still waiting on this tutor, enriched exactly as
+ * {@link getIncomingRequestDetail} enriches one — the tutor side's mount-time
+ * read.
+ *
+ * **Why this had to exist.** There was no mount-time read on the tutor side at
+ * all: the modal was populated *only* by the Realtime INSERT event, so a
+ * request that arrived while the subscription was down was lost for good, and
+ * refreshing the page could not recover it because a refresh re-subscribed
+ * without ever asking what was already pending. A subscription carries what
+ * happens after it is bound and nothing else; this is the half that covers what
+ * happened before.
+ *
+ * Scoped to `tutor_id` and filtered the same way `getPendingRequestForStudent`
+ * filters — `pending` AND not past `expires_at`, because a row the deadline has
+ * already decided is expired whatever the cron has got round to (§7.4). Oldest
+ * first, matching the queue order the modal shows them in.
+ */
+export async function getPendingRequestsForTutor(
+  tutorId: string,
+): Promise<IncomingRequestDetail[]> {
+  return db
+    .select({
+      id: sessionRequests.id,
+      studentName: publicProfiles.displayName,
+      studentAvatarUrl: publicProfiles.avatarUrl,
+      subjectName: subjects.name,
+      message: sessionRequests.message,
+      durationMinutes: sessionRequests.durationMinutes,
+      priceCredits: sessionRequests.priceCredits,
+      expiresAt: sessionRequests.expiresAt,
+      status: sessionRequests.status,
+    })
+    .from(sessionRequests)
+    .leftJoin(publicProfiles, eq(publicProfiles.id, sessionRequests.studentId))
+    .leftJoin(subjects, eq(subjects.id, sessionRequests.subjectId))
+    .where(
+      and(
+        eq(sessionRequests.tutorId, tutorId),
+        eq(sessionRequests.status, "pending"),
+        sql`${sessionRequests.expiresAt} > now()`,
+      ),
+    )
+    .orderBy(sessionRequests.createdAt);
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import {
   getIncomingRequestDetail,
   getInstantTutorInfo,
   getPendingRequestForStudent,
+  getPendingRequestsForTutor,
   insertSessionRequest,
   type IncomingRequestDetail,
 } from "@/db/queries/session-requests";
@@ -25,7 +26,7 @@ import { getBookingSettings, getInstantRequestTtlSeconds } from "@/lib/settings"
 import { sessionPriceCredits } from "@/lib/credits/pricing";
 
 /**
- * The instant-session handshake's three Server Actions (SPEC §7.4).
+ * The instant-session handshake's Server Actions (SPEC §7.4).
  *
  * Every one of them re-checks role and identity server-side, independently of
  * any layout guard (§5 Layer 2, CLAUDE.md: "Do not rely on the client hiding a
@@ -57,6 +58,10 @@ export type AcceptSessionRequestResult =
 
 export type IncomingRequestResult =
   | { ok: true; request: SerializedIncomingRequest }
+  | { error: string };
+
+export type PendingIncomingRequestsResult =
+  | { ok: true; requests: SerializedIncomingRequest[] }
   | { error: string };
 
 /** {@link IncomingRequestDetail} with `Date` flattened for the client boundary. */
@@ -257,11 +262,27 @@ export async function acceptSessionRequest(
  * The Realtime INSERT payload carries ids, not display names, and a browser must
  * not be trusted to join them for itself — so this is the guarded read behind
  * it, scoped to the calling tutor.
+ *
+ * **`requireApproval: false`, deliberately, and it is a fix.** This action is
+ * called from `IncomingRequests`, which is mounted in the `(tutor)` LAYOUT —
+ * and that layout guards with `requireApproval: false` so
+ * `/tutor/pending-approval` does not redirect-loop. With approval enforced here
+ * the two guards disagreed: an unapproved tutor could legitimately be sitting
+ * under the layout, and every read this component made threw `NEXT_REDIRECT`
+ * inside a fire-and-forget — an unhandled rejection, not a redirect, because
+ * there is no navigation to perform from a promise nobody awaits. Approval is
+ * not what authorizes this read; **ownership is**, and
+ * `getIncomingRequestDetail` is scoped to `tutor_id = me`. An unapproved tutor
+ * is not in the `live_tutors` view (§3.1), so no request can be addressed to
+ * them in the first place and this returns nothing for them anyway.
+ *
+ * `acceptSessionRequest` / `declineSessionRequest` keep approval enforced —
+ * those create a booking and charge a student, and neither runs unawaited.
  */
 export async function getIncomingRequest(
   requestId: string,
 ): Promise<IncomingRequestResult> {
-  const { user } = await requireRole("tutor");
+  const { user } = await requireRole("tutor", { requireApproval: false });
 
   const parsed = requestIdSchema.safeParse(requestId);
   if (!parsed.success) return { error: "That request no longer exists." };
@@ -272,5 +293,29 @@ export async function getIncomingRequest(
   return {
     ok: true,
     request: { ...request, expiresAt: request.expiresAt.toISOString() },
+  };
+}
+
+/**
+ * Every request still waiting on the calling tutor — the mount-time read.
+ *
+ * The tutor side had no such read: the queue was filled by the Realtime INSERT
+ * event and by nothing else, so a request that arrived while the subscription
+ * was not established was gone, and a refresh could not bring it back. This is
+ * what makes a missed event self-healing — `IncomingRequests` calls it on mount
+ * and again after every successful (re)subscribe, and deduplicates the result
+ * against what the queue already holds.
+ *
+ * Same relaxed approval guard, for the same reason, as `getIncomingRequest`
+ * above: it is called from the same component under the same layout, and it is
+ * scoped to `tutor_id = me`.
+ */
+export async function listPendingIncomingRequests(): Promise<PendingIncomingRequestsResult> {
+  const { user } = await requireRole("tutor", { requireApproval: false });
+
+  const rows = await getPendingRequestsForTutor(user.id);
+  return {
+    ok: true,
+    requests: rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() })),
   };
 }
