@@ -222,9 +222,14 @@ already-running script.
     `select … from vault.decrypted_secrets` subqueries, not a 64-char hex string.
   The sweep is **tidy-up, not correctness** — the `live_tutors` view protects students at read time
   (SPEC §3.1), so a job that has not been scheduled yet is not an outage.
-- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done.** Run
-  `drizzle/snippets/pg_cron_expire_requests.sql` once per environment, as `postgres`, from the
-  Supabase SQL editor.
+- [ ] **pg_cron scheduling for `/api/cron/expire-requests`** — Phase 6 Part 2. **Not done, and now
+  a one-shot SQL run rather than a blocked one.** The only reason this was ever gated — the
+  original `CRON_SECRET` rotation — closed on 2026-08-23, well before this line was last touched;
+  what remains is purely running the snippet once per environment, as `postgres`, from the Supabase
+  SQL editor. `cron.job` on `mipnoxlhurdbaahmvhhx` currently holds `sweep-presence` and
+  `complete-sessions` only (see below) — `expire-requests` is the one job on this list still
+  outstanding, and it is outstanding because nobody has run its snippet yet, not because anything is
+  blocking them.
   - **Run `pg_cron_sweep_presence.sql` first.** This snippet deliberately contains **only** the
     `cron.schedule` call: the extensions and the two Vault secrets (`app_base_url`, `cron_secret`)
     are created there and reused here. `vault.create_secret` **raises on a duplicate name**, so a
@@ -238,35 +243,61 @@ already-running script.
   - Like the sweep, this job is **tidy-up, not correctness**: the accept transaction refuses (and
     terminally expires) a request past its deadline on its own, and the "one pending request at a
     time" read ignores rows past theirs, so an unscheduled job is not an outage.
-- [ ] **pg_cron scheduling for `/api/cron/complete-sessions`** — Phase 6 Part 3C. **Not done.** Run
-  `drizzle/snippets/pg_cron_complete_sessions.sql` once per environment, as `postgres`, from the
-  Supabase SQL editor.
-  - **Run `pg_cron_sweep_presence.sql` first**, for the same reason as `expire-requests`: this
-    snippet contains only the `cron.schedule` call and reuses the extensions and the two Vault
-    secrets (`app_base_url`, `cron_secret`) created there. `vault.create_secret` **raises on a
-    duplicate name**, so a self-contained copy would fail on every environment already set up.
+- [x] **pg_cron scheduling for `/api/cron/complete-sessions`** — Phase 6 Part 3C. **Done
+  2026-08-25 on `mipnoxlhurdbaahmvhhx`.** Ran `drizzle/snippets/pg_cron_complete_sessions.sql`
+  once, as `postgres`, from the Supabase SQL editor, after `pg_cron_sweep_presence.sql` (already
+  run 2026-08-23 — same extensions and the same two Vault secrets, `app_base_url` and
+  `cron_secret`, reused rather than re-created).
   - Schedule is `*/15 * * * *` (§12).
-  - Verify the same way as the other two: `select jobid, jobname, schedule, active from cron.job;`
-    then `select status_code, content from net._http_response order by created desc limit 5;` —
-    healthy is `{"ok":true,"job":"complete-sessions","completed":N,"noShowTutor":N,
-    "noShowStudent":N,"earningsCreated":N,…}`. **401** = the Vault secret and Vercel's
-    `CRON_SECRET` disagree; **503** = `CRON_SECRET` is unset on the deployment.
-  - **Unlike the other two jobs, this one is NOT tidy-up.** `sweep-presence` and `expire-requests`
-    sit on top of correctness enforced elsewhere; `complete-sessions` is the **only** writer of
-    `tutor_earnings` in the codebase (§7.11), and nothing else in the deployed app transitions a
-    `confirmed`/`in_progress` booking to `completed` or a no-show status when both parties have
-    walked away from a session (SPEC §12, docs/DECISIONS.md, Phase 6 Part 3C). **Until this job is
-    scheduled, no tutor is ever paid for a session nobody was left to close, and those bookings sit
-    `confirmed`/`in_progress` indefinitely** — this is the one cron on this list whose absence is a
-    real, ongoing gap rather than a cosmetic one. The four Part 3B server-side actors (`getSessionState`,
-    the token route, `endSession`, the room's server read) still close an instant session while a
-    participant is present; only the both-parties-offline case, and every no-show, depends on this
-    job.
+  - **Verified 2026-08-25, both halves.** *Scheduling:* `select jobid, jobname, schedule, active
+    from cron.job;` shows `complete-sessions` (`jobid` 2) at `*/15 * * * *`, `active = true`,
+    alongside `sweep-presence` (`jobid` 1). *That it actually works:* a manual `net.http_post`
+    invocation returned request id 506, and `select status_code, content from net._http_response
+    where id = 506;` shows **200** with
+    `{"ok":true,"job":"complete-sessions","completed":0,"noShowTutor":0,"noShowStudent":0,
+    "earningsCreated":0,"earningsSkippedNoPrice":0,"completedIds":[],"noShowTutorIds":[],
+    "noShowStudentIds":[],"earningsCreatedIds":[],"earningsSkippedNoPriceIds":[],
+    "durationMs":636}`. **This is the first cron in the deployed app proven working end to end** —
+    `sweep-presence` and `expire-requests` were verified as scheduled and returning 200, but neither
+    has this snippet's specific-invocation-to-specific-response trace recorded.
+  - **`pg_net.http_post` returns a request id, not a status code — the call itself always
+    "succeeds."** `select net.http_post(...)` hands back an integer (`506` above) the instant the
+    request is queued; it says nothing about what the target route returned. The actual
+    `status_code` and `content` land asynchronously in `net._http_response`, keyed by that same id.
+    Reading `net.http_post`'s return value as if it were the HTTP result is the mistake this note
+    exists to prevent — always join back to `net._http_response` by request id (or, for a scheduled
+    job, filter by `created desc` immediately after the schedule fires).
+  - **Unlike the other two jobs, this one was NOT tidy-up while unscheduled.** `sweep-presence` and
+    `expire-requests` sit on top of correctness enforced elsewhere; `complete-sessions` is the
+    **only** writer of `tutor_earnings` in the codebase (§7.11), and nothing else in the deployed
+    app transitions a `confirmed`/`in_progress` booking to `completed` or a no-show status when both
+    parties have walked away from a session (SPEC §12, docs/DECISIONS.md, Phase 6 Part 3C). Before
+    this was scheduled, no tutor was ever paid for a session nobody was left to close, and those
+    bookings sat `confirmed`/`in_progress` indefinitely. The four Part 3B server-side actors
+    (`getSessionState`, the token route, `endSession`, the room's server read) still close an
+    instant session while a participant is present; now that this job is scheduled, the
+    both-parties-offline case and every no-show resolve too.
+  - **The Vault dependency, plainly.** This snippet — like `expire-requests`'s — reads
+    `app_base_url` and `cron_secret` from `vault.decrypted_secrets` at call time; both are created
+    once by `pg_cron_sweep_presence.sql` and reused, never re-created (`vault.create_secret` raises
+    on a duplicate name). **The snippet itself contains no secret and no placeholder** — every
+    value it needs comes from a `select … from vault.decrypted_secrets where name = '…'` subquery,
+    never a literal. `app_base_url` must have **no trailing slash** (it is concatenated directly
+    with the route path, e.g. `'/api/cron/complete-sessions'`; a trailing slash would double it).
+  - **The rotation trap this creates: `cron.job.active = true` says nothing about whether the
+    secret it's using still matches.** If `CRON_SECRET` is rotated in Vercel without also running
+    `vault.update_secret` on the Vault's `cron_secret` entry, the job keeps firing on schedule,
+    keeps showing `active = true` in `cron.job`, and every single run returns **401** in
+    `net._http_response` — a silent failure that looks identical to a healthy, idle job unless
+    someone reads the response body. There is no dashboard state that surfaces this on its own;
+    checking `cron.job` alone is not enough. **Whenever `CRON_SECRET` is rotated, `vault.update_secret`
+    on `cron_secret` is not optional cleanup — it is the other half of the rotation**, and the
+    verification is not "the job is active" but "the last `net._http_response` for this job is 200."
 - [x] **`CRON_SECRET` rotated.** The value set on 2026-08-23 during initial setup was exposed in
   plaintext (printed to a terminal, pasted between stores) and has been rotated and verified
-  2026-08-23 across all three stores. See the `CRON_SECRET` item above for detail. This only
-  clears the rotation gate — scheduling `pg_cron_expire_requests.sql` and
-  `pg_cron_complete_sessions.sql` are still separate, not-yet-done actions (above).
+  2026-08-23 across all three stores. See the `CRON_SECRET` item above for detail. This closed the
+  rotation gate — scheduling `pg_cron_expire_requests.sql` and `pg_cron_complete_sessions.sql`
+  were, at that point, still separate actions; the latter is now done (above).
   - **Re-verified live against `/api/cron/complete-sessions` specifically, 2026-08-25** (Phase 6
     Part 3C, before this route had ever been scheduled or called in production): an
     **unauthenticated** GET to the deployed route returned **401** — `{"error":"Unauthorized."}`,
@@ -277,6 +308,20 @@ already-running script.
     file included — only the outcome of the check is. This is the same class of verification the
     `sweep-presence` item above performs for its own route; `complete-sessions` had not been checked
     live until now because the route did not exist before Phase 6 Part 3C.
+  - **Rotated a SECOND time, 2026-08-25, after the value was pasted in plaintext into a chat
+    session** — the same exposure mode as 2026-08-23, a different value. **Verified both directions,
+    live, 2026-08-25, not merely asserted:** the specific value that had been exposed in chat now
+    returns **401** when sent as `Authorization: Bearer <that value>`, confirming it is dead; a
+    plain unauthenticated GET also returns 401 (the guard is still active, not disabled); and the
+    scheduled `complete-sessions` job's most recent `net._http_response` is **200** — which is only
+    possible if the Vault's current `cron_secret` matches whatever the deployed app is checking
+    against. Together these three facts are sufficient to close this item without needing to inspect
+    Vercel's or `.env.local`'s state directly: a value that is simultaneously dead when presented and
+    live when the scheduled job uses it *is* a confirmed rotation, by definition of what "rotated" has
+    to mean here — this is exactly the rotation-trap check the note on the `complete-sessions`
+    scheduling item above describes, run against the live system rather than assumed. As before, no
+    value — old or new — is recorded in this file or anywhere else in the repository; only the
+    outcome of each check is.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).

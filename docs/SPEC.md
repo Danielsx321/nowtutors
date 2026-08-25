@@ -1343,7 +1343,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
 | `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
-| `/api/cron/complete-sessions` | `*/15 * * * *` | **built** (Phase 6 Part 3C) — not yet scheduled, see below |
+| `/api/cron/complete-sessions` | `*/15 * * * *` | **built and scheduled** (Phase 6 Part 3C) |
 | `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
@@ -1386,15 +1386,20 @@ from `/admin/settings` with a "run now" button for debugging.
   3B, and again in Part 3C, which found that the never-started instant case was
   named as this cron's job without anything saying what made it due.
 
-  **Built in Phase 6 Part 3C, and deliberately not yet scheduled.** The route,
-  the three predicates, the classification and the earnings write are complete
-  and covered by `tests/integration/complete-sessions.test.ts`. The `pg_cron`
-  snippet and its RUNBOOK step are **not** in that pass: scheduling is gated on
-  the CRON_SECRET rotation, which is still open. Until it is scheduled the route
-  is invocable by hand with the bearer header, and nothing about correctness
-  waits on it — the four Part 3B actors still end any elapsed session with a
-  person in the room, and a late run writes the same `ended_at` an on-time one
-  would.
+  **Built and scheduled in Phase 6 Part 3C.** The route, the three predicates,
+  the classification and the earnings write are complete and covered by
+  `tests/integration/complete-sessions.test.ts`. The `pg_cron` snippet
+  (`drizzle/snippets/pg_cron_complete_sessions.sql`) has run against
+  `mipnoxlhurdbaahmvhhx`: `cron.job` shows it scheduled `*/15 * * * *` and
+  active, and a manual `pg_net` invocation returned **200** with
+  `{"ok":true,"job":"complete-sessions","completed":0,"noShowTutor":0,
+  "noShowStudent":0,"earningsCreated":0,"earningsSkippedNoPrice":0,…}` — the
+  first cron in the deployed app proven working end to end. Nothing about
+  correctness ever waited on the schedule — the four Part 3B actors still end
+  any elapsed session with a person in the room, and a late run writes the same
+  `ended_at` an on-time one would — but now that it is scheduled, the
+  both-parties-offline case and every no-show also resolve without a person
+  present.
 - **release-earnings** — `held` → `available` where `available_at <= now()`.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.

@@ -49,3 +49,12 @@ The deployed Vercel app authenticates against `mipnoxlhurdbaahmvhhx`, dashboard 
 "nowtutors-dev" — the same project used for local development, testing, seeding, and migrations.
 Not urgent while the rebuild has no real users; a hard blocker before cutover. Recorded in
 `RUNBOOK.md` as a launch-blocker checklist item.
+
+## 7. A report describing a file is not the file
+
+Three consecutive attempts to surface a snippet returned descriptions of its contents rather than
+the contents itself; the file was only actually inspected once it was printed directly. A summary
+of what a file contains is a claim about the file, not a substitute for reading it — and it carries
+the same risk as any other unverified claim this project has already been burned by (see #1). This
+applies to any claim about what a file says: print it, or read it, before trusting a description of
+it — your own prior description included.

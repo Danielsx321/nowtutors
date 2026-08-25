@@ -2,7 +2,7 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-24)
+## Current state (2026-08-25)
 
 **Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
 control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and
@@ -42,23 +42,46 @@ instant booking, which was named as this cron's job without anything saying what
 made it due), plus a falsification table in `DECISIONS.md` — including the break
 that proved nothing until the fixtures were fixed.
 
-**Next: the `pg_cron` scheduling for `/api/cron/complete-sessions` is WRITTEN,
-on `docs/schedule-complete-sessions-cron` (PR open, not yet merged), and
-awaiting the Supabase SQL run.** `drizzle/snippets/pg_cron_complete_sessions.sql`
-follows the `expire-requests` snippet's shape exactly — same extensions, same
-two Vault secrets, reused rather than re-created — scheduling `*/15 * * * *`
-(§12). **`CRON_SECRET` rotation is CLOSED**: it was rotated and verified across
-all three stores on 2026-08-23 (`docs/RUNBOOK.md`), and is now additionally
-re-verified live against `/api/cron/complete-sessions` specifically — an
-unauthenticated GET returned **401**, not the 503 an unset variable would
-produce, confirming the guard is wired into this route and the variable reached
-production. Nothing about the docs branch touches code, routes, or tests.
-Running the snippet is the one remaining step before this cron is live: until
-then, `complete-sessions` is unlike `sweep-presence`/`expire-requests` — it is
-the **only** writer of `tutor_earnings` in the codebase, so no tutor is paid for
-a both-parties-offline session and no such booking ever leaves
-`confirmed`/`in_progress` in production. See RUNBOOK's new
-`pg_cron scheduling for /api/cron/complete-sessions` item for detail.
+**PR #40 is MERGED** (`2f398d3`), squashed from `docs/schedule-complete-sessions-cron`: the
+`pg_cron` snippet and the RUNBOOK scheduling step, docs-only — no code, route, or test changes.
+`drizzle/snippets/pg_cron_complete_sessions.sql` follows the `expire-requests` snippet's shape
+exactly — same extensions, same two Vault secrets, reused rather than re-created — scheduling
+`*/15 * * * *` (§12).
+
+**`complete-sessions` is now SCHEDULED AND VERIFIED LIVE, 2026-08-25** — the first cron in the
+deployed app proven working end to end, not just scheduled. The snippet has run against
+`mipnoxlhurdbaahmvhhx`: `cron.job` shows `complete-sessions` (`jobid` 2) at `*/15 * * * *`,
+`active = true`, alongside `sweep-presence` (`jobid` 1). A manual `pg_net` invocation returned
+**200** with `{"ok":true,"job":"complete-sessions","completed":0,"noShowTutor":0,
+"noShowStudent":0,"earningsCreated":0,"earningsSkippedNoPrice":0,…}` — read from
+`net._http_response` by request id, since `net.http_post` itself returns only a request id, never a
+status code (see RUNBOOK's rotation-trap and Vault-dependency notes on this item). Now that it's
+scheduled, `complete-sessions` closes the both-parties-offline case and every no-show without
+needing a person present — the four Part 3B server-side actors were always sufficient while someone
+was in the room; this cron is what covers everyone else.
+
+**`CRON_SECRET` rotation is CLOSED, twice over.** The original 2026-08-23 rotation (exposed via
+terminal/store-pasting during initial setup) closed the gate that had blocked scheduling in the
+first place. A **second** rotation happened 2026-08-25, after the value was pasted in plaintext
+into a chat session during this work — same exposure mode, different trigger. Both directions were
+verified live rather than assumed: the specific chat-exposed value now returns **401**
+(`Authorization: Bearer <that value>`), confirming it's dead; an unauthenticated GET also returns
+401, confirming the guard itself is still active; and the scheduled `complete-sessions` job's most
+recent response is **200**, which is only possible if the Vault's current secret matches what the
+deployed app checks against. No value, old or new, is recorded anywhere in the repository.
+
+**`expire-requests` remains UNSCHEDULED — outstanding, not blocked.** Its snippet
+(`drizzle/snippets/pg_cron_expire_requests.sql`) has existed since Phase 6 Part 2, and the only
+thing that was ever gating it — the CRON_SECRET rotation — closed on 2026-08-23. `cron.job` on
+`mipnoxlhurdbaahmvhhx` holds `sweep-presence` and `complete-sessions` only; `expire-requests` is a
+one-shot SQL run away, same as the other two were. It is tidy-up, not correctness (§12) — the
+accept transaction refuses an expired request on its own — so this is a real gap in operational
+tidiness, not a functional one, unlike `complete-sessions`'s absence was.
+
+**Repo hygiene held through two real phase merges this session.** PR #39 (feature) and PR #40
+(docs) both squash-merged cleanly; `git fetch --prune` + a content-identity check (`git diff main
+<branch> --stat` empty) before each `-D` confirmed no work was lost before deleting the local
+branch. `origin` and the local checkout both hold `main` only — no stray branches, no divergence.
 
 Screen share, chat and credits-consumed/earned remain the open Part 3 remainder;
 `release-earnings` and withdrawals are Phase 8.
@@ -357,18 +380,17 @@ PR** (the NULL-`price_credits` skip, above): `pnpm test:db:test` 30 passed / 3
 files — the 29 above plus one new test for the skip path; the unit lane count is
 unchanged, since that fix is DB-lane-only.
 
-**Absent rather than stubbed, in the merged PR:** the `pg_cron` snippet and its
-RUNBOOK step, the `/admin/settings` "run now" button, `release-earnings`,
-withdrawals, anything in `lib/credits/ledger.ts`, screen share, chat and emails.
-**The snippet and RUNBOOK step are what `docs/schedule-complete-sessions-cron`
-(above) closes** — `CRON_SECRET` rotation is not the blocker it was described as
-during the PR (it was already closed on 2026-08-23, before this phase started;
-the "still open" wording above was itself an error, corrected here rather than
-re-asserted). Nothing about correctness waited on the schedule while it was
-missing: the four Part 3B actors still end any elapsed session with a person in
-the room, and a late run writes the same `ended_at` an on-time one would — but
-see the docs-branch paragraph above for what specifically DOES depend on the
-schedule (`tutor_earnings` and the both-parties-offline transition).
+**Absent rather than stubbed, in PR #39 itself:** the `pg_cron` snippet and its RUNBOOK step, the
+`/admin/settings` "run now" button, `release-earnings`, withdrawals, anything in
+`lib/credits/ledger.ts`, screen share, chat and emails. **The snippet and RUNBOOK step are what PR
+#40 built and this session's scheduling closed — see the "Current state" section above for the
+live-verified result.** `CRON_SECRET` rotation was never the blocker it was described as during PR
+#39 (it had already closed on 2026-08-23, before this phase started; the "still open" wording in
+that PR was itself an error). Nothing about correctness waited on the schedule while it was
+missing: the four Part 3B actors still end any elapsed session with a person in the room, and a
+late run writes the same `ended_at` an on-time one would — but see "Current state" above for what
+specifically depended on the schedule (`tutor_earnings` and the both-parties-offline transition),
+and now doesn't.
 
 ## What Phase 6 Part 3B built
 
