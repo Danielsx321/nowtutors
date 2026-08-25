@@ -20,13 +20,18 @@ import { getEarningsSettings } from "@/lib/settings";
  * through an HTTP handler that pulls in Supabase auth. The route adds nothing to
  * this beyond the bearer check and the JSON envelope.
  *
- * THIS FUNCTION DOES NOT TOUCH A WALLET. No `creditWallet`, no
- * `credit_transactions` row; nothing in `lib/credits/ledger.ts` is imported on
- * this path, transitively or otherwise. A `held` earnings row is a promise, and
- * the ledger entry that turns it into money is written when `release-earnings`
- * flips `held` → `available` (Phase 8). Crediting `wallets.credit_balance` at
- * completion would put credits a tutor cannot withdraw yet into the number that
- * means "credits you can spend or withdraw".
+ * THIS FUNCTION CALLS NOTHING FROM THE LEDGER AND WRITES NO WALLET. No
+ * `creditWallet`, no `debitWallet`, no `credit_transactions` row. **This does
+ * NOT mean `lib/credits/ledger.ts` is absent from the import graph** — it IS in
+ * the transitive closure, via `db/queries/complete-sessions.ts` →
+ * `db/queries/sessions.ts` → `lib/session-requests/accept.ts`, which
+ * value-imports `debitWallet` (the edge is pre-existing, from Part 3B's
+ * `sessionChannel` reuse) — only that nothing on this path *calls* it. A `held`
+ * earnings row is a promise, and the ledger entry that turns it into money is
+ * written when `release-earnings` flips `held` → `available` (Phase 8).
+ * Crediting `wallets.credit_balance` at completion would put credits a tutor
+ * cannot withdraw yet into the number that means "credits you can spend or
+ * withdraw".
  */
 
 export interface CompleteSessionsResult {
@@ -35,6 +40,13 @@ export interface CompleteSessionsResult {
   noShowStudentIds: string[];
   /** Booking ids that actually got a row — what the database did, not intent. */
   earningsCreatedIds: string[];
+  /**
+   * Booking ids that earned a payout but had NULL `price_credits`, so no
+   * earnings row was written for them. The booking's status transition still
+   * happened — only the earnings row was withheld. See the NULL-price note on
+   * the earnings-building loop below.
+   */
+  earningsSkippedNoPriceIds: string[];
 }
 
 export async function runCompleteSessionsSweep(): Promise<CompleteSessionsResult> {
@@ -74,31 +86,46 @@ export async function runCompleteSessionsSweep(): Promise<CompleteSessionsResult
   swept.push(...(await sweepInstantNoShows()));
   swept.push(...(await sweepElapsedScheduledSessions()));
 
-  const earnings: HeldEarning[] = swept
-    .filter((row) => statusEarnsPayout(row.status))
-    .map((row) => {
-      // `price_credits` is written on every booking at creation, by both the
-      // accept transaction and the scheduled booking action. The coalesce is for
-      // a row that predates that and would otherwise violate the NOT NULL on
-      // `gross_credits` — a zero-credit promise, not a skipped one, so the
-      // booking still gets its single permitted earnings row.
-      const gross = row.priceCredits ?? 0;
-      const split = splitEarnings(gross, platformFeePercent);
-      // Every sweep above sets `ended_at` in the same statement that sets the
-      // status, so this fallback does not fire. It exists because a null
-      // `available_at` would be silently invisible to Phase 8's release sweep.
-      const endedAt = row.endedAt ?? new Date();
-      return {
-        bookingId: row.bookingId,
-        tutorId: row.tutorId,
-        grossCredits: split.grossCredits,
-        platformFeeCredits: split.platformFeeCredits,
-        netCredits: split.netCredits,
-        availableAt: new Date(
-          endedAt.getTime() + earningsHoldHours * 60 * 60 * 1000,
-        ),
-      };
+  const earnings: HeldEarning[] = [];
+  const earningsSkippedNoPriceIds: string[] = [];
+
+  for (const row of swept) {
+    if (!statusEarnsPayout(row.status)) continue;
+
+    // `price_credits` is written on every booking at creation, by both the
+    // accept transaction and the scheduled booking action, so a NULL here means
+    // a row that predates that guarantee. **Do not coalesce it to 0.**
+    // `tutor_earnings.booking_id` is UNIQUE with `ON CONFLICT DO NOTHING` (§7.11),
+    // so a zero-credit row written now would occupy that booking's one earnings
+    // slot permanently — nothing can ever insert the correct one over it — and a
+    // silent zero is indistinguishable from a session that was legitimately
+    // free. Skipping the row is recoverable (a later manual insert can still
+    // land); writing a wrong zero is not.
+    if (row.priceCredits === null) {
+      console.error(
+        "[cron/complete-sessions] booking has NULL price_credits, skipping its earnings row",
+        { bookingId: row.bookingId, status: row.status },
+      );
+      earningsSkippedNoPriceIds.push(row.bookingId);
+      continue;
+    }
+
+    const split = splitEarnings(row.priceCredits, platformFeePercent);
+    // Every sweep above sets `ended_at` in the same statement that sets the
+    // status, so this fallback does not fire. It exists because a null
+    // `available_at` would be silently invisible to Phase 8's release sweep.
+    const endedAt = row.endedAt ?? new Date();
+    earnings.push({
+      bookingId: row.bookingId,
+      tutorId: row.tutorId,
+      grossCredits: split.grossCredits,
+      platformFeeCredits: split.platformFeeCredits,
+      netCredits: split.netCredits,
+      availableAt: new Date(
+        endedAt.getTime() + earningsHoldHours * 60 * 60 * 1000,
+      ),
     });
+  }
 
   const earningsCreatedIds = await insertHeldEarnings(earnings);
   const idsWith = (status: string) =>
@@ -109,5 +136,6 @@ export async function runCompleteSessionsSweep(): Promise<CompleteSessionsResult
     noShowTutorIds: idsWith("no_show_tutor"),
     noShowStudentIds: idsWith("no_show_student"),
     earningsCreatedIds,
+    earningsSkippedNoPriceIds,
   };
 }

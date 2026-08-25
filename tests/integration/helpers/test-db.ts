@@ -293,8 +293,12 @@ export interface FixtureBookingOptions {
    * window is a real one and `bookings_no_overlap` sees what it expects.
    */
   scheduledEndMinutesAgo?: number;
-  /** Gross credits on the booking. Defaults to 500. */
-  priceCredits?: number;
+  /**
+   * Gross credits on the booking. Defaults to 500. `null` writes a NULL
+   * `price_credits` — a row that predates the guarantee that every booking gets
+   * one at creation, and the fixture for Part 3C's `priceCredits === null` skip.
+   */
+  priceCredits?: number | null;
 }
 
 export async function createFixtureBooking(

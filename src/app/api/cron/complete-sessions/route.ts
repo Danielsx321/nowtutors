@@ -25,10 +25,14 @@ import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
  * of this job failing moves nobody's withdrawal date (docs/DECISIONS.md,
  * "`ended_at` is capped at the deadline").
  *
- * THIS HANDLER DOES NOT TOUCH A WALLET. No `creditWallet`, no
- * `credit_transactions` row, nothing from `lib/credits/ledger.ts` is imported
- * anywhere on this path. A `held` earnings row is a promise; the ledger entry is
- * the money, and it is written when `release-earnings` flips `held` →
+ * THIS HANDLER CALLS NOTHING FROM THE LEDGER AND WRITES NO WALLET. No
+ * `creditWallet`, no `debitWallet`, no `credit_transactions` row — nothing on
+ * this path touches a wallet. **`lib/credits/ledger.ts` IS in the transitive
+ * import closure**, though (`db/queries/sessions.ts` imports `sessionChannel`
+ * from `lib/session-requests/accept.ts`, which value-imports `debitWallet`,
+ * pre-existing from Part 3B) — so "not imported" is not the guarantee here;
+ * "calls nothing from it" is. A `held` earnings row is a promise; the ledger
+ * entry is the money, and it is written when `release-earnings` flips `held` →
  * `available` (Phase 8). Crediting `wallets.credit_balance` here would put
  * credits a tutor cannot yet withdraw into the number that means "credits you
  * can spend or withdraw".
@@ -59,6 +63,7 @@ export async function GET(request: Request) {
       noShowTutorIds,
       noShowStudentIds,
       earningsCreatedIds,
+      earningsSkippedNoPriceIds,
     } = await runCompleteSessionsSweep();
 
     const summary = {
@@ -70,10 +75,15 @@ export async function GET(request: Request) {
       // What the database did, not what this run intended: on a retry the rows
       // are already classified and this is 0.
       earningsCreated: earningsCreatedIds.length,
+      // A payout-earning booking whose price_credits was NULL: no earnings row
+      // was written for it (a zero-credit one would permanently occupy the
+      // UNIQUE booking_id slot), only logged. Should be 0 in steady state.
+      earningsSkippedNoPrice: earningsSkippedNoPriceIds.length,
       completedIds,
       noShowTutorIds,
       noShowStudentIds,
       earningsCreatedIds,
+      earningsSkippedNoPriceIds,
       durationMs: Date.now() - startedAt,
     };
     // §12: every cron handler logs a structured summary of what it changed.

@@ -463,4 +463,31 @@ describe("complete-sessions sweep (test project)", () => {
     expect(earning!.grossCredits).toBe(999);
     expect(earning!.netCredits).toBe(888);
   });
+
+  it("transitions a NULL-price booking but writes no earnings row for it", async () => {
+    // `price_credits` is written by both the accept transaction and the
+    // scheduled booking action, so NULL here means a row that predates that
+    // guarantee. It must NOT become a zero-credit earnings row:
+    // `tutor_earnings.booking_id` is UNIQUE with ON CONFLICT DO NOTHING, so a
+    // wrong zero written now would permanently occupy the one earnings slot
+    // this booking is allowed and block the correct row forever.
+    const { bookingId } = await seed({
+      startedMinutesAgo: 50,
+      durationMinutes: 30,
+      priceCredits: null,
+    });
+
+    const result = await runCompleteSessionsSweep();
+
+    // The status transition is unaffected — only the earnings row is withheld.
+    expect(result.completedIds).toContain(bookingId);
+    expect(result.earningsCreatedIds).not.toContain(bookingId);
+    expect(result.earningsSkippedNoPriceIds).toContain(bookingId);
+
+    const row = await readClassification(conn, bookingId);
+    expect(row.status).toBe("completed");
+    expect(row.priceCredits).toBeNull();
+
+    expect(await readEarnings(conn, bookingId)).toBeNull();
+  });
 });

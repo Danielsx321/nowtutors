@@ -2546,8 +2546,16 @@ one, because with one party present the order cannot matter.
 ### 4. The wallet is credited at RELEASE, not at completion
 
 This cron writes `tutor_earnings` and touches no wallet. No `creditWallet`, no
-`credit_transactions` row, no `session_earning` transaction; nothing in
-`lib/credits/ledger.ts` is imported by this pass, transitively or otherwise.
+`debitWallet`, no `credit_transactions` row, no `session_earning` transaction —
+nothing on this path **calls** anything from the ledger. **That is not the same
+claim as "not imported": `lib/credits/ledger.ts` is in the transitive closure**
+(`db/queries/complete-sessions.ts` → `db/queries/sessions.ts` →
+`lib/session-requests/accept.ts`, which value-imports `debitWallet` for
+`sessionChannel`'s reuse — pre-existing from Part 3B, not introduced here). An
+earlier draft of this entry, and of the route's and the sweep's own doc
+comments, said "not imported, transitively or otherwise", which a `grep` for the
+import path disproves. Corrected in this commit to the claim that is actually
+checkable: the ledger is reachable in the graph and unused on this path.
 
 **A `held` earnings row is a promise; the ledger entry is the money.** It is
 written when `release-earnings` flips `held` → `available` (Phase 8).
@@ -2623,6 +2631,27 @@ already cost one misdiagnosis: Part 3B's first falsification break used
 looked exactly like a guard holding (see "Break 1 first failed for the wrong
 reason"). A mock that omits a method the code under test calls produces failures
 that read like real refusals.
+
+### 9. A NULL `price_credits` skips the earnings row rather than writing a zero one
+
+A booking that pays out (`completed` or `no_show_student`) but has NULL
+`price_credits` — a row predating the guarantee that both booking-creation paths
+write it — no longer coalesces to a 0-credit earnings row. **It is skipped, is
+logged at `console.error` with the booking id, and is counted in the sweep's new
+`earningsSkippedNoPriceIds` (surfaced on the route as `earningsSkippedNoPrice`).**
+The booking's status transition still happens; only the earnings write is
+withheld.
+
+A skipped row beats a zero row for one reason: `tutor_earnings.booking_id` is
+UNIQUE with `ON CONFLICT DO NOTHING` (§7.11, and item 5 above), so a wrong
+zero-credit row written now would **permanently** occupy that booking's one
+earnings slot — nothing can ever insert the correct amount over it — and it would
+be indistinguishable from a session that was legitimately free. A skipped row is
+still recoverable: the booking stays without an earnings row, an operator reading
+the error log or the count can act, and a manual insert of the right number is
+still possible. Corrected in this commit: PR #39's original code coalesced a
+NULL `price_credits` to `0` (`row.priceCredits ?? 0`) before the PR merged to
+`main`; this replaces that coalesce.
 
 ### What is NOT here
 
