@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   checkLessonSpaceAccess,
   withinJoinWindow,
+  joinWindowFor,
   JOIN_WINDOW_BEFORE_MINUTES,
   JOIN_WINDOW_AFTER_MINUTES,
   type LessonSpaceBookingRow,
@@ -68,8 +69,14 @@ describe("lessonspace access — participation", () => {
   it("gives a non-participant the same 404 as a missing booking", () => {
     const stranger = checkLessonSpaceAccess(booking(), STRANGER, MID);
     const missing = checkLessonSpaceAccess(null, STUDENT, MID);
-    expect(stranger).toEqual({ ok: false, status: 404, message: "Session not found." });
-    expect(missing).toEqual({ ok: false, status: 404, message: "Session not found." });
+    const notFound = {
+      ok: false,
+      reason: "not_found",
+      status: 404,
+      message: "Session not found.",
+    };
+    expect(stranger).toEqual(notFound);
+    expect(missing).toEqual(notFound);
   });
 
   it("checks participation first — a stranger never learns state, type, or timing", () => {
@@ -83,6 +90,7 @@ describe("lessonspace access — participation", () => {
     });
     expect(checkLessonSpaceAccess(row, STRANGER, MID)).toEqual({
       ok: false,
+      reason: "not_found",
       status: 404,
       message: "Session not found.",
     });
@@ -93,7 +101,10 @@ describe("lessonspace access — booking must be a scheduled classroom", () => {
   it("refuses an instant booking with 400 even for a participant", () => {
     const res = checkLessonSpaceAccess(booking({ type: "instant" }), STUDENT, MID);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.status).toBe(400);
+    if (!res.ok) {
+      expect(res.status).toBe(400);
+      expect(res.reason).toBe("not_scheduled");
+    }
   });
 });
 
@@ -111,7 +122,10 @@ describe("lessonspace access — state guard (§7.7 step 1)", () => {
     (status) => {
       const res = checkLessonSpaceAccess(booking({ status }), STUDENT, MID);
       expect(res.ok).toBe(false);
-      if (!res.ok) expect(res.status).toBe(409);
+      if (!res.ok) {
+        expect(res.status).toBe(409);
+        expect(res.reason).toBe("not_joinable");
+      }
     },
   );
 });
@@ -122,6 +136,7 @@ describe("lessonspace access — join window is enforced in the decision", () =>
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.status).toBe(409);
+      expect(res.reason).toBe("too_early");
       expect(res.message).toMatch(/isn't open yet/i);
     }
   });
@@ -131,6 +146,7 @@ describe("lessonspace access — join window is enforced in the decision", () =>
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.status).toBe(409);
+      expect(res.reason).toBe("too_late");
       expect(res.message).toMatch(/window .* closed/i);
     }
   });
@@ -199,5 +215,95 @@ describe("withinJoinWindow", () => {
         new Date(longEnd.getTime() + JOIN_WINDOW_AFTER_MINUTES * 60_000),
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * The refusal tag `/classroom/[bookingId]` and the booking-detail join button
+ * switch on (Phase 7 Part 2). It exists so the UI renders *this* decision rather
+ * than matching on prose or re-deriving §7.3's window — these assertions are what
+ * stop the tag from silently drifting away from the status and message beside it.
+ */
+describe("lessonspace access — refusal tags distinguish the two window edges", () => {
+  it("tags early and late differently even though both are 409", () => {
+    const early = checkLessonSpaceAccess(booking(), STUDENT, new Date(OPENS_AT.getTime() - 1));
+    const late = checkLessonSpaceAccess(booking(), STUDENT, new Date(CLOSES_AT.getTime() + 1));
+    expect(early.ok).toBe(false);
+    expect(late.ok).toBe(false);
+    if (!early.ok && !late.ok) {
+      expect(early.status).toBe(late.status);
+      expect(early.reason).toBe("too_early");
+      expect(late.reason).toBe("too_late");
+    }
+  });
+
+  it("tags a scheduled booking with no timing as too_early, never too_late", () => {
+    // Structurally unreachable (§4.3 gives a scheduled row both timestamps), but
+    // the tag must be one of five and "you missed it" would be a false statement.
+    const res = checkLessonSpaceAccess(
+      booking({ scheduledStartAt: null, scheduledEndAt: null }),
+      STUDENT,
+      MID,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe("too_early");
+  });
+
+  it("never tags a refusal a participant would see as not_found", () => {
+    // The 404 tag is reserved for missing-or-not-yours. If a state refusal ever
+    // borrowed it, the page would 404 a participant out of their own booking.
+    for (const now of [OPENS_AT, MID, new Date(CLOSES_AT.getTime() + 60_000)]) {
+      for (const row of [booking({ status: "completed" }), booking({ type: "instant" }), booking()]) {
+        const res = checkLessonSpaceAccess(row, STUDENT, now);
+        if (!res.ok) expect(res.reason).not.toBe("not_found");
+      }
+    }
+  });
+});
+
+/**
+ * The window's edges as instants. The page needs to *say* when a classroom opens,
+ * and this is the function that tells it — consumed by `withinJoinWindow` itself,
+ * so the boundary a screen names and the boundary the guard enforces are one
+ * value rather than two subtractions that agree today.
+ */
+describe("joinWindowFor", () => {
+  const timing = { scheduledStartAt: START, scheduledEndAt: END };
+
+  it("opens 10 minutes before the start and closes 30 minutes after the end", () => {
+    const w = joinWindowFor(timing);
+    expect(w?.opensAt.toISOString()).toBe(OPENS_AT.toISOString());
+    expect(w?.closesAt.toISOString()).toBe(CLOSES_AT.toISOString());
+  });
+
+  it("is null when either scheduled timestamp is null", () => {
+    expect(joinWindowFor({ scheduledStartAt: null, scheduledEndAt: END })).toBeNull();
+    expect(joinWindowFor({ scheduledStartAt: START, scheduledEndAt: null })).toBeNull();
+  });
+
+  it("is null when a timestamp is present but unparseable", () => {
+    expect(
+      joinWindowFor({ scheduledStartAt: new Date("nonsense"), scheduledEndAt: END }),
+    ).toBeNull();
+  });
+
+  it("agrees with withinJoinWindow at both edges and one millisecond past each", () => {
+    const w = joinWindowFor(timing);
+    if (!w) throw new Error("expected a window");
+    expect(withinJoinWindow(timing, w.opensAt)).toBe(true);
+    expect(withinJoinWindow(timing, w.closesAt)).toBe(true);
+    expect(withinJoinWindow(timing, new Date(w.opensAt.getTime() - 1))).toBe(false);
+    expect(withinJoinWindow(timing, new Date(w.closesAt.getTime() + 1))).toBe(false);
+  });
+
+  it("moves the close edge with the session's length, not its start", () => {
+    const long = joinWindowFor({
+      scheduledStartAt: START,
+      scheduledEndAt: new Date(START.getTime() + 120 * 60_000),
+    });
+    expect(long?.opensAt.toISOString()).toBe(OPENS_AT.toISOString());
+    expect(long?.closesAt.getTime()).toBe(
+      START.getTime() + (120 + JOIN_WINDOW_AFTER_MINUTES) * 60_000,
+    );
   });
 });

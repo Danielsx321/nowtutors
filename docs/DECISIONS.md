@@ -2846,3 +2846,152 @@ in `lib/credits/`. No `/classroom/[bookingId]`, no iframe, no join-window UI
 states, no scheduled-booking entry points — all Part 2. §12's completion cron
 needed no change: its scheduled predicate already accepts `confirmed` **and**
 `in_progress`, which is exactly the pair this write moves a booking between.
+
+## Phase 7 Part 2 — the classroom UI (`feat/phase7-part2-classroom`, 2026-08-25)
+
+Step 5 of §7.7, and with it Phase 7: `/classroom/[bookingId]`, the iframe, the
+join-window UI states, and the scheduled-booking entry points that were left as
+an inert placeholder in Phase 4 Part 2. Part 1's four files were read and built
+on, not rebuilt; the two places they changed are items 2 and 6 below.
+
+### 1. The classroom is a second page in `(session)`, not a second group
+
+Part 3A created `src/app/(session)/` for one reason, stated in its layout: a
+session room is the one authenticated area **both** roles enter, so it cannot sit
+under `(student)` or `(tutor)` — either placement would put a `requireRole` in
+the layout that redirects the other half of the room away from their own session.
+The layout's guard therefore stops at "signed in, onboarded, not suspended" and
+leaves participation to the page, because only the page knows which booking.
+
+Every clause of that applies to a classroom **unchanged**: same two roles, same
+"participants only" heading in §6, same impossibility of a role guard. So this
+placement *matches* the precedent rather than departing from it, and the
+interesting outcome is that it needed no new layout, no second guard, and no
+duplicated `AppShell` wiring — a new group would have been a second copy of that
+reasoning, free to drift from it.
+
+The one thing the shared layout does that is not obviously right for a classroom
+is set the topbar title to "Session". Left alone: a classroom *is* a session, and
+a per-page title would mean lifting the title out of the layout to gain a word.
+
+### 2. The page renders the same decision the route enforces — via a tag, not prose
+
+The brief's constraint was that the UI states be driven by the pure function Part
+1 built, with the window not re-derived client-side. `checkLessonSpaceAccess`
+already *knew* every state the page needs — it computed `tooEarly` and threw the
+answer away into a sentence — so the only question was how the page reads it.
+
+Two rejected options: matching on `message` (a second, weaker copy of the
+decision, and one that breaks when the copy is edited), and re-deriving the
+window in the page from `scheduled_start_at` (a second copy of the window, free
+to disagree with the route that actually grants entry).
+
+What shipped instead: the refusal branch of `LessonSpaceAccess` now carries a
+`reason` tag — `not_found` / `not_scheduled` / `not_joinable` / `too_early` /
+`too_late`. `status` and `message` are untouched, and the tag is deliberately
+**not** in the join route's response body: a refused caller learns exactly what
+they learned before. The page switches panels on the tag and contains no
+arithmetic on §7.3's ten-and-thirty minutes.
+
+The same call, with the same signature, drives the join button on both booking
+detail pages. **An enabled button and a granted link therefore cannot disagree**
+— which is the property the placeholder button never had, and the reason
+`BookingDetail` now carries `studentId` / `tutorId` (the row already selected
+them; they were being dropped on the way out).
+
+The window's *edges* are a second export, `joinWindowFor`, and `withinJoinWindow`
+is now expressed through it. A screen that says "opens at 3:50" and a guard that
+opens at 3:50 are one value, not two subtractions that happen to agree.
+
+### 3. The link is fetched on mount, not rendered into the HTML
+
+`ClassroomFrame` POSTs to `/api/lessonspace/join` and renders the `client_url`
+that comes back — it never calls LessonSpace, and the API key stays `server-only`
+(§7.7's first line). The page above it has already run the same access decision,
+so the round trip is **not** the authorization. It is what makes step 4's join
+*write* happen.
+
+Handing the URL down from the Server Component would have inverted that: every
+render would launch a space and stamp an arrival. A render is reachable by a
+prefetch from the bookings list, by a crawler holding a session cookie, and twice
+over in React's development double-render — so a scheduled booking could reach
+`in_progress` with `started_at` set because somebody's browser prefetched a link.
+That is the billing clock, and Part 3A already refused to let a GET move it for
+the instant path. Same rule, same reason.
+
+One request per mount, no retry loop, no timer: a failure surfaces a button.
+`spaces/launch/` is idempotent on the booking id, so pressing it costs nothing
+and lands in the same room.
+
+### 4. `/session` **redirects** a scheduled booking; `/classroom` redirects an instant one
+
+The brief asked for a decision between redirecting and linking. Redirect, both
+ways, for three reasons: a booking has exactly one room, so the other URL is a
+stale link rather than a place; there is no state on the wrong page to preserve;
+and a link asks the person to make a choice they have no information to make.
+Only a participant ever reaches either redirect — `/session` returns null from
+`getSessionRoomView` for everyone else, and `/classroom` has already answered
+`notFound()` — so neither confirms a booking's existence to a stranger.
+
+Part 3A's honest placeholder at `/session` is **deleted, not repurposed**. It
+said "scheduled sessions open in Phase 7"; Phase 7 is where we are, and a
+placeholder kept around past its subject is the seam a later session mistakes for
+a design.
+
+The type test is written **positively** (`view.type === "scheduled"` /
+`row.type !== "scheduled"` via the existing tag) rather than as `!== "instant"` on
+both sides. `booking_type` has exactly two values today, but two mutually
+negative tests would ping-pong a third value between the two rooms forever.
+
+### 5. One `setTimeout` at each window edge, and it decides nothing
+
+A Server Component's answer is a snapshot: somebody sitting on a booking page at
+2:49 would still be reading "opens at 2:50" a minute later, and somebody in a
+room would keep a dead iframe on screen thirty minutes past the end.
+`JoinWindowRefresh` schedules a single `router.refresh()` at the boundary and the
+**server** re-decides.
+
+This is not the polling CLAUDE.md forbids: it is one scheduled wake-up at a known
+instant, not a repeating question, and the shape is `SessionTimer`'s one-shot
+`onExpired` — a client that fires early gets the same "not yet" it had before and
+re-renders it. A browser clock cannot talk itself into a classroom. The
+"opens in 4:32" countdown beside it is cosmetic in exactly the sense §7.4 already
+uses that word, and is rendered only when the wait is under an hour.
+
+### 6. One read serves the route and the page
+
+`db/queries/sessions.ts` has a pair — narrow `getSessionBooking` for the token
+route, wide `getSessionRoomView` for the page — because the view resolves
+participation and viewer-relative labels the route does not want. The classroom
+has no such split: `checkLessonSpaceAccess` decides for both callers, and both
+pick a display name off the row with `access.isTutor`. So `getClassroomBooking`
+gained `subject_name` and `duration_minutes` for the page's heading rather than
+acquiring a near-identical sibling — two columns the join route ignores, against
+two queries to keep in step forever.
+
+### 7. A SPEC-vs-brief discrepancy, resolved in SPEC's favour without a code change
+
+The build brief describes the close edge as "30 minutes after `scheduled_start_at`".
+SPEC §7.3 and §7.7 both say **`scheduled_end_at`**, and Part 1 implemented
+`scheduled_end_at + 30m`. Nothing was changed: the brief also required the states
+to be driven by Part 1's function, and that function is the spec's version. Worth
+recording only because the two readings differ by the session's whole length —
+a 120-minute booking would close 90 minutes early under the brief's wording.
+
+### What is NOT here
+
+Nothing in `lib/credits/`. No migration. **No change to `db/queries/join-stamp.ts`**
+or to either statement that imports it — the fragment was read, not touched, and
+nothing in this part needed it to change. No tutor-only controls: they come from
+the `teacher` role in the launch payload (§7.7), not from conditionally hiding
+elements. No waiting room — a LessonSpace dashboard setting, already in the
+runbook.
+
+### Known gap
+
+**Nothing here proves two parties in one room.** The unit lane covers the pure
+decision the UI renders — including the new tag and the window's edges — but the
+iframe, the LessonSpace round trip, and the `confirmed → in_progress` transition
+firing on the *second* arrival need two authenticated browsers and a configured
+`LESSONSPACE_API_KEY`. Recorded in PROGRESS the same way the Agora media path is:
+unexercised, and a §15 E2E concern rather than a defect.

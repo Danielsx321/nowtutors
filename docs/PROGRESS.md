@@ -4,18 +4,74 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-25)
 
-**Phase 7 Part 1 — the LessonSpace server half — is BUILT, on the branch
-`feat/phase7-part1-lessonspace-join` (one commit, branched off `main` at
-`e7ced89`), NOT merged and NOT pushed.
-Phase 7 is NOT complete: Part 2 (the `/classroom/[bookingId]` page, the iframe,
-the join-window UI states and the scheduled-booking entry points) is not
-started.** What Part 1 shipped: `lib/lessonspace/client.ts` (server-only, the
-API key never reaches the browser), `lib/lessonspace/session-access.ts` (the
-access decision and the join window, both pure), `db/queries/classroom.ts`, and
-`POST /api/lessonspace/join`. No migration — `lessonspace_room_id` has existed
-since `0000` (§4.3).
+**Phase 7 is COMPLETE — both parts.** Part 1 (the server half) is **merged to
+`main`** via **PR #44 (`18b0ed8`)**, with the wire-format correction in **PR #45
+(`96f251d`)**. Part 2 — the classroom UI — is **BUILT on the branch
+`feat/phase7-part2-classroom`** (one commit, branched off `main` at `96f251d`),
+**NOT merged and NOT pushed**. No migration in either part: `lessonspace_room_id`
+has existed since `0000` (§4.3).
 
-The one thing a cold session must not re-derive: **`stampSessionJoin` could not
+**What Part 1 shipped:** `lib/lessonspace/client.ts` (server-only, the API key
+never reaches the browser), `lib/lessonspace/session-access.ts` (the access
+decision and the join window, both pure), `db/queries/classroom.ts`, and
+`POST /api/lessonspace/join`. The wire format is **verified**, not inferred —
+checked against LessonSpace's own developer docs and the live Bubble app's API
+Connector definition: `https://api.thelessonspace.com/v2/spaces/launch/` (no
+`/api` segment), `Authorization: Organisation <key>`, body
+`{ id, user: { name, leader } }`, and the join link field is `client_url`. The
+response also carries `api_base`, `secret` and `session_id`; `secret` is a room
+credential and is deliberately never returned to the browser or stored.
+`LESSONSPACE_ORG_ID` (§2.1) is correctly unused — the organisation is identified
+by the API key itself.
+
+**What Part 2 shipped:** `/classroom/[bookingId]` (a Server Component, placed in
+the **existing** `(session)` group beside `/session/[bookingId]` — same reason
+that group exists: both roles enter, so no `requireRole` can live in the layout),
+`components/features/classroom/classroom-frame.tsx` (the iframe, `allow="camera;
+microphone; display-capture; fullscreen"`), `join-window-refresh.tsx`, and the
+real join button on both booking detail pages. Two additions to Part 1's pure
+function, and they are the load-bearing ones: a refusal **tag**
+(`not_found` / `not_scheduled` / `not_joinable` / `too_early` / `too_late`) that
+the UI switches on, and `joinWindowFor`, which returns the window's edges as
+instants and which `withinJoinWindow` is now expressed through. **The window is
+never re-derived in a page or in the browser** — one decision, rendered by the
+page and enforced by the route, so an enabled button and a granted link cannot
+disagree. `/session/[bookingId]` now **redirects** a scheduled booking to the
+classroom (and the classroom redirects an instant booking back), and Part 3A's
+"opens in Phase 7" placeholder is deleted.
+
+**Phase 7's acceptance criterion — "both parties join the same room with correct
+roles and the session status transitions properly" — is NOT fully proven, and the
+split matters:**
+
+- **Proven by tests (unit, 333 passing).** The access decision itself: a
+  non-participant and a missing booking are indistinguishable; the role
+  (`teacher` / `student`) and the leader flag are derived from the booking row
+  and have no branch that reads a request field; the join window's two edges at
+  pinned instants, inclusive on both sides; and the refusal tag the UI renders,
+  including that no refusal a participant would see can borrow the 404 tag.
+- **Proven by tests (integration, 36 passing, DB lane — Part 1).** The
+  first-join write: `*_joined_at` stamped idempotently, `started_at` written only
+  when the pair completes, `confirmed → in_progress` firing on that same
+  predicate, `lessonspace_room_id` coalesced and never replaced, and the
+  statement's row set disjoint from the instant path's. Breaking the shared
+  fragment fails 9 of these across both paths.
+- **NOT proven — needs two real browsers.** Two participants actually in one
+  LessonSpace room; the tutor actually holding teacher controls there; the
+  `confirmed → in_progress` transition firing from a real *second* arrival rather
+  than a test's second call; and the iframe rendering a live `client_url` at all.
+  **No automated pass drives two real browsers**, and `LESSONSPACE_API_KEY` is
+  unset locally, so no call has ever been made to LessonSpace from this codebase.
+  This is recorded exactly as the Agora media path is (below): a §15 E2E concern,
+  not a defect and not a Part 2 blocker.
+- **NOT verified visually.** The 360px / 1440px pass on the new page was **not
+  performed** — every classroom state is behind authentication, and reaching the
+  *open* state additionally needs a booking whose window is now, which would mean
+  writing to the dev project that also serves production. The layout follows the
+  §10 tokens and the `/session` page's panel shapes; it has not been looked at in
+  a browser. Worth ten minutes with a seeded login before merge.
+
+**The one thing a cold session must not re-derive: `stampSessionJoin` could not
 be reused for the scheduled path.** Its WHERE is `status = 'in_progress'` and
 scheduled bookings are created `confirmed`, so the first joiner matched zero
 rows; it also never writes `status` and backfills `agora_channel`. Rather than
@@ -24,21 +80,9 @@ SQL fragment, `db/queries/join-stamp.ts`**, imported by both join statements —
 the completion cron reads `started_at` and two writers of it drift. The shipped
 instant statement was deliberately **not** parametrized to take a status write.
 Breaking the shared fragment fails 9 integration tests across both paths; the
-unit lane has no database and cannot see it. See `DECISIONS.md`, "Phase 7
-Part 1", and SPEC §7.7's Part 1 implementation note.
-
-**No longer blocking Part 2:** the LessonSpace wire format is now **verified**,
-not inferred — checked against LessonSpace's own developer docs and the live
-Bubble app's API Connector definition (`fix/lessonspace-wire-format`, branched
-off `main` at `18b0ed8`). Two corrections came out of that check: the launch
-host has no `/api` segment (`https://api.thelessonspace.com/v2/spaces/launch/`),
-and the join link field is `client_url`, not `url` — renamed throughout
-`lib/lessonspace/client.ts` and the join route. The `Authorization: Organisation
-<key>` header and the nested `{ id, user: { name, leader } }` body were already
-correct. The response also carries `api_base`, `secret` and `session_id`;
-`secret` is a room credential and is deliberately never returned to the
-browser or stored. `LESSONSPACE_ORG_ID` (§2.1) is correctly unused — the
-organisation is identified by the API key itself. See `docs/DECISIONS.md`.
+unit lane has no database and cannot see it. **Part 2 did not touch that
+fragment or either statement that imports it.** See `DECISIONS.md`, "Phase 7
+Part 1" and "Phase 7 Part 2", and SPEC §7.7's two implementation notes.
 
 **Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
 control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and
@@ -311,6 +355,11 @@ below.
 - **Phase 6 Part 3B remainder — control-bar mic/camera toggles + Agora token renewal.**
   **Merged via PR #35 (`974cd7a`).** See "What Phase 6 Part 3B built" below and DECISIONS,
   "Phase 6 Part 3B remainder — control-bar toggles + token renewal".
+- **Phase 7 Part 1 — LessonSpace server half.** **Merged via PR #44 (`18b0ed8`)**, with the
+  wire-format correction in **PR #45 (`96f251d`)**. See the top of this file and DECISIONS,
+  "Phase 7 Part 1".
+- **Phase 7 Part 2 — the classroom UI.** **BUILT, not merged, not pushed**
+  (`feat/phase7-part2-classroom`). See the top of this file and DECISIONS, "Phase 7 Part 2".
 
 ## 2026-08-23 — test project, tooling, and the cron going live
 
@@ -380,6 +429,56 @@ dev/prod project `mipnoxlhurdbaahmvhhx`, `*/5 * * * *` per SPEC §12.
   need privileges the migration connection does not have, which is why
   `drizzle/snippets/pg_cron_sweep_presence.sql` is deliberately not a migration.
 
+
+## What Phase 7 built (`feat/phase7-part1-lessonspace-join` + `feat/phase7-part2-classroom`)
+
+**Part 1 — the server half (merged, PR #44 / #45).**
+
+- `src/lib/lessonspace/client.ts` — `server-only`. One call, `POST
+  https://api.thelessonspace.com/v2/spaces/launch/`, which does create-or-get
+  **and** the per-user link in one round trip (`spaces/launch/` is idempotent on
+  the `id` we send, which is the booking id). Returns `{ roomId, clientUrl }`;
+  `secret` is parsed past deliberately.
+- `src/lib/lessonspace/session-access.ts` — pure. Participation first and
+  unconditionally, then type, then state, then the join window
+  `[start − 10m, end + 30m]`, inclusive at both edges, with `now` an explicit
+  parameter.
+- `src/db/queries/classroom.ts` — the read, and `stampScheduledSessionJoin`: one
+  `UPDATE`, no CTE, `lessonspace_room_id` coalesced, `confirmed → in_progress` on
+  the same predicate that writes `started_at`, scoped `type = 'scheduled'`.
+- `src/db/queries/join-stamp.ts` — the `started_at` rule as **one** exported SQL
+  fragment, imported by both join statements.
+- `POST /api/lessonspace/join` — the only way a browser gets a link. Body is
+  `{ bookingId }` and nothing else; identity, role, leader flag and display name
+  are all server-derived. Launch happens **before** the stamp.
+
+**Part 2 — the UI (built, not merged).**
+
+- `src/app/(session)/classroom/[bookingId]/page.tsx` — Server Component, in the
+  **existing** `(session)` group. Four states, all switched off the shared
+  decision's refusal tag: the room, "isn't open yet" (with the opening time in
+  the viewer's timezone and a countdown under an hour), "has closed", and "no
+  classroom to join". `not_found` → `notFound()`; `not_scheduled` → redirect to
+  `/session/[bookingId]`.
+- `src/components/features/classroom/classroom-frame.tsx` — `"use client"`.
+  POSTs the booking id to the join route on mount and renders the returned
+  `client_url` in an `<iframe allow="camera; microphone; display-capture;
+  fullscreen">`. Never calls LessonSpace. One request per mount; a failure
+  surfaces a "Try again" button, not a retry loop.
+- `src/components/features/classroom/join-window-refresh.tsx` — one `setTimeout`
+  → one `router.refresh()` at a window edge, plus the cosmetic countdown. No
+  interval, no network call, no decision.
+- `booking-detail-view.tsx` — the Phase 4 placeholder button replaced with the
+  real one, driven by the same `checkLessonSpaceAccess` call. Both booking
+  detail pages now pass `viewerId`.
+- `/session/[bookingId]` — redirects a scheduled booking to the classroom; the
+  Part 3A placeholder is deleted.
+
+**What Phase 7 does NOT include:** tutor-only controls as page logic (they come
+from the `teacher` role in the launch payload, §7.7), the LessonSpace waiting
+room (a dashboard setting, in the runbook), and any call ever actually made to
+LessonSpace — `LESSONSPACE_API_KEY` is unset locally, so the whole third-party
+path is unexercised.
 
 ## What Phase 6 Part 3C built (`phase-6-part3c-complete-sessions`)
 
@@ -829,6 +928,16 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 
 ## Still open — carry forward
 
+- **Phase 7's classroom is unexercised end to end, and `LESSONSPACE_API_KEY` is unset.** No call
+  has ever been made to LessonSpace from this codebase — every green test stops at the pure
+  decision or at Postgres. Two participants in one room, the tutor holding teacher controls, the
+  `confirmed → in_progress` transition firing on a real second arrival, and the iframe rendering a
+  live `client_url` all need two authenticated browsers and a configured key. Same standing gap as
+  the Agora media path, and a §15 E2E concern rather than a defect.
+- **The Phase 7 Part 2 pages have not been looked at in a browser** at 360px or 1440px. Every
+  classroom state is behind authentication, and reaching the *open* state needs a booking whose
+  join window is now — which would mean writing to the dev Supabase project that also serves
+  production. Worth doing with a seeded login before the branch merges.
 - **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
   `pending_payment` booking older than 20 minutes already stops blocking a slot on the **read**
   side (§4.2), and the booking transaction sweeps stale holds its slot collides with on the

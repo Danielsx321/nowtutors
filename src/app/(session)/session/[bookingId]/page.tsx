@@ -1,5 +1,4 @@
-import { notFound } from "next/navigation";
-import { CalendarClock } from "lucide-react";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { getSessionRoomView } from "@/db/queries/sessions";
 import { bookingStatusMeta } from "@/lib/bookings/status";
@@ -42,6 +41,17 @@ export default async function SessionPage({
   const view = await getSessionRoomView(bookingId, user.id);
   if (!view) notFound();
 
+  // A scheduled booking's room is the LessonSpace classroom (§6, §7.7), which
+  // Phase 7 Part 2 built. This URL is now a stale link rather than a place —
+  // there is no state here to keep and no choice the person could usefully make,
+  // so they are sent to their room instead of being shown a door to it. Only a
+  // participant reaches this line (`getSessionRoomView` returned null otherwise),
+  // so the redirect confirms nothing to a stranger. Tested positively on
+  // `scheduled` rather than negatively on `!== "instant"`: `booking_type` has
+  // exactly two values, and writing it this way means a third could never
+  // ping-pong between the two rooms.
+  if (view.type === "scheduled") redirect(`/classroom/${bookingId}`);
+
   const heading = view.subjectName ?? "Tutoring session";
 
   // The hard stop, computed server-side from `started_at` (§7.4). Null until
@@ -67,9 +77,7 @@ export default async function SessionPage({
         </Badge>
       </header>
 
-      {view.type !== "instant" ? (
-        <ScheduledPlaceholder />
-      ) : view.status !== "in_progress" ? (
+      {view.status !== "in_progress" ? (
         <NotLive status={view.status} />
       ) : elapsed ? (
         <TimeIsUp />
@@ -130,37 +138,6 @@ function TimeIsUp() {
         length they were booked for and can&apos;t be extended — if you need more
         time, start a new session.
       </p>
-    </div>
-  );
-}
-
-/**
- * Scheduled bookings run in LessonSpace at `/classroom/[bookingId]` (SPEC §6,
- * §7.7), which is Phase 7. Nothing here stubs a room or fakes a join: a join
- * button that does not join is worse than an honest explanation, and a LessonSpace
- * placeholder would be the first thing a future session mistook for a seam to
- * build on.
- */
-function ScheduledPlaceholder() {
-  return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
-      <div className="flex gap-4">
-        <CalendarClock className="mt-0.5 size-6 shrink-0 text-gold-400" aria-hidden />
-        <div className="min-w-0">
-          <h2 className="text-h3 font-bold text-white">
-            Scheduled sessions open in Phase 7
-          </h2>
-          <p className="mt-2 max-w-prose text-body text-ink-300">
-            This is a scheduled booking. Scheduled sessions run in a LessonSpace
-            classroom with a whiteboard and shared documents, which is not built
-            yet — it arrives in Phase 7. This room handles instant sessions only.
-          </p>
-          <p className="mt-3 max-w-prose text-body text-ink-300">
-            Your booking is safe and nothing needs to be re-booked. You&apos;ll be
-            able to join it from your bookings page once the classroom is live.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
