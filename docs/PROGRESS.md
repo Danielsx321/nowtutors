@@ -27,14 +27,18 @@ Breaking the shared fragment fails 9 integration tests across both paths; the
 unit lane has no database and cannot see it. See `DECISIONS.md`, "Phase 7
 Part 1", and SPEC §7.7's Part 1 implementation note.
 
-**Blocking Part 2:** the LessonSpace **wire format is unverified** — the
-endpoint path and the three payload values are confirmed from the live Bubble
-app (Finding A), but the host, `Authorization` header scheme, request JSON
-nesting and response field names (`room_id`, `url`) are **inferred**, no call
-has ever been made to LessonSpace from this rebuild, and no credential is
-configured. Check them against LessonSpace's API docs or one manual call with a
-real key before Part 2. If they differ, only `lib/lessonspace/client.ts`
-changes. `LESSONSPACE_ORG_ID` (§2.1) is currently unused.
+**No longer blocking Part 2:** the LessonSpace wire format is now **verified**,
+not inferred — checked against LessonSpace's own developer docs and the live
+Bubble app's API Connector definition (`fix/lessonspace-wire-format`, branched
+off `main` at `18b0ed8`). Two corrections came out of that check: the launch
+host has no `/api` segment (`https://api.thelessonspace.com/v2/spaces/launch/`),
+and the join link field is `client_url`, not `url` — renamed throughout
+`lib/lessonspace/client.ts` and the join route. The `Authorization: Organisation
+<key>` header and the nested `{ id, user: { name, leader } }` body were already
+correct. The response also carries `api_base`, `secret` and `session_id`;
+`secret` is a room credential and is deliberately never returned to the
+browser or stored. `LESSONSPACE_ORG_ID` (§2.1) is correctly unused — the
+organisation is identified by the API key itself. See `docs/DECISIONS.md`.
 
 **Phase 6 Part 3B — the server-side end, the elapsed hard stop, and the §9
 control-bar remainder — is COMPLETE**, merged via **PR #34 (`0bb9be2`)** and

@@ -18,10 +18,16 @@ import "server-only";
  * **One call does create-or-get *and* the per-user link.** LessonSpace's
  * `spaces/launch/` is idempotent on the `id` we send: the first launch for a
  * booking creates the space, every later launch returns that same space
- * (`room_id`), and each launch returns a fresh join `url` scoped to the user and
- * leader flag in *that* request. So §7.7's step 2 (create-or-get, persist the
- * room id) and step 3 (per-user link with the caller's role) are one round trip,
- * exactly as the live app makes it — see the payload note below.
+ * (`room_id`), and each launch returns a fresh join `client_url` scoped to the
+ * user and leader flag in *that* request. So §7.7's step 2 (create-or-get,
+ * persist the room id) and step 3 (per-user link with the caller's role) are
+ * one round trip, exactly as the live app makes it — see the payload note
+ * below.
+ *
+ * **Wire format is verified**, not inferred: the host, the `Organisation`
+ * auth scheme, the nested request body and the response field names below are
+ * confirmed against both LessonSpace's own developer docs and the live
+ * Bubble app's API Connector definition (SPEC §7.7, DECISIONS).
  */
 
 /**
@@ -30,7 +36,7 @@ import "server-only";
  * SPEC §2.1 lists no base-URL variable for it. The org is identified by the
  * `Authorization` header, not by the URL.
  */
-const LAUNCH_URL = "https://api.thelessonspace.com/api/v2/spaces/launch/";
+const LAUNCH_URL = "https://api.thelessonspace.com/v2/spaces/launch/";
 
 /** How long we wait on the launch call before giving up. LessonSpace is a normal
  *  hosted API (not a sleeping free-tier dyno like the Agora token service), so a
@@ -90,8 +96,11 @@ export interface LaunchedSpace {
   /** LessonSpace's persistent id for the space. Persisted to
    *  `bookings.lessonspace_room_id` on the first join (§7.7 step 2). */
   roomId: string;
-  /** The per-user join URL to hand back to the caller (§7.7 step 3, step 5). */
-  url: string;
+  /** The per-user join URL to hand back to the caller (§7.7 step 3, step 5).
+   *  LessonSpace's field is `client_url`; the response also carries `api_base`,
+   *  `secret` and `session_id`, none of which we keep — `secret` is a room
+   *  credential and must never reach the browser. */
+  clientUrl: string;
 }
 
 /**
@@ -152,14 +161,17 @@ export async function launchSpace(input: LaunchSpaceInput): Promise<LaunchedSpac
   if (!launched) {
     throw new LessonSpaceApiError(
       res.status,
-      "response carried no room_id/url",
+      "response carried no room_id/client_url",
     );
   }
   return launched;
 }
 
 /**
- * Pull `{ roomId, url }` out of a launch response, or null if either is missing.
+ * Pull `{ roomId, clientUrl }` out of a launch response, or null if either is
+ * missing. `api_base`, `secret` and `session_id` also come back on the
+ * response but are deliberately not extracted here — `secret` is a room
+ * credential and must never reach the browser.
  *
  * Kept `server-only`-free of anything but pure parsing so it stays trivial to
  * reason about; the launch body is untyped third-party JSON, so both fields are
@@ -170,8 +182,8 @@ function parseLaunchResponse(value: unknown): LaunchedSpace | null {
   if (typeof value !== "object" || value === null) return null;
   const obj = value as Record<string, unknown>;
   const roomId = obj.room_id;
-  const url = obj.url;
+  const clientUrl = obj.client_url;
   if (typeof roomId !== "string" || roomId.length === 0) return null;
-  if (typeof url !== "string" || url.length === 0) return null;
-  return { roomId, url };
+  if (typeof clientUrl !== "string" || clientUrl.length === 0) return null;
+  return { roomId, clientUrl };
 }
