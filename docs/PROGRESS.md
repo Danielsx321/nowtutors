@@ -19,10 +19,22 @@ below, and `DECISIONS.md` for the three SPEC amendments #34 carries (§4.3
 `billed_minutes`, §12 `complete-sessions`, §9 step 2), the falsification table,
 and #35's renewal-off-`expiresAt` reasoning.
 
-**Phase 6 Part 3C — the complete-sessions cron and `tutor_earnings` — is BUILT**
-on `phase-6-part3c-complete-sessions` (PR open, not yet merged). It needed **no
-migration**: `tutor_earnings` has existed since `drizzle/0000` with exactly the
-columns it writes, `booking_id` already carried its UNIQUE, and `no_show_tutor` /
+**Phase 6 Part 3C — the complete-sessions cron and `tutor_earnings` — is
+MERGED**, via **PR #39 (`8c06dbe`)**, squashed from
+`phase-6-part3c-complete-sessions`. A review pass on the open PR found one real
+defect and one overclaim before merge — both fixed in the same squashed commit,
+not a follow-up: `row.priceCredits ?? 0` would have written a zero-credit
+`tutor_earnings` row for a NULL-price booking, permanently occupying that
+booking's UNIQUE `booking_id` slot; it now skips the row, logs the booking id,
+and counts it in a new `earningsSkippedNoPriceIds` / `earningsSkippedNoPrice`
+field. The doc comments and DECISIONS also overclaimed "`lib/credits/ledger.ts`
+is not imported, transitively or otherwise" — false, since `db/queries/
+sessions.ts` imports `sessionChannel` from `lib/session-requests/accept.ts`,
+which value-imports `debitWallet` (pre-existing from Part 3B); corrected to the
+checkable claim, that this path calls nothing from the ledger and writes no
+wallet, while the module IS in the import graph. It needed **no migration**:
+`tutor_earnings` has existed since `drizzle/0000` with exactly the columns it
+writes, `booking_id` already carried its UNIQUE, and `no_show_tutor` /
 `no_show_student` were already values in the shipped `booking_status` enum. See
 "What Phase 6 Part 3C built" below. Two SPEC amendments ride with it (§7.11's
 no-show money rules and wallet-at-release; §12's clock for a never-started
@@ -30,9 +42,26 @@ instant booking, which was named as this cron's job without anything saying what
 made it due), plus a falsification table in `DECISIONS.md` — including the break
 that proved nothing until the fixtures were fixed.
 
-**Next up: nothing in Phase 6 is assigned.** Screen share, chat and
-credits-consumed/earned remain the open Part 3 remainder; `release-earnings` and
-withdrawals are Phase 8.
+**Next: the `pg_cron` scheduling for `/api/cron/complete-sessions` is WRITTEN,
+on `docs/schedule-complete-sessions-cron` (PR open, not yet merged), and
+awaiting the Supabase SQL run.** `drizzle/snippets/pg_cron_complete_sessions.sql`
+follows the `expire-requests` snippet's shape exactly — same extensions, same
+two Vault secrets, reused rather than re-created — scheduling `*/15 * * * *`
+(§12). **`CRON_SECRET` rotation is CLOSED**: it was rotated and verified across
+all three stores on 2026-08-23 (`docs/RUNBOOK.md`), and is now additionally
+re-verified live against `/api/cron/complete-sessions` specifically — an
+unauthenticated GET returned **401**, not the 503 an unset variable would
+produce, confirming the guard is wired into this route and the variable reached
+production. Nothing about the docs branch touches code, routes, or tests.
+Running the snippet is the one remaining step before this cron is live: until
+then, `complete-sessions` is unlike `sweep-presence`/`expire-requests` — it is
+the **only** writer of `tutor_earnings` in the codebase, so no tutor is paid for
+a both-parties-offline session and no such booking ever leaves
+`confirmed`/`in_progress` in production. See RUNBOOK's new
+`pg_cron scheduling for /api/cron/complete-sessions` item for detail.
+
+Screen share, chat and credits-consumed/earned remain the open Part 3 remainder;
+`release-earnings` and withdrawals are Phase 8.
 
 **PRs #32 and #33 are MERGED** (`df9d249`, `582e83a`). #32 was squash-merged while
 #33 still carried #32's original commit, which left #33 `CONFLICTING` against
@@ -316,22 +345,30 @@ durationMs }` plus the affected booking ids per classification.
   extended before this pass's coverage was written — the omission had already
   caused one misdiagnosis in Part 3B's falsification pass.
 
-**Verified:** `pnpm lint` clean, `pnpm typecheck` clean, `pnpm test` 293 passed /
-26 files, `pnpm test:db:test` 29 passed / 3 files. **Falsification: five breaks,
-four failed exactly the predicted tests; the fifth (inline round-half-up instead
-of `splitEarnings`) failed NOTHING** — the fixtures' gross amounts (41, 60) did
-not straddle a half, so floor and half-up agreed. Fixtures changed to 50 (12.5)
-and 30 (7.5) with the expected numbers pinned literally; the identical break then
-failed 3 tests. Both runs are in `DECISIONS.md`.
+**Verified (before the pre-merge review fix):** `pnpm lint` clean, `pnpm
+typecheck` clean, `pnpm test` 293 passed / 26 files, `pnpm test:db:test` 29
+passed / 3 files. **Falsification: five breaks, four failed exactly the
+predicted tests; the fifth (inline round-half-up instead of `splitEarnings`)
+failed NOTHING** — the fixtures' gross amounts (41, 60) did not straddle a half,
+so floor and half-up agreed. Fixtures changed to 50 (12.5) and 30 (7.5) with the
+expected numbers pinned literally; the identical break then failed 3 tests. Both
+runs are in `DECISIONS.md`. **After the fix that landed in the same squashed
+PR** (the NULL-`price_credits` skip, above): `pnpm test:db:test` 30 passed / 3
+files — the 29 above plus one new test for the skip path; the unit lane count is
+unchanged, since that fix is DB-lane-only.
 
-**Absent rather than stubbed, in this pass:** the `pg_cron` snippet and its
-RUNBOOK step (scheduling is gated on the CRON_SECRET rotation, still open — the
-route is complete and hand-invocable with the bearer header), the
-`/admin/settings` "run now" button, `release-earnings`, withdrawals, anything in
-`lib/credits/ledger.ts`, screen share, chat and emails. Nothing about correctness
-waits on the schedule: the four Part 3B actors still end any elapsed session with
-a person in the room, and a late run writes the same `ended_at` an on-time one
-would.
+**Absent rather than stubbed, in the merged PR:** the `pg_cron` snippet and its
+RUNBOOK step, the `/admin/settings` "run now" button, `release-earnings`,
+withdrawals, anything in `lib/credits/ledger.ts`, screen share, chat and emails.
+**The snippet and RUNBOOK step are what `docs/schedule-complete-sessions-cron`
+(above) closes** — `CRON_SECRET` rotation is not the blocker it was described as
+during the PR (it was already closed on 2026-08-23, before this phase started;
+the "still open" wording above was itself an error, corrected here rather than
+re-asserted). Nothing about correctness waited on the schedule while it was
+missing: the four Part 3B actors still end any elapsed session with a person in
+the room, and a late run writes the same `ended_at` an on-time one would — but
+see the docs-branch paragraph above for what specifically DOES depend on the
+schedule (`tutor_earnings` and the both-parties-offline transition).
 
 ## What Phase 6 Part 3B built
 
