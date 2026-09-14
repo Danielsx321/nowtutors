@@ -482,8 +482,9 @@ platform_fee_percent         # 25 — tutor keeps 75%
 earnings_hold_hours          # 48
 instant_request_ttl_seconds  # default 60 (instant-request accept window)
 min_withdrawal_usd           # 30 — enforced server-side, not just the button
-payout_usd_per_credit        # NO DEFAULT and not seeded: USD paid per credit at withdrawal, max 4 decimals.
-                             #   Missing or invalid → requestWithdrawal refuses (payout_rate_unset). Phase 8 Part 2.
+payout_usd_per_credit        # 1.00 (settled 2026-09-14) — USD paid per credit at withdrawal, max 4 decimals.
+                             #   Seeded, but the accessor has no code fallback: a missing or invalid row
+                             #   makes requestWithdrawal refuse (payout_rate_unset). Phase 8 Part 2.
 min_booking_notice_minutes   # 120 (existing default, kept)
 max_booking_days_ahead       # 7
 session_durations            # [30, 60, 90, 120] — fixed menu, not tutor-configurable
@@ -1819,8 +1820,8 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
     minimum withdrawal **$30** (`min_withdrawal_usd = 30`), **enforced server-side** in the
     withdrawal action, not only by a disabled button (see DECISIONS).
     **Phase 8 Part 2 resolutions (2026-09-14, Daniels):** payouts use a dedicated
-    `payout_usd_per_credit` setting with **no default** until the rate is confirmed with Noora
-    (withdrawals refuse meanwhile); a request withdraws the **whole** available balance; the
+    `payout_usd_per_credit` setting, **set to $1.00 per credit on 2026-09-14** (no code fallback:
+    a missing row refuses withdrawals); a request withdraws the **whole** available balance; the
     `withdrawal_hold` debit is the only ledger entry for a paid withdrawal; Approve is required
     before Mark paid; no tutor cancel in v1. See §4.4, §7.11 and DECISIONS, "Phase 8 Part 2".
 
