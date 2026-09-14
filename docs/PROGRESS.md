@@ -2,9 +2,24 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-25)
+## Current state (2026-09-14)
 
-**Phase 8 Part 1 — `release-earnings` — is BUILT and PR-ready (not merged).** The hourly
+**Phase 8 Part 1 — `release-earnings` — is MERGED via PR #52 (`b8f2f14`) and SCHEDULED.**
+Before merge, a stray one-off DB inspection script (`inspect-tmp.mjs`, hardcoded user and
+booking ids, accidentally committed in `2ddb6ce`) was removed from the branch in `18269f1`;
+CI re-ran green. The `pg_cron` job was scheduled on 2026-09-14 against
+`mipnoxlhurdbaahmvhhx` by running `drizzle/snippets/pg_cron_release_earnings.sql` verbatim
+over the session pooler (`DATABASE_URL`; the direct `db.<ref>.supabase.co` host does not
+resolve from the dev Mac). Verified in `cron.job`: `jobid` 4, `release-earnings`,
+`0 * * * *`, `active = true`, command posts to `/api/cron/release-earnings` and reads the
+token from Vault. The merge deployed to Vercel production (status `success` on `b8f2f14`)
+and the live route answers an unauthenticated GET with **401**, i.e. it is deployed and
+guarded. **Not yet verified:** the first hourly run's `net._http_response` summary.
+
+_The paragraph below is the pre-merge record, kept for its detail; its "not merged" and
+"snippet has NOT been run" lines are superseded by the two facts above._
+
+**Phase 8 Part 1 — `release-earnings` — was BUILT and PR-ready (not merged).** The hourly
 cron that flips `tutor_earnings` `held` → `available` and writes the `session_earning`
 ledger credit in the same transaction. **This is the first thing in the codebase that
 pays a tutor for a session**; Phase 6 Part 3C wrote the `held` promise and deliberately
