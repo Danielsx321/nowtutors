@@ -367,6 +367,21 @@ already-running script.
     scheduling item above describes, run against the live system rather than assumed. As before, no
     value — old or new — is recorded in this file or anywhere else in the repository; only the
     outcome of each check is.
+- [ ] **pg_cron scheduling for `/api/cron/reconcile-wallets`** — Phase 8 Part 3. Run
+  `drizzle/snippets/pg_cron_reconcile_wallets.sql` once on `mipnoxlhurdbaahmvhhx`, as `postgres`,
+  from the SQL editor, after `pg_cron_sweep_presence.sql` (same extensions and Vault secrets).
+  - Schedule `0 3 * * *` (§12). Verify in `cron.job`, then use the snippet's "run it now" call once
+    and read `net._http_response`: the healthy answer is `"drift":false,"mismatches":0`.
+  - **`"drift":true` is a finding, not something to correct by hand.** Find the write that bypassed
+    `lib/credits/ledger.ts` first; the ledger is append-only (§4.4).
+  - **Sentry alerting depends on `SENTRY_DSN`.** It is empty in the dev Mac's `.env.local` (checked
+    2026-09-14, length 0) and whether it is set on Vercel Production was not checked. Without it the
+    drift alarm is a log line and the stored response only; nobody is notified.
+- [ ] **pg_cron scheduling for `/api/cron/expire-unpaid`** — Phase 8 Part 3. Run
+  `drizzle/snippets/pg_cron_expire_unpaid.sql` once on `mipnoxlhurdbaahmvhhx`, same way. Schedule
+  `*/10 * * * *`. Verify in `cron.job` and `net._http_response`
+  (`{"ok":true,"job":"expire-unpaid","expired":N,...}`). Tidy-up only: an unscheduled job is not an
+  outage (§4.2).
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).

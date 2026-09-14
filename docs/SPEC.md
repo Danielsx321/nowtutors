@@ -1478,11 +1478,11 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 |---|---|---|
 | `/api/cron/sweep-presence` | `*/5 * * * *` | **built** (Phase 6 Part 1) |
 | `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
-| `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
+| `/api/cron/expire-unpaid` | `*/10 * * * *` | **built** (Phase 8 Part 3; tidy-up, not load-bearing, §4.2) |
 | `/api/cron/complete-sessions` | `*/15 * * * *` | **built and scheduled** (Phase 6 Part 3C) |
 | `/api/cron/release-earnings` | `0 * * * *` | **built** (Phase 8 Part 1) |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
-| `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
+| `/api/cron/reconcile-wallets` | `0 3 * * *` | **built** (Phase 8 Part 3) |
 
 Every handler: verify `Authorization: Bearer ${CRON_SECRET}` — and **fail closed with 503 when the
 variable is unset**, so a missing secret can never degrade into "no auth required" — be idempotent,
@@ -1491,7 +1491,16 @@ from `/admin/settings` with a "run now" button for debugging.
 
 - **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
-- **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`, releasing the slot.
+- **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`. Built in Phase 8
+  Part 3 (`db/queries/expire-unpaid.ts`); returns `{ ok, job, expired, expiredIds, durationMs }`.
+  **Tidy-up, not what releases the slot**: `computeSlots` already stops a stale hold blocking on read
+  and the booking transaction expires one it collides with on write (§4.2). **Same constant and same
+  boundary as the read side**: `PENDING_PAYMENT_HOLD_MINUTES`, and a row is stale when
+  `created_at <= now() - hold` (a hold blocks while `created_at + hold > now`), so the job only ever
+  expires a row the calendar had already released. Database clock. Not restricted to scheduled
+  bookings: the rule is about the status. **A late PayPal capture on an expired row loses the slot,
+  never the money**: settlement's confirm finds no `pending_payment` row, skips the debit, and the
+  student keeps the minted credits (§7.6, `booking_unavailable_credits_retained`).
 - **complete-sessions** — separate predicates, because the booking types have
   different clocks: one scheduled, and two instant (started, and never started —
   the third was implicit here until Part 3C made it explicit below).
@@ -1564,6 +1573,15 @@ from `/admin/settings` with a "run now" button for debugging.
   wrong credit cannot be edited away afterwards.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.
+  Built in Phase 8 Part 3 (`db/queries/reconcile-wallets.ts`, `lib/wallets/reconcile.ts`). **A FULL
+  OUTER JOIN** of wallets against per-user ledger sums, so both shapes of drift are found: a cached
+  balance that disagrees, and ledger rows for a user with no wallet (a missing wallet counts as 0).
+  One read-only statement. **Reports, never repairs**: nothing here can know which number is wrong,
+  and the ledger is append-only (§4.4). **A mismatch answers 200** with `ok: true`, `drift: true`,
+  `mismatches`, `totalAbsoluteDrift` and up to 50 `mismatchDetails` (largest first, `truncated` when
+  more exist), so `cron.job_run_details` still means "the job ran"; the alarm is a `console.error`
+  line plus a Sentry error event. Sentry only sends when `SENTRY_DSN` is set (`instrumentation.ts`);
+  without it the finding is in the logs and the stored `net._http_response` body only (RUNBOOK).
 
 ---
 

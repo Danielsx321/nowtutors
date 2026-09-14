@@ -3776,3 +3776,90 @@ code fallback, so a missing row still refuses rather than paying at an assumed r
 dev/prod project the row is inserted by SQL (PROGRESS). Each request snapshots the rate in its audit
 payload, so a future change never re-prices an earlier withdrawal.
 
+## Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` (`phase-8-part3-wallet-crons`, 2026-09-15)
+
+The last two §12 jobs Phase 8 owns. No migration and no new dependency (`@sentry/nextjs` was already
+installed and wired through `instrumentation.ts`).
+
+### 1. `reconcile-wallets` reports and never repairs
+
+A mismatch means some write bypassed `lib/credits/ledger.ts` or a transaction half-applied. The job
+cannot know whether the cached balance or the ledger is the wrong number, and the ledger is
+append-only (§4.4), so any automatic correction would be a guess made permanent. It lists the drift
+and a person decides.
+
+### 2. A FULL OUTER JOIN, and a missing wallet counts as zero
+
+Drift has two shapes: a wallet whose `credit_balance` disagrees with its ledger sum, and ledger rows
+for a user with no wallet row. A join from `wallets` cannot see the second. The comparison is
+`coalesce(cached_balance, 0) <> ledger_sum`: without the `coalesce`, `NULL <> 3` is NULL, not true,
+and the no-wallet case silently disappears (falsification break f). One statement returns both the
+count and the mismatches, so they describe the same snapshot.
+
+### 3. Drift is a 200 with `drift: true`, not a 500
+
+`cron.job_run_details` and the HTTP status keep meaning "the job ran". A 500 is reserved for a job
+that could not read the database. The alarm is a `console.error` line and a Sentry error event; the
+stored `net._http_response` body carries the full summary, capped at 50 details (largest drift first,
+`truncated` flag) so a bad day cannot write a huge response.
+
+### 4. The Sentry alert only fires if `SENTRY_DSN` is set, and locally it is not
+
+`SENTRY_DSN` is empty in the dev Mac's `.env.local` (length 0, checked 2026-09-15). Whether Vercel
+Production has it was not checked. Until it is set there, the "alarm" is a log line nobody is paged
+by. Recorded as a RUNBOOK item rather than solved here, because it is an account and environment
+decision, not code.
+
+### 5. `expire-unpaid` reuses the read side's constant and boundary
+
+`PENDING_PAYMENT_HOLD_MINUTES` is the one window. `computeSlots` keeps a hold blocking while
+`created_at + hold > now`, so the job expires rows where `created_at <= now() - hold`: it only ever
+expires a row the calendar already treats as free. The booking transaction's own collision sweep uses
+a strict `<` against the app clock; the two differ by at most an instant at the boundary and neither
+decides whether a slot can be sold, so they were left as they are rather than widening this change.
+Database clock here, the clock `created_at` was written with.
+
+### 6. Expiring a row is safe against a late PayPal capture
+
+Checked before building, not assumed: settlement's confirm is conditional on `pending_payment`, and
+when it matches nothing the debit is skipped and the student keeps the minted credits (§7.6,
+`booking_unavailable_credits_retained`). The job can cost a buyer the slot, never the money.
+
+### 7. Not restricted to scheduled bookings
+
+Only direct-pay creates `pending_payment` today and it is scheduled-only, but §12 states the rule by
+status. Filtering by type would leave a future instant direct-pay row stuck forever.
+
+### 8. Tests, and how the drift fixtures avoid leaving drift behind
+
+Unit: `summarizeWalletDrift` (sign, missing wallet as 0, agreeing rows never reported, cap). DB lane:
+every deliberate drift is written inside a transaction that is **rolled back**, with the shipped read
+running inside it, so a failing assertion cannot leave the exact drift this alarm exists to catch on a
+shared project. The first reconcile test is Phase 8's acceptance half (§16): **zero drift on the test
+project's data as it stands**. `expire-unpaid` asserts on its own fixture ids only, never totals.
+`createFixtureBooking` now accepts `status: "pending_payment"`.
+
+### 9. Falsification — six breaks, all six caught
+
+(a) summary sign flipped, 2 unit tests fail; (b) summary keeps rows that agree, 1; (c) expire-unpaid
+ignores status, 2 DB-lane tests; (d) no 20-minute window, 1; (e) reconcile uses `left join` from
+wallets, 1; (f) reconcile compares without `coalesce`, 1.
+
+### 10. Verification
+
+Local gates on this branch: `pnpm typecheck` and `pnpm lint` clean; `pnpm test` 377 passed (32
+files, 4 new); `pnpm test:dom` 29 passed; `pnpm build` passed (with `NODE_EXTRA_CA_CERTS`, the
+known font-fetch quirk). `pnpm test:db:test` on the two new files: 6 passed against
+`uietkphpfqaicbndunwt`, including **zero drift on the test project's data**.
+**Routes exercised over HTTP**, dev server against the test project: both answer **401** with no
+token and with a wrong token; with the real `CRON_SECRET`, `reconcile-wallets` answered **200**
+`{"ok":true,"drift":false,"walletsChecked":11,"mismatches":0,...}` and `expire-unpaid` answered
+**200** `{"ok":true,"expired":0,...}`.
+**Not done:** neither job is scheduled anywhere (post-merge SQL on `mipnoxlhurdbaahmvhhx`), and
+reconcile has not yet been run against dev/prod data.
+
+### What is NOT here
+
+No automatic repair, no `/admin/settings` "run now" buttons (Part 4), no change to the booking
+transaction's collision sweep, no Sentry configuration.
+

@@ -2,7 +2,19 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-14)
+## Current state (2026-09-15)
+
+**Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` — is BUILT on `phase-8-part3-wallet-crons`, PR open, not merged.**
+Both §12 jobs Phase 8 still owed. Both routes were exercised over HTTP against the test project
+(401 without the secret; with it, reconcile reported 0 mismatches across 11 wallets and expire-unpaid
+ran clean), plus 6 DB-lane tests and a six-break falsification pass. See DECISIONS, "Phase 8 Part 3".
+
+**After merge, in order (SQL editor on `mipnoxlhurdbaahmvhhx`, as `postgres`):**
+1. Run `drizzle/snippets/pg_cron_reconcile_wallets.sql`, then its "run it now" call, and read `net._http_response`: expect `"drift":false`. A `true` here is a real finding on production data; don't correct it by hand.
+2. Run `drizzle/snippets/pg_cron_expire_unpaid.sql`.
+3. Confirm both in `select jobid, jobname, schedule, active from cron.job;`.
+
+**Open, not code:** `SENTRY_DSN` is empty locally and unchecked on Vercel, so the drift alarm currently notifies nobody (RUNBOOK).
 
 **Phase 8 Part 2 — withdrawals — is MERGED via PR #55 (`e34404b`), and migration `0015` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 Tutor request (whole balance, `withdrawal_hold` debit), admin queue at `/admin/withdrawals`
@@ -1307,7 +1319,7 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   classroom state is behind authentication, and reaching the *open* state needs a booking whose
   join window is now — which would mean writing to the dev Supabase project that also serves
   production. Worth doing with a seeded login before the branch merges.
-- **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
+- **BUILT in Phase 8 Part 3 (`phase-8-part3-wallet-crons`); scheduling on dev/prod is a post-merge step.** Original note: **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
   `pending_payment` booking older than 20 minutes already stops blocking a slot on the **read**
   side (§4.2), and the booking transaction sweeps stale holds its slot collides with on the
   **write** side, so double-selling cannot happen without the cron. The cron is tidy-up (rows that
