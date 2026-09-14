@@ -67,8 +67,27 @@ const removeChannel = vi.fn((channel: FakeChannel) => {
   channel.removed = true;
 });
 
+/**
+ * The auth prelude the hook runs before every subscribe. `events` records
+ * `setAuth` and `subscribe` in the order they happened, which is the property
+ * the JWT-ordering fix exists for. `setAuthGate`, when set, holds `setAuth`
+ * pending until the test releases it.
+ */
+const events: string[] = [];
+const getSession = vi.fn(async () => ({
+  data: { session: { access_token: "tutor-jwt" } },
+  error: null,
+}));
+let setAuthGate: Promise<void> | null = null;
+const setAuth = vi.fn(async (token: string) => {
+  if (setAuthGate) await setAuthGate;
+  events.push(`setAuth:${token}`);
+});
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
+    auth: { getSession: () => getSession() },
+    realtime: { setAuth: (token: string) => setAuth(token) },
     channel: (topic: string) => {
       const channel: FakeChannel = {
         topic,
@@ -80,6 +99,7 @@ vi.mock("@/lib/supabase/client", () => ({
           return channel;
         },
         subscribe(cb) {
+          events.push(`subscribe:${topic}`);
           channel.status = cb;
           return channel;
         },
@@ -152,6 +172,10 @@ beforeEach(() => {
   vi.useFakeTimers({ now: NOW });
   channels.length = 0;
   removeChannel.mockClear();
+  events.length = 0;
+  setAuthGate = null;
+  getSession.mockClear();
+  setAuth.mockClear();
   getIncomingRequest.mockReset();
   listPendingIncomingRequests.mockReset();
   listPendingIncomingRequests.mockResolvedValue({ ok: true, requests: [] });
@@ -256,6 +280,90 @@ describe("subscription establishment", () => {
     await advance(FIRST_BACKOFF_MS);
     await reportStatus("SUBSCRIBED");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+describe("the JWT is on the socket before the channel joins", () => {
+  // The instant-request fault, as proven live on the test project: a channel
+  // that joins before `realtime.setAuth` is authorised as `anon`, reports
+  // `SUBSCRIBED`, and receives nothing through the participants-only RLS
+  // policy. Nothing about that is visible from the status callback, so the
+  // ordering itself is what gets asserted.
+  it("calls setAuth with the session token before subscribe", async () => {
+    renderShell();
+    await settle();
+
+    expect(getSession).toHaveBeenCalledTimes(1);
+    expect(setAuth).toHaveBeenCalledWith("tutor-jwt");
+    expect(events).toEqual([
+      "setAuth:tutor-jwt",
+      `subscribe:${latest().topic}`,
+    ]);
+  });
+
+  it("does not subscribe while setAuth is still pending", async () => {
+    let release!: () => void;
+    setAuthGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    renderShell();
+    await settle();
+    // The token has not landed: no channel may have joined yet.
+    expect(channels).toHaveLength(0);
+    expect(events).toEqual([]);
+
+    await act(async () => {
+      release();
+    });
+    await settle();
+    expect(channels).toHaveLength(1);
+    expect(events[0]).toBe("setAuth:tutor-jwt");
+  });
+
+  it("re-attaches the token before every retried subscribe", async () => {
+    renderShell();
+    await settle();
+    await reportStatus("TIMED_OUT");
+    await advance(FIRST_BACKOFF_MS);
+
+    expect(channels).toHaveLength(2);
+    expect(events).toEqual([
+      "setAuth:tutor-jwt",
+      `subscribe:${channels[0].topic}`,
+      "setAuth:tutor-jwt",
+      `subscribe:${channels[1].topic}`,
+    ]);
+  });
+
+  it("does not open a channel if unmounted while setAuth is pending", async () => {
+    let release!: () => void;
+    setAuthGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const { unmount } = renderShell();
+    await settle();
+    unmount();
+    await act(async () => {
+      release();
+    });
+    await settle();
+    expect(channels).toHaveLength(0);
+  });
+
+  it("retries when the auth prelude hangs, via the same watchdog", async () => {
+    setAuthGate = new Promise<void>(() => {}); // never settles
+
+    renderShell();
+    await settle();
+    expect(channels).toHaveLength(0);
+
+    // The prelude is part of the connect: past the watchdog plus the first
+    // backoff, a fresh attempt starts (and hangs again on the same gate).
+    await advance(WATCHDOG_MS + FIRST_BACKOFF_MS);
+    expect(getSession).toHaveBeenCalledTimes(2);
+    expect(channels).toHaveLength(0);
   });
 });
 

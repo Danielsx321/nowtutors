@@ -198,26 +198,55 @@ function useRetryingChannel(
       attempt += 1;
       retry = setTimeout(() => {
         retry = null;
-        connect();
+        void connect();
       }, delay);
     }
 
-    function connect() {
+    // Bumped by every connect. An auth prelude still awaiting when a newer
+    // attempt (or the unmount) has started must not go on to open a channel.
+    let generation = 0;
+
+    async function connect() {
       if (disposed) return;
       dropChannel();
+      const mine = ++generation;
+      // Armed BEFORE the auth prelude as well as before `.subscribe()`. Before
+      // `.subscribe()` because it may invoke its callback synchronously — a
+      // watchdog set afterwards would be set after the `SUBSCRIBED` that was
+      // supposed to clear it. Before the prelude because a `getSession` or
+      // `setAuth` that hangs is a connect that hangs, and must retry the same way.
+      watchdog = setTimeout(() => {
+        watchdog = null;
+        fail(NO_STATUS_CALLBACK);
+      }, CONNECT_WATCHDOG_MS);
+
+      // **Attach the signed-in user's JWT to the socket BEFORE subscribing.**
+      // supabase-js only calls `realtime.setAuth` from its async
+      // `INITIAL_SESSION` event, and a mount-time `.subscribe()` joins before
+      // that lands — so on a cold load the channel was authorised as `anon`,
+      // reported `SUBSCRIBED`, and the `session_requests` RLS SELECT policy
+      // (participants only) then withheld every row from it. A token pushed
+      // after the join did not re-authorise it. Proven on the test project with
+      // the three-lane diagnostic (DECISIONS, "instant-request fault: the JWT
+      // joined after the channel"): the lanes that awaited `setAuth` received
+      // the INSERT, filtered and unfiltered alike; the lane that subscribed
+      // immediately, and the production channel beside it, did not.
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) await supabase.realtime.setAuth(token);
+      } catch (err) {
+        if (disposed || mine !== generation) return;
+        fail("AUTH_PRELUDE_FAILED", err instanceof Error ? err : undefined);
+        return;
+      }
+      if (disposed || mine !== generation) return;
+
       // Assigned BEFORE `.subscribe()`, because `.subscribe()` can invoke its
       // callback synchronously — and a `fail()` that ran before the assignment
       // would leave the channel it is failing on unremovable.
       const opened = buildRef.current(supabase);
       channel = opened;
-      // Armed BEFORE `.subscribe()`, because `.subscribe()` may invoke its
-      // callback synchronously — a watchdog set afterwards would be set after
-      // the `SUBSCRIBED` that was supposed to clear it, and would then fire on
-      // a healthy channel and tear it down.
-      watchdog = setTimeout(() => {
-        watchdog = null;
-        fail(NO_STATUS_CALLBACK);
-      }, CONNECT_WATCHDOG_MS);
       opened.subscribe((next, err) => {
         if (disposed) return;
         if (next === "SUBSCRIBED") {
@@ -238,7 +267,7 @@ function useRetryingChannel(
       });
     }
 
-    connect();
+    void connect();
 
     return () => {
       disposed = true;

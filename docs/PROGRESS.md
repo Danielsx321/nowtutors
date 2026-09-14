@@ -57,7 +57,28 @@ else compensates for this job not running.
   `delete from credit_transactions where type = 'session_earning' and reference_id not in (select id from bookings);`
 
 
-**⚠️ OPEN DEFECT, still NOT resolved: the instant request often never reaches the
+**✅ ROOT CAUSE FOUND AND FIX BUILT (2026-09-14), PR-ready, not yet live-verified: the
+instant request never reaching the tutor.** The three-lane diagnostic (PR #51, DO NOT
+MERGE) was run on the TEST project: the two lanes that awaited `realtime.setAuth` before
+subscribing received the INSERT — one of them with the production filter — while the lane
+that subscribed immediately and the production channel did not. The filter binding is
+ruled out; the cause is the channel joining before supabase-js applies the session JWT
+from its async `INITIAL_SESSION` event, so Realtime authorised it as `anon` and RLS
+withheld every row. **Fix** (`fix/realtime-auth-before-subscribe`): the shared
+`useRetryingChannel` awaits `auth.getSession()` + `realtime.setAuth(token)` before every
+subscribe, under the existing watchdog, with a generation guard; covers the tutor and
+student legs. New DOM tests pin the ordering. SPEC §8 corrected (the socket does not
+"carry the viewer's JWT" merely by using the browser client). Full evidence, mechanism
+and falsification criterion: DECISIONS, "Instant-request fault: the JWT joined after the
+channel". **Live-checked on the test project (2026-09-14):** with the fix, a student request raised the tutor's modal without a reload — corroborating, not isolated, because the flaky connection also re-subscribed (and so re-read) in the same window (DECISIONS §5). **Still to do:** merge, a cold-load check on the deployed app on a stable connection, and close PR #51 unmerged. Test-data note:
+tutor1/student1 passwords on the test project (`uietkphpfqaicbndunwt`) were reset to the
+seed value during the run; `ensureUsers` in `src/db/seed.ts` never resets existing users.
+
+_The paragraph below is the pre-diagnosis record, kept for its elimination list; its
+"still NOT resolved" and "REMAINING CANDIDATES" lines are superseded by the paragraph
+above._
+
+**⚠️ OPEN DEFECT (as of 2026-08-25): the instant request often never reaches the
 tutor.** PR #47, #48 and #49 (below) each fixed something real, but the symptom
 persists. Live evidence, 2026-08-25, after #49 was merged: fresh tutor page load,
 `reportSubscriptionStatus` logged `SUBSCRIBED`, a student sent a request, the row was
@@ -1175,12 +1196,12 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   about whether a tutor already teaching should appear live at all — §7.4 does not say — and it
   interacts with the accept path, which would be starting a second session on top of the one they
   are in. Not a rename; do not patch it as one.
-- **⚠️ The instant request often never reaches the tutor — OPEN DEFECT, not resolved by
-  PR #47/#48/#49.** A subscription that reports `SUBSCRIBED` does not reliably deliver
-  INSERT events. See "Current state" at the top of this file for the full elimination
-  list and the next diagnostic step (subscribe unfiltered and log every INSERT). Not
-  data loss, not a money bug — a reload always surfaces the pending request — but it is
-  a real UX defect and does not block Phase 8.
+- **The instant request often never reaches the tutor — ROOT CAUSE FOUND, fix built on
+  `fix/realtime-auth-before-subscribe` (2026-09-14), awaiting merge and a live check.**
+  The channel joined before the session JWT was on the socket, so Realtime authorised it
+  as `anon` and RLS withheld every INSERT while it still reported `SUBSCRIBED`. See
+  "Current state" at the top of this file and DECISIONS, "Instant-request fault: the JWT
+  joined after the channel". Close PR #51 (the diagnostic) unmerged once the fix lands.
 - **LessonSpace "end session for all" (leader control) did not respond to a click during
   the 2026-08-25 live verification.** Not investigated. May be a LessonSpace UI/dashboard
   quirk (e.g. the waiting-room/leader setting, RUNBOOK's unticked checklist item) or a
