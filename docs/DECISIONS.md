@@ -3559,3 +3559,95 @@ No `reconcile-wallets`, no withdrawal request flow, no `/tutor/withdrawals`, no
 `/admin/settings` "run now" button. No change to `complete-sessions`, to
 `lib/credits/ledger.ts`, to `splitEarnings`, or to any existing query. The `pg_cron`
 snippet is written but **not run** — scheduling is a Supabase step outside this repo.
+
+## Instant-request fault: the JWT joined after the channel (`fix/realtime-auth-before-subscribe`, 2026-09-14)
+
+Closes the defect carried open since the 2026-08-25 session close ("the instant-request
+symptom survives PR #49"). That entry left two candidates unruled-out — the server-side filter
+binding, and whether the socket's JWT is applied before `.subscribe()` — and named the next
+step: subscribe without the filter and see what arrives. PR #51 (`diag/realtime-three-lane`,
+DO NOT MERGE) built that diagnostic as three independent lanes, each removing one variable.
+
+### 1. The evidence — one run, on the test project, not production
+
+Run 2026-09-14 against `uietkphpfqaicbndunwt` (`next dev` with `.env.test`,
+`NEXT_PUBLIC_RT_DIAG=1`, branch `diag/realtime-three-lane` with `main` merged in). tutor1 in one
+browser context, student1 in another. Client chunks were checked to contain the test project ref
+and not the production one before anything was sent.
+
+Tutor console, one mount (the earlier StrictMode mount was torn down before it bound anything):
+
+- lane **A** (no await, no filter — production's subscribe path minus the filter):
+  `subscribe()` at t+96242.0ms, **before** `session available` at t+96377.2ms; `SUBSCRIBED`.
+- lane **B** (await `getSession` + `setAuth`, no filter): `setAuth` then `subscribe()`;
+  `SUBSCRIBED` after one transport-failure retry (the network was unstable throughout).
+- lane **C** (await `getSession` + `setAuth`, filter `tutor_id=eq.<tutor>`): same as B.
+- the production channel `session-requests:tutor:<tutor>`: `SUBSCRIBED`.
+
+student1 tapped Request now; `session_requests` row `4b412914` was inserted at 17:56:09Z,
+`pending`, for tutor1. **C and B logged the INSERT payload** (`isForThisTutor: true`). **A logged
+nothing, the production channel delivered nothing, and no modal appeared.**
+
+Against the diagnostic's matrix that is the row *A silent, B fires, C fires*: the fault is the
+order in which the token and the join happen. The filter binding is **ruled out** — C carries the
+production filter and received the row.
+
+This is n = 1. It is recorded as proven because it is the exact outcome the three lanes were
+designed to separate, it matches every prior observation (`SUBSCRIBED` but silent; sometimes
+fine, on the loads where the session happened to resolve first; a reload always surfaced the
+request via the mount-time read), and the library source says it must happen — see (2). A later
+live check of the fix is still wanted, and (4) says what would falsify this entry.
+
+### 2. Why it happens, from the installed library (supabase-js 2.112.3)
+
+- `SupabaseClient._listenForAuthEvents` → `_handleTokenChanged` calls `realtime.setAuth(token)`
+  on `INITIAL_SESSION` / `SIGNED_IN` / `TOKEN_REFRESHED`. That event is asynchronous.
+- `RealtimeClient._performAuth` updates `accessTokenValue` and each channel's join payload; a
+  channel that has **already joined** is only sent an `access_token` event. The postgres_changes
+  binding had already been authorised against a join payload with no user JWT, and the late push
+  did not change what it was allowed to receive.
+- `useRetryingChannel.connect()` built and subscribed the channel synchronously inside the mount
+  effect, so on a cold page load the join raced — and usually beat — `INITIAL_SESSION`.
+
+### 3. The fix, and the shape it was forced into
+
+`connect()` now awaits `supabase.auth.getSession()` and, when there is a session,
+`supabase.realtime.setAuth(access_token)` before `buildRef.current(supabase).subscribe(...)`.
+It lives in the shared helper, so both legs get it: the tutor's incoming INSERT/UPDATE channel
+and the student's outgoing-request UPDATE channel have the same RLS-scoped binding and the same
+race.
+
+Three constraints the existing resilience behaviour imposed:
+
+- **The watchdog is armed before the prelude, not only before `.subscribe()`.** A `getSession`
+  or `setAuth` that hangs is a connect that hangs, and retries through the same 15s watchdog and
+  backoff rather than becoming a new silent failure.
+- **A generation counter guards the await.** A prelude that resolves after a newer attempt has
+  started, or after unmount, returns without opening a channel — otherwise a retry could leave
+  two channels, or an unmounted component could subscribe.
+- **No session is not an error.** With no `access_token`, it subscribes exactly as before; a
+  thrown `getSession`/`setAuth` is reported as `AUTH_PRELUDE_FAILED` and retried.
+
+No change to the channels' filters, the mount-time read, the indicator, the backoff constants,
+or any server code. No migration.
+
+### 4. Tests, and what would falsify this entry
+
+`tests/dom/realtime-resilience.test.tsx` gains "the JWT is on the socket before the channel
+joins": `setAuth` precedes `subscribe` (asserted as an ordered event log, not two independent
+`toHaveBeenCalled`s, which would pass whichever came first); no channel opens while `setAuth` is
+pending; the token is re-attached before every retried subscribe; unmount mid-prelude opens
+nothing; a hung prelude retries via the watchdog. Both DOM test files' Supabase mocks gained
+`auth.getSession` and `realtime.setAuth`.
+
+**Falsified if:** with this fix deployed, a cold tutor page load shows `SUBSCRIBED` and a
+student's request still produces no modal without a reload. If that is seen, the next candidate
+is Realtime's own authorisation of the token (expiry, claims) rather than ordering — re-run the
+three-lane diagnostic with the fix in place before changing anything else.
+
+### What is NOT here
+
+PR #51's diagnostic code is not merged and is not part of this change; close it once this
+lands. No change to `use-realtime-diagnostic.ts` (it does not exist on `main`). The test project's
+tutor1/student1 passwords were reset to the seed value during the investigation — a test-data
+change on `uietkphpfqaicbndunwt` only, recorded in PROGRESS.

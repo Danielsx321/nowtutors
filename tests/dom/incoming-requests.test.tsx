@@ -48,6 +48,15 @@ const removeChannel = vi.fn();
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
+    // The hook attaches the session's JWT to the socket before it subscribes.
+    // A signed-in session and a setAuth that resolves: the healthy path.
+    auth: {
+      getSession: async () => ({
+        data: { session: { access_token: "test-access-token" } },
+        error: null,
+      }),
+    },
+    realtime: { setAuth: async () => {} },
     channel: () => {
       const channel = {
         on(
@@ -99,10 +108,28 @@ function pendingRequest(expiresAt: Date) {
   };
 }
 
+/**
+ * The handler the hook registered for `event`, once the channel exists.
+ *
+ * The hook attaches the session JWT before it builds and subscribes the channel
+ * (DECISIONS, "Instant-request fault: the JWT joined after the channel"), so a
+ * handler is only bound after those awaits flush. Flushing first, and throwing
+ * rather than optional-chaining past a missing handler, keeps a delivery from
+ * silently doing nothing — which is exactly how a test would pass while
+ * asserting nothing.
+ */
+async function handlerFor(event: string) {
+  await act(async () => {});
+  const handler = bound.get(event);
+  if (!handler) throw new Error(`no ${event} handler bound — channel not subscribed`);
+  return handler;
+}
+
 /** Deliver an INSERT the way Realtime would, and let the read-back settle. */
 async function deliverInsert() {
+  const onInsert = await handlerFor("INSERT");
   await act(async () => {
-    bound.get("INSERT")?.({
+    onInsert({
       new: { id: REQUEST_ID, status: "pending", tutor_id: TUTOR_ID },
     });
   });
@@ -211,8 +238,9 @@ describe("IncomingRequests", () => {
     await deliverInsert();
     expect(screen.queryByRole("dialog")).not.toBeNull();
 
+    const onUpdate = await handlerFor("UPDATE");
     await act(async () => {
-      bound.get("UPDATE")?.({
+      onUpdate({
         new: { id: REQUEST_ID, status: "cancelled", tutor_id: TUTOR_ID },
       });
     });
@@ -232,8 +260,9 @@ describe("IncomingRequests", () => {
 
   it("does not read back an INSERT that is not pending", async () => {
     render(<IncomingRequests tutorId={TUTOR_ID} ttlSeconds={TTL_SECONDS} />);
+    const onInsert = await handlerFor("INSERT");
     await act(async () => {
-      bound.get("INSERT")?.({
+      onInsert({
         new: { id: REQUEST_ID, status: "expired", tutor_id: TUTOR_ID },
       });
     });
