@@ -17,7 +17,7 @@ withdrawals aren't open and `/admin/withdrawals` shows a warning.
 
 **Post-merge, as of 2026-09-14:**
 1. ~~Apply `0015` to `mipnoxlhurdbaahmvhhx`, then `pnpm db:verify-rls`.~~ **DONE.** Daniels ran `pnpm db:migrate` and `pnpm db:verify-rls` (passed, including the three withdrawal assertions). Checked independently against the database, not just the command output: `drizzle.__drizzle_migrations` has 16 rows; `pg_policies` on `withdrawal_requests` lists only `withdrawals_select`; `authenticated` has neither INSERT nor UPDATE; `withdrawal_requests_one_open_per_tutor` exists. The PostgREST hole from `0005` is closed on production.
-2. When Noora confirms the rate: `insert into platform_settings (key, value, description) values ('payout_usd_per_credit', '<rate>'::jsonb, 'USD paid per credit at withdrawal');`
+2. **Rate settled at $1.00 per credit (2026-09-14, DECISIONS).** Seeded for fresh projects. On `mipnoxlhurdbaahmvhhx` it is set by SQL: `insert into platform_settings (key, value, description) values ('payout_usd_per_credit', '1'::jsonb, 'USD paid per credit at withdrawal (Phase 8 Part 2)') on conflict (key) do update set value = excluded.value;`
 3. Live check (batched): a tutor with released credits requests, an admin approves and marks paid,
    the wallet history shows the hold, and a rejected request returns the credits.
 

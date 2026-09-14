@@ -3754,3 +3754,25 @@ No emails (Phase 10 hooks only), no tutor cancel, no `payout_usd_per_credit` val
 `/admin/settings` editor for it (Part 4), no `reconcile-wallets` or `expire-unpaid` (Part 3). `0015`
 has **not** been applied to `mipnoxlhurdbaahmvhhx`; that is a post-merge step.
 
+## Payout rate set to $1.00 per credit (2026-09-14)
+
+Settles the open value from "Phase 8 Part 2", section 2. `payout_usd_per_credit = 1`, decided by
+Daniels. The $30 minimum is therefore 30 credits.
+
+**Why $1.00.** A tutor is paid 0.75 of a credit for every credit a student spends, so the platform's
+margin per student credit is `package price per credit − 0.75 × rate`. The cheapest package (Premium,
+100 credits for $97.99) is the worst case. At $1.00 the platform keeps about $0.23 of every $0.98,
+roughly 23%, so no package pays out more than it took in. The break-even rate is about $1.30, where
+Premium keeps almost nothing. $1.00 is also the easiest rate to explain to tutors, and a later
+increase is good news for them rather than a cut.
+
+**Trade-off, stated so it is not rediscovered.** On smaller packages the platform keeps well over
+25% (about 44% on Popular, 63% on Starter), so tutors receive less than 75% of what those students
+paid in dollars. How the Bubble app counted the 75% in dollars was not re-checked for this decision.
+
+**How it is applied.** Seeded in `platform-settings-defaults.ts` so a fresh project (including the
+production project at cutover, RUNBOOK launch blocker) can pay out. `getWithdrawalSettings` keeps no
+code fallback, so a missing row still refuses rather than paying at an assumed rate. On the running
+dev/prod project the row is inserted by SQL (PROGRESS). Each request snapshots the rate in its audit
+payload, so a future change never re-prices an earlier withdrawal.
+

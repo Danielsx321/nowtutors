@@ -22,6 +22,10 @@ export const PLATFORM_SETTINGS: PlatformSetting[] = [
   { key: "earnings_hold_hours", value: 48, description: "hold before earnings become available (§18)" },
   { key: "instant_request_ttl_seconds", value: 60, description: "instant-request accept window" },
   { key: "min_withdrawal_usd", value: 30, description: "minimum withdrawal in USD; enforced server-side (§18)" },
+  // Settled 2026-09-14 (DECISIONS, "Payout rate set to $1.00"). Seeded so a fresh
+  // project, including the production project at cutover, can pay out. The
+  // accessor still has NO fallback: a missing row refuses withdrawals.
+  { key: "payout_usd_per_credit", value: 1, description: "USD paid per credit at withdrawal; max 4 decimals (Phase 8 Part 2)" },
   { key: "min_booking_notice_minutes", value: 120, description: "min notice before a slot (existing default, kept)" },
   { key: "max_booking_days_ahead", value: 7, description: "how far ahead students can book (§18)" },
   { key: "session_durations", value: [30, 60, 90, 120], description: "fixed duration menu, not tutor-configurable (§18, amended Phase 6 pre-build)" },
