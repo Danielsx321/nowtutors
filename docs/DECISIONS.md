@@ -3640,6 +3640,8 @@ pending; the token is re-attached before every retried subscribe; unmount mid-pr
 nothing; a hung prelude retries via the watchdog. Both DOM test files' Supabase mocks gained
 `auth.getSession` and `realtime.setAuth`.
 
+**The ordering tests were falsified before merge, not assumed.** With the prelude removed from `connect()` (subscribe with no `getSession`/`setAuth` first), all five tests in "the JWT is on the socket before the channel joins" failed and the other 24 DOM tests passed; restored from the commit, all 29 pass. So each of the five can actually see the fault it names.
+
 **Falsified if:** with this fix deployed, a cold tutor page load shows `SUBSCRIBED` and a
 student's request still produces no modal without a reload. If that is seen, the next candidate
 is Realtime's own authorisation of the token (expiry, claims) rather than ordering — re-run the
