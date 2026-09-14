@@ -443,6 +443,20 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 | processed_by | uuid FK | admin |
 | processed_at | timestamptz |  |
 
+> **Write path, amounts and the one-open index (Phase 8 Part 2, `drizzle/0015`).** No client
+> writes: `0015` drops `withdrawals_insert` and `withdrawals_admin_update` and revokes
+> INSERT/UPDATE/DELETE from `anon` and `authenticated`. Under `0005` a tutor could insert a row
+> through PostgREST with any `amount_credits` and **no `withdrawal_hold` debit**, which an admin
+> working the queue could not tell from a real request. The only writers are the server actions in
+> `actions/withdrawals.ts` and `actions/admin-withdrawals.ts`, on the trusted connection, which
+> write the row and its ledger entry in one transaction (§5 Layer 2, §7.11). Reads are unchanged.
+> A partial unique index `withdrawal_requests_one_open_per_tutor` on `(tutor_id) WHERE status IN
+> ('requested','approved')` allows at most one open request per tutor. `amount_credits` is always
+> the tutor's whole wallet balance at request time; `amount_usd` is `amount_credits ×
+> payout_usd_per_credit` (§4.7) rounded half-up to the cent in integer arithmetic
+> (`lib/withdrawals/payout-rate.ts`), and is a snapshot, as is `payout_destination`.
+> `withdrawal_paid` stays in the `credit_transaction_type` enum but is **not written** (§7.11).
+
 ### 4.5 Communication
 
 **`conversations`** — `participant_a uuid, participant_b uuid, last_message_at timestamptz`. Unique index on `(least(participant_a, participant_b), greatest(participant_a, participant_b))` so a pair can only have one thread.
@@ -468,6 +482,8 @@ platform_fee_percent         # 25 — tutor keeps 75%
 earnings_hold_hours          # 48
 instant_request_ttl_seconds  # default 60 (instant-request accept window)
 min_withdrawal_usd           # 30 — enforced server-side, not just the button
+payout_usd_per_credit        # NO DEFAULT and not seeded: USD paid per credit at withdrawal, max 4 decimals.
+                             #   Missing or invalid → requestWithdrawal refuses (payout_rate_unset). Phase 8 Part 2.
 min_booking_notice_minutes   # 120 (existing default, kept)
 max_booking_days_ahead       # 7
 session_durations            # [30, 60, 90, 120] — fixed menu, not tutor-configurable
@@ -530,7 +546,7 @@ Policy summary:
 | wallets, credit_transactions | owner only | **service role only** — no client writes, ever |
 | payments | owner only | service role only |
 | tutor_earnings | owning tutor | service role only |
-| withdrawal_requests | owning tutor; all for admin | tutor inserts; only admin transitions status |
+| withdrawal_requests | owning tutor; all for admin | **server actions only** (`drizzle/0015`): no `authenticated` write at all; see §4.4 |
 | messages | conversation participants | sender inserts own |
 | broadcasts | anyone reads live/ended | owning tutor |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
@@ -1178,8 +1194,9 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 - **`available_at` derives from `ended_at`, and `ended_at` records occurrence, not observation.** For a completed instant session that is the capped `started_at + duration_minutes` (§4.3); for a scheduled one it is `scheduled_end_at`. **The single exception is `no_show_student` on an instant booking, where `ended_at` is `now()` at classification** — there is no session end to record because there was no session. A late sweep therefore moves nobody's withdrawal date.
 - **Fee split (authoritative).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`, `net_credits = gross_credits − platform_fee_credits`. The fee **rounds down; the remainder goes to the tutor.** Rounding against the payee would accumulate in the platform's favour across many small sessions, so the split rounds down instead. This is implemented once in `src/lib/credits/fees.ts` (`splitEarnings`) and called by both the seed and the earnings pipeline so they cannot diverge. (`platform_fee_percent = 25` → tutor keeps ≥75%.)
 - **Cron flips `held` → `available` when due, and writes the `session_earning` ledger entry in the same transaction (`/api/cron/release-earnings`, §12, built in Phase 8 Part 1).** The credit is `net_credits` — the split is read off the row, never recomputed (see the fee-split bullet above; recomputing would re-price a completed session if `platform_fee_percent` ever moved). `reference_type = 'booking'`, `reference_id = tutor_earnings.booking_id`, so `credit_tx_ref_unique` on `(type, reference_id)` (§4.4) is a second, database-level guarantee that one booking is paid at most once — independent of the status flip. **A crash mid-batch leaves rows unreleased, never half-released:** each row's flip and credit commit together or not at all, so an interrupted run's in-flight row stays `held` and the next run releases it. A row whose stored `net + fee != gross` is skipped and left `held` rather than repaired.
-- `/tutor/withdrawals`: available balance, minimum from settings, PayPal email shown with an edit link. Request creates `withdrawal_requests` (`requested`) and a `withdrawal_hold` ledger entry so the credits can't be double-spent.
-- `/admin/withdrawals`: queue with tutor, amount, USD equivalent, destination email, request date. Actions: **Approve** (`approved`), **Mark paid** (requires an `external_reference`; writes `withdrawal_paid` ledger entry, flips earnings to `withdrawn`, emails the tutor), **Reject** (requires a note; reverses the hold, emails the tutor).
+- `/tutor/withdrawals`: available balance, minimum from settings, PayPal email shown with an edit link (to `/tutor/settings`). **A request always withdraws the whole available wallet balance** (Phase 8 Part 2); the client sends no amount. Request creates `withdrawal_requests` (`requested`) and a `withdrawal_hold` **debit** for the full amount (`reference_type = 'withdrawal_request'`, `reference_id` = the request), in one transaction under the wallet row lock, so the credits can't be double-spent. Refused, writing nothing, when `payout_usd_per_credit` is unset, the tutor has no PayPal email, a request is already open, the balance is zero, or its USD value is below `min_withdrawal_usd` (inclusive at exactly the minimum).
+- **The hold is the only debit.** The credits leave the wallet at request. **Mark paid writes no ledger row**: a second debit would take the money twice, and `delta <> 0` rules out a zero marker. Paid is recorded by `status`, `external_reference`, `processed_by/at` and `audit_log`.
+- `/admin/withdrawals`: queue with tutor, amount, USD equivalent, destination email, request date. Transitions are `requested → approved → paid`, or `requested|approved → rejected`; each locks the request row and re-checks status, so a repeat is refused. Actions: **Approve** (`approved`), **Mark paid** (only from `approved`; requires an `external_reference`; no ledger row; flips to `withdrawn` every `available` earnings row of that tutor whose `session_earning` credit was written at or before the request; emails the tutor), **Reject** (requires a note of at least 5 characters; writes a `withdrawal_reversed` credit for the full amount against the same reference, so the `(type, reference_id)` index allows it once; emails the tutor). A tutor cannot cancel a request in v1, so `cancelled` is unused. Emails are Phase 10 hooks.
 - Every transition writes to `audit_log`.
 
 `payout_method` is an enum with one value today. Adding Wise, Payoneer, Alipay, or WeChat Pay later means adding enum values and a destination-field schema per method — **not in scope for v1** (Section 14).
@@ -1801,6 +1818,11 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
 10. **Earnings hold & minimum withdrawal** — hold **48 hours** (`earnings_hold_hours = 48`);
     minimum withdrawal **$30** (`min_withdrawal_usd = 30`), **enforced server-side** in the
     withdrawal action, not only by a disabled button (see DECISIONS).
+    **Phase 8 Part 2 resolutions (2026-09-14, Daniels):** payouts use a dedicated
+    `payout_usd_per_credit` setting with **no default** until the rate is confirmed with Noora
+    (withdrawals refuse meanwhile); a request withdraws the **whole** available balance; the
+    `withdrawal_hold` debit is the only ledger entry for a paid withdrawal; Approve is required
+    before Mark paid; no tutor cancel in v1. See §4.4, §7.11 and DECISIONS, "Phase 8 Part 2".
 
 **Cross-cutting:**
 11. **Canonical subject list** — resolved to the 26-subject Bubble export. That list currently lives

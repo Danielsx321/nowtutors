@@ -3659,3 +3659,98 @@ PR #51's diagnostic code is not merged and is not part of this change; close it 
 lands. No change to `use-realtime-diagnostic.ts` (it does not exist on `main`). The test project's
 tutor1/student1 passwords were reset to the seed value during the investigation — a test-data
 change on `uietkphpfqaicbndunwt` only, recorded in PROGRESS.
+
+## Phase 8 Part 2 — withdrawals (`phase-8-part2-withdrawals`, 2026-09-14)
+
+The tutor withdrawal request, the admin payout queue, `/tutor/earnings`, and the PayPal email on
+`/tutor/settings`. Decisions 1 to 5 were settled by Daniels on 2026-09-14 before any code, from the
+recommendations in the Phase 8 plan; SPEC §4.4, §4.7, §5, §7.11 and §18 were amended in the same
+commit.
+
+### 1. A security hole in `0005`, closed before the queue existed
+
+`withdrawals_insert` let an authenticated tutor insert a `withdrawal_requests` row through PostgREST
+with any `amount_credits` and no `withdrawal_hold` debit, and `withdrawals_admin_update` let an admin
+session change status with no ledger entry. Harmless only because no admin queue existed; the first
+queue would have shown a forged request exactly like a real one. `0015` drops both policies and
+revokes INSERT/UPDATE/DELETE from `anon` and `authenticated` (privileges too, so re-adding a
+permissive policy alone cannot reopen it). *Why server actions rather than a trigger that writes the
+hold:* a trigger would put a ledger write outside `lib/credits/ledger.ts` (CLAUDE.md). Verified on the
+test project: `pg_policies` for the table lists only `withdrawals_select`, and `db:verify-rls:test`
+asserts a tutor's direct insert and update are refused.
+
+### 2. The payout rate is its own setting, and it has no default
+
+§18 removed `credit_usd_rate` and no payout rate has been agreed. The direct-pay basis package is a
+**sale** price with the 25% fee still inside it, so tying tutor pay to it would let a package retune
+silently change what tutors are paid. `payout_usd_per_credit` is therefore separate, parsed to `null`
+when missing, non-numeric, non-positive or over 4 decimal places, and `requestWithdrawal` refuses with
+`payout_rate_unset`. It is deliberately **not seeded**: a seeded value would be a guess at every
+tutor's pay. Setting it is an SQL insert until `/admin/settings` exists (Part 4). The rate used is
+snapshotted in the request's audit payload.
+
+### 3. Whole balance, and the hold is the only debit
+
+A request takes the full wallet balance read under the wallet lock, so there is no client amount to
+validate and "which earnings rows are withdrawn" has one answer. The `withdrawal_hold` **debit** is
+the moment money leaves; Reject credits it back as `withdrawal_reversed` against the same reference.
+SPEC previously also had Mark paid write `withdrawal_paid`: with the hold already a debit that would
+take the money twice, and `credit_transactions.delta <> 0` rules out a zero marker. So Mark paid
+writes no ledger row. `reconcile-wallets` still balances, because hold and reversal are ordinary rows.
+
+### 4. Amounts are integer arithmetic, half-up to the cent
+
+`23 × 1.333` is `30.658999999999995` in floats. The rate is held as an integer count of 1/10,000 USD,
+multiplied by the integer credit count, and rounded once, half-up, to the cent. The minimum is
+inclusive: exactly $30.00 is allowed.
+
+### 5. Earnings rows flip by ledger time, not by amount
+
+Mark paid flips to `withdrawn` every `available` row of that tutor whose `session_earning` ledger row
+was written at or before the request's `created_at`. Those are exactly the credits the whole-balance
+request swept up; a row released after the request is still spendable and stays `available`.
+`tutor_earnings.status` is a display of this, never an input to any balance.
+
+### 6. Concurrency: two guarantees for requests, one lock for transitions
+
+`requestWithdrawal` takes `SELECT ... FOR UPDATE` on the wallet row before any check, so a second
+request waits and then sees the first request open (asserted with a real block in the DB lane). The
+partial unique index `withdrawal_requests_one_open_per_tutor` is the second guarantee, and holds even
+if a future write path forgets the lock. Each admin transition locks the request row and re-checks
+status inside the transaction, so a double Mark paid or Reject transitions once. The `(type,
+reference_id)` index would also refuse a second hold or reversal; a duplicate reversal on a
+still-open row surfaces as `already_reversed` and is never retried.
+
+### 7. `updatePayoutEmail` does not require approval and is not audited
+
+A tutor awaiting approval may as well have it ready; the id comes from the guard. Not audited: it is
+the tutor's own data, and each request snapshots `payout_destination`, so a later change cannot
+rewrite where an earlier payout went. `/tutor/settings` ships with only this section (the rest is
+Phase 10).
+
+### 8. Falsification — seven breaks, all seven caught
+
+Each applied alone, run, and reverted. Unit lane: (a) no hold debit, 4 tests fail; (b) Mark paid
+allowed from `requested`, 1; (c) Reject ignores status, 2; (d) USD truncated instead of half-up, 4;
+(e) minimum made exclusive, 1; (f) Mark paid writes a `withdrawal_paid` debit, 2. DB lane: (g)
+`lockRequest` without `FOR UPDATE`, the double Mark paid test fails.
+**Not caught, and correctly so:** removing the wallet lock from `lockWalletBalance` leaves the race
+test green, because the second request then blocks on the one-open index instead and is refused as
+`already_open`. That is guarantee two doing its job (section 6), recorded so nobody reads the green
+test as proof of the lock alone.
+
+### 9. Verification
+
+Local gates on this branch: `pnpm typecheck` and `pnpm lint` clean; `pnpm test` 373 passed (31 files,
+26 new); `pnpm test:dom` 29 passed; `pnpm build` passed. `pnpm test:db:test
+tests/integration/withdrawals.test.ts` 5 passed against `uietkphpfqaicbndunwt` after `db:migrate:test`
+applied `0015`; `pnpm db:verify-rls:test` passed including the three new withdrawal assertions.
+**Not done:** the new pages have not been looked at in a browser, and nothing has run against
+`mipnoxlhurdbaahmvhhx` (dev/prod).
+
+### What is NOT here
+
+No emails (Phase 10 hooks only), no tutor cancel, no `payout_usd_per_credit` value, no
+`/admin/settings` editor for it (Part 4), no `reconcile-wallets` or `expire-unpaid` (Part 3). `0015`
+has **not** been applied to `mipnoxlhurdbaahmvhhx`; that is a post-merge step.
+

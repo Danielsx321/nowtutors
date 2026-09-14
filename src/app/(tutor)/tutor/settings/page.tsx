@@ -1,0 +1,31 @@
+import { requireRole } from "@/lib/auth/guards";
+import { getPayoutEmailFor } from "@/db/queries/withdrawals";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PayoutEmailForm } from "@/components/features/tutor/payout-email-form";
+
+export const metadata = { title: "Settings · NowTutors" };
+export const dynamic = "force-dynamic";
+
+/**
+ * `/tutor/settings` (SPEC §6). Phase 8 Part 2 ships only the PayPal payout
+ * email, which withdrawals need; the rest of this page arrives in Phase 10.
+ * Approval is not required, matching `updatePayoutEmail`.
+ */
+export default async function TutorSettingsPage() {
+  const { user } = await requireRole("tutor", { requireApproval: false });
+  const email = await getPayoutEmailFor(user.id);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 py-8">
+      <h1 className="text-h1 font-bold text-gray-700">Settings</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Payouts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PayoutEmailForm email={email} />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

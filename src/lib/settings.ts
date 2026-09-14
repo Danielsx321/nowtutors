@@ -7,6 +7,8 @@ import {
   parseCreditPackages,
   type CreditPackage,
 } from "@/lib/credits/packages";
+import { parsePayoutRate } from "@/lib/withdrawals/payout-rate";
+import type { WithdrawalSettings } from "@/lib/withdrawals/withdrawals";
 
 /**
  * Cached platform_settings accessor (SPEC §13). `getSettings` is memoized per
@@ -129,4 +131,25 @@ export async function getCreditPackages(): Promise<CreditPackage[]> {
   return parsed.length
     ? parsed
     : parseCreditPackages(seededSetting<unknown>("credit_packages"));
+}
+
+/**
+ * The two withdrawal tunables (SPEC §7.11, §4.7, §18 item 10; Phase 8 Part 2).
+ *
+ * `min_withdrawal_usd` defaults to the seeded $30 like every other key here.
+ * **`payout_usd_per_credit` deliberately does not**: no rate has been agreed,
+ * and a default would be a guess at what every tutor is paid. A missing or
+ * malformed value is `null`, and `requestWithdrawal` refuses with
+ * `payout_rate_unset` until an admin sets it.
+ */
+export async function getWithdrawalSettings(): Promise<WithdrawalSettings> {
+  const s = await getSettings();
+  const min = asNumber(
+    s.min_withdrawal_usd,
+    seededSetting<number>("min_withdrawal_usd"),
+  );
+  return {
+    minWithdrawalUsd: min >= 0 ? min : seededSetting<number>("min_withdrawal_usd"),
+    payoutUsdPerCredit: parsePayoutRate(s.payout_usd_per_credit),
+  };
 }
