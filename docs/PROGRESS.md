@@ -2,9 +2,33 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-08-25)
+## Current state (2026-09-14)
 
-**Phase 8 Part 1 — `release-earnings` — is BUILT and PR-ready (not merged).** The hourly
+**Phase 8 Part 1 — `release-earnings` — is MERGED via PR #52 (`b8f2f14`) and SCHEDULED.**
+Before merge, a stray one-off DB inspection script (`inspect-tmp.mjs`, hardcoded user and
+booking ids, accidentally committed in `2ddb6ce`) was removed from the branch in `18269f1`;
+CI re-ran green. The `pg_cron` job was scheduled on 2026-09-14 against
+`mipnoxlhurdbaahmvhhx` by running `drizzle/snippets/pg_cron_release_earnings.sql` verbatim
+over the session pooler (`DATABASE_URL`; the direct `db.<ref>.supabase.co` host does not
+resolve from the dev Mac). Verified in `cron.job`: `jobid` 4, `release-earnings`,
+`0 * * * *`, `active = true`, command posts to `/api/cron/release-earnings` and reads the
+token from Vault. The merge deployed to Vercel production (status `success` on `b8f2f14`)
+and the live route answers an unauthenticated GET with **401**, i.e. it is deployed and
+guarded. The orphan `session_earning` row on the TEST project (`uietkphpfqaicbndunwt`) was
+deleted by Daniels on 2026-09-14 from the Supabase SQL editor; a follow-up count of
+`session_earning` rows whose `reference_id` has no booking returned **0**. **First live run verified,
+2026-09-14 17:00 UTC:** `cron.job_run_details` `succeeded`; the route returned 200 with
+`released: 2`, `creditsReleased: 27`, and `notClaimed`, `corruptSplit`, `duplicateLedger`
+and `failed` all 0. Checked against the database, not just the summary: both
+`tutor_earnings` rows (`44e3f23d`, `bb629d37`) are `available`; each has exactly one
+`session_earning` row whose `delta` equals its stored `net_credits` (15 of 19 gross, 12 of 15
+gross); each tutor's `wallets.credit_balance` equals the sum of that tutor's ledger deltas;
+no row is left `held` past `available_at`.
+
+_The paragraph below is the pre-merge record, kept for its detail; its "not merged",
+"snippet has NOT been run" and orphan-row lines are superseded by the facts above._
+
+**Phase 8 Part 1 — `release-earnings` — was BUILT and PR-ready (not merged).** The hourly
 cron that flips `tutor_earnings` `held` → `available` and writes the `session_earning`
 ledger credit in the same transaction. **This is the first thing in the codebase that
 pays a tutor for a session**; Phase 6 Part 3C wrote the `held` promise and deliberately
