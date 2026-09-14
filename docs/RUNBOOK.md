@@ -367,7 +367,7 @@ already-running script.
     scheduling item above describes, run against the live system rather than assumed. As before, no
     value — old or new — is recorded in this file or anywhere else in the repository; only the
     outcome of each check is.
-- [ ] **pg_cron scheduling for `/api/cron/reconcile-wallets`** — Phase 8 Part 3. Run
+- [x] **pg_cron scheduling for `/api/cron/reconcile-wallets`** — Phase 8 Part 3. **Scheduled 2026-09-15 on `mipnoxlhurdbaahmvhhx`** (jobid 5, `0 3 * * *`, active); production drift read returned 0 mismatches across 8 wallets. First scheduled response not yet observed. Run
   `drizzle/snippets/pg_cron_reconcile_wallets.sql` once on `mipnoxlhurdbaahmvhhx`, as `postgres`,
   from the SQL editor, after `pg_cron_sweep_presence.sql` (same extensions and Vault secrets).
   - Schedule `0 3 * * *` (§12). Verify in `cron.job`, then use the snippet's "run it now" call once
@@ -377,7 +377,7 @@ already-running script.
   - **Sentry alerting depends on `SENTRY_DSN`.** It is empty in the dev Mac's `.env.local` (checked
     2026-09-14, length 0) and whether it is set on Vercel Production was not checked. Without it the
     drift alarm is a log line and the stored response only; nobody is notified.
-- [ ] **pg_cron scheduling for `/api/cron/expire-unpaid`** — Phase 8 Part 3. Run
+- [x] **pg_cron scheduling for `/api/cron/expire-unpaid`** — Phase 8 Part 3. **Scheduled 2026-09-15 on `mipnoxlhurdbaahmvhhx`** (jobid 6, `*/10 * * * *`, active); first run fired on schedule at 23:10:00 UTC, `net._http_response` id 38612, 200. Run
   `drizzle/snippets/pg_cron_expire_unpaid.sql` once on `mipnoxlhurdbaahmvhhx`, same way. Schedule
   `*/10 * * * *`. Verify in `cron.job` and `net._http_response`
   (`{"ok":true,"job":"expire-unpaid","expired":N,...}`). Tidy-up only: an unscheduled job is not an

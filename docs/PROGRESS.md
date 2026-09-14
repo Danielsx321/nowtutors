@@ -4,12 +4,22 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` — is BUILT on `phase-8-part3-wallet-crons`, PR open, not merged.**
+**Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` — is MERGED via PR #58 (`d417ee4`), deployed, and SCHEDULED on `mipnoxlhurdbaahmvhhx`.**
 Both §12 jobs Phase 8 still owed. Both routes were exercised over HTTP against the test project
 (401 without the secret; with it, reconcile reported 0 mismatches across 11 wallets and expire-unpaid
 ran clean), plus 6 DB-lane tests and a six-break falsification pass. See DECISIONS, "Phase 8 Part 3".
 
-**After merge, in order (SQL editor on `mipnoxlhurdbaahmvhhx`, as `postgres`):**
+**Post-merge, DONE 2026-09-15.** Daniels scheduled both jobs from the SQL editor: `cron.job` shows
+`reconcile-wallets` (jobid 5, `0 3 * * *`) and `expire-unpaid` (jobid 6, `*/10 * * * *`), both
+`active = true`. Checked against the database, not just the schedule: **`expire-unpaid` fired on its
+own clock** at `2026-09-14 23:10:00 UTC` (`cron.job_run_details` succeeded; `net._http_response` id
+38612 is **200** `{"ok":true,"job":"expire-unpaid","expired":0,...}`, 624ms), which proves the deployed
+route, the Vault `cron_secret` and Vercel's `CRON_SECRET` agree. `reconcile-wallets` has not fired yet
+(first run 03:00 UTC), but its exact query run read-only against production data returned **0
+mismatches across 8 wallets**, and there were 0 stale `pending_payment` rows. Still to confirm: the
+first 03:00 run's response.
+
+_The steps below are the original post-merge list, kept for reference:_
 1. Run `drizzle/snippets/pg_cron_reconcile_wallets.sql`, then its "run it now" call, and read `net._http_response`: expect `"drift":false`. A `true` here is a real finding on production data; don't correct it by hand.
 2. Run `drizzle/snippets/pg_cron_expire_unpaid.sql`.
 3. Confirm both in `select jobid, jobname, schedule, active from cron.job;`.
