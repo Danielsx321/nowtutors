@@ -3432,3 +3432,130 @@ never reloads misses live requests until they do) and does not block Phase 8.
 No code change. No migration. No new test. The `LESSONSPACE_API_KEY`-in-Preview check, the
 first-admin-promotion SQL, and the Supabase-region launch-blocker note are recorded in RUNBOOK,
 not repeated here.
+
+## Phase 8 Part 1 — `release-earnings` (`phase-8-part1-release-earnings`, 2026-08-25)
+
+The hourly job that turns a `held` `tutor_earnings` row into spendable credits, and the
+ledger write Phase 6 Part 3C deliberately did not make. **No migration:**
+`tutor_earnings` has carried `status` and `available_at` since `drizzle/0000` —
+checked against the file, not assumed — and `credit_tx_ref_unique` on
+`(type, reference_id)` already exists. Nothing under `drizzle/` changed except a new
+`snippets/` file, which is not a migration.
+
+### 1. The claim's shape is forced by three constraints, not chosen
+
+The brief named the mechanism — `UPDATE … WHERE status='held' AND available_at <= now()
+RETURNING …`, credit only what it returns — and it named two more requirements that
+interact with it. All three have to hold at once:
+
+1. **Atomic claim.** A `SELECT`-then-`UPDATE` has a window where two overlapping runs
+   both see the same `held` row.
+2. **Flip and credit in ONE transaction.** A flip that commits without its ledger entry
+   is credits that vanish; an entry without the flip is credits paid twice next run.
+3. **One transaction per row.** One corrupt row must not roll back every other tutor's
+   money.
+
+**A single batch `UPDATE … RETURNING` for the whole work set satisfies (1) and breaks
+(2) and (3)** — it commits every flip before any wallet is touched. So the shipped shape
+is `listDueEarningIds()` (a work list) followed by one `claimAndCreditEarning(id)` per
+id, each opening its own transaction whose first statement is the claim `UPDATE`
+restating **both** qualifiers.
+
+**The listing read is not the claim, and this is the distinction that matters.** Nothing
+is credited on the list's authority; a stale or duplicated id from it is a wasted
+statement, never a second payment. The exactly-once property comes from Postgres
+re-evaluating a blocked `UPDATE`'s qualifiers under READ COMMITTED — the loser sees
+`status = 'available'` and matches zero rows — the same mechanism the end-session lane
+already depends on.
+
+### 2. What a crash mid-batch produces, and why it is the safe direction
+
+**Rows not yet released — never half-released, and never paid twice.** The in-flight
+row's transaction rolls back, so its flip and its ledger entry both disappear and the
+row is still `held`; the next hourly run picks it up. Rows already committed are
+complete in both halves. The failure mode is *delay*, which costs a tutor nothing but
+time, because `available_at` is stored on the row and derived from `ended_at` (§7.11) —
+a late run pays the same amount an on-time one would.
+
+There is a second, independent guarantee underneath: `credit_tx_ref_unique` on
+`(type, reference_id)` with `reference_id = booking_id`. Even a flip that somehow
+committed without its entry could not be paid twice — the database refuses it, the
+sweep counts it as `duplicateLedger`, and the claim rolls back so the row stays visible
+as `held` rather than being marked paid with nothing behind it.
+
+### 3. `net_credits` is read, never recomputed — and the test fixture had to be able to tell
+
+The split ran once at completion and is stored on the row. Recomputing it here would put
+a second implementation of the fee rule on the path that pays people, and — worse —
+would silently re-price already-completed sessions the first time `platform_fee_percent`
+changed.
+
+**Stating that is not testing it.** A fixture whose stored split happens to agree with
+`splitEarnings` cannot tell a recomputation from a read; that is precisely the trap Part
+3C fell into (see "Break (e) proved nothing"). So one fixture in both lanes is
+`100 gross / 10 fee / 90 net` — a 10% split, where today's 25% would give 75. A sweep
+that recomputed would credit 75 and fail. Every expected number is pinned literally
+(`toBe(38)`, "NOT 50, NOT 12"), and no expectation is derived from the code under test.
+
+### 4. A corrupt split is skipped, counted, and never repaired
+
+`net + fee != gross` is not repairable from here: nothing in this job can know **which**
+of the three numbers is wrong, every repair is a guess that pays somebody the wrong
+amount, and `credit_transactions` is append-only (§4.4) so a wrong credit cannot be
+edited away afterwards. The row is left `held` — visible, recoverable by a person who
+can look at the booking, and paying nobody on a guess. The check runs **inside** the
+transaction, so the refusal rolls the flip back with it.
+
+### 5. There is no "missing wallet" skip reason, because there cannot be one
+
+The brief listed it as a candidate count. It is not implemented, deliberately: a credit
+into an account with no wallet row **opens one at zero** (`applyDelta` → `createWallet`),
+and `tutor_earnings.tutor_id` is FK'd to `profiles.id`, so the tutor always exists. A
+counter that can never be non-zero is worse than no counter — it reads as a checked
+condition when nothing checks it. The implemented skip reasons are `notClaimed`
+(an overlapping run won), `corruptSplit`, `duplicateLedger` and `failed`. There is a
+unit test asserting the wallet-opening path, so the claim is pinned rather than asserted.
+
+### 6. The falsification pass — five breaks, all five caught
+
+Each break applied to the shipped code one at a time, the relevant lanes run against it,
+then reverted. Reported as run.
+
+| # | Break | Lane | Result |
+|---|---|---|---|
+| a | claim → `SELECT`-then-`UPDATE` | DB | ✅ **4 failed**, headline `expected 38 to be null` — the losing run credited 38 as well. Two further failures are collateral: the timed-out contest holds its locks. |
+| a | (same) | unit | ⚪ **14/14 green, as expected.** An in-memory fake cannot model READ COMMITTED re-evaluation; recorded so nobody reads the green as coverage. |
+| b | credit `gross_credits` | unit | ✅ **9 failed**, including `expected 150 to be 138` and — the one that matters — `expected 100 to be 90` from the 10%-split fixture. |
+| c | ledger write moved outside the row transaction | DB | ✅ **exactly 1 failed**: `expected 'available' to be 'held'`. The corrupt row was flipped and paid nothing — credits that vanish, reproduced. |
+| c | (same) | unit | ⚪ green, correctly: the fake models the rollback itself, so the break is invisible to it. This is why (c) needs the DB lane. |
+| d1 | `available_at <= now()` dropped from the CLAIM | DB | ✅ **2 failed**, both `expected 38 to be null` — including the by-id test written for exactly this, which bypasses the listing. |
+| d2 | `available_at <= now()` dropped from the LISTING | DB | ✅ **1 failed**: `expected [ Array(1) ] to not include …`. |
+
+**(d) was split into two breaks on purpose.** The predicate appears in two places, and a
+break applied to only one of them would have been caught by a test that could not see the
+other. The by-id test (`refuses a row that is not yet due, on the UPDATE and not only the
+listing`) exists so that the claim's own predicate is pinned independently of the read
+that feeds it — without it, d1 would have passed while a tutor got paid before their hold
+expired.
+
+### 7. The DB lane's earnings teardown had to become transactional, and the reason is a real leak
+
+`resetEarningsFixture` deletes the fixture's `session_earning` rows and restores the
+tutor's cached balance. It first ran those as two autocommitted statements, and a
+network-interrupted run (the shared test project is remote; that run also produced an
+`ETIMEDOUT` on a `begin`) left **the ledger row behind with the balance already
+restored** — a −90 drift on a shared seeded tutor, referencing a booking the same
+teardown had deleted. That is precisely the state `reconcile-wallets` (§12) exists to
+alarm on, seeded by the test for the job that must not create it.
+
+Both statements now run in one transaction. *Why it matters:* teardown that restores an
+**invariant** — not just rows — is as atomic a requirement as the code under test; two
+autocommitted statements can leave a state neither the test nor production could produce.
+
+### What is NOT here
+
+No `reconcile-wallets`, no withdrawal request flow, no `/tutor/withdrawals`, no
+`/admin/withdrawals`, no admin panel, no `audit_log` writes, no `expire-unpaid`, and no
+`/admin/settings` "run now" button. No change to `complete-sessions`, to
+`lib/credits/ledger.ts`, to `splitEarnings`, or to any existing query. The `pg_cron`
+snippet is written but **not run** — scheduling is a Supabase step outside this repo.

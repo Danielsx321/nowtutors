@@ -4,6 +4,35 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-08-25)
 
+**Phase 8 Part 1 — `release-earnings` — is BUILT and PR-ready (not merged).** The hourly
+cron that flips `tutor_earnings` `held` → `available` and writes the `session_earning`
+ledger credit in the same transaction. **This is the first thing in the codebase that
+pays a tutor for a session**; Phase 6 Part 3C wrote the `held` promise and deliberately
+touched no wallet (§7.11). No migration — `tutor_earnings` has carried `status` and
+`available_at` since `drizzle/0000`, verified against the file. Three files plus a
+`pg_cron` snippet: `db/queries/release-earnings.ts` (the claim),
+`lib/earnings/release-earnings.ts` (the sweep, behind a port so the money path is
+unit-testable without Postgres), and the route. 14 unit + 11 DB-lane tests, and a
+five-break falsification pass in which all five breaks were caught — see DECISIONS,
+"Phase 8 Part 1". **The snippet has NOT been run**: scheduling is a Supabase step outside
+this repo, and until it runs, tutors are not paid — unlike `expire-requests`, nothing
+else compensates for this job not running.
+
+**Two things a follow-up must action, neither of them blocking the PR:**
+
+- **Schedule it.** `drizzle/snippets/pg_cron_release_earnings.sql`, `0 * * * *`, against
+  `mipnoxlhurdbaahmvhhx`, after `pg_cron_sweep_presence.sql`. Same step
+  `pg_cron_complete_sessions.sql` already went through.
+- **One orphan ledger row is still on the TEST project** (`session_earning`, delta 90,
+  `reference_id` pointing at a deleted booking, wallet balance 0 against a −90 sum of
+  deltas). It is residue from a network-interrupted DB-lane run during this pass, the
+  teardown that produced it is now transactional so it cannot recur, and the cleanup
+  statement was blocked by the permission classifier rather than run. It is on the
+  disposable test project only, not dev/prod, but it will make any `reconcile-wallets`
+  run against that project report a permanent false mismatch until deleted:
+  `delete from credit_transactions where type = 'session_earning' and reference_id not in (select id from bookings);`
+
+
 **⚠️ OPEN DEFECT, still NOT resolved: the instant request often never reaches the
 tutor.** PR #47, #48 and #49 (below) each fixed something real, but the symptom
 persists. Live evidence, 2026-08-25, after #49 was merged: fresh tutor page load,

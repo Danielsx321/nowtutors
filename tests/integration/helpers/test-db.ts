@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { DbTransaction } from "@/db";
@@ -550,4 +550,163 @@ export async function sqlSaysElapsed(
 export async function readTiming(conn: TestConnection, bookingId: string) {
   const row = await readEndColumns(conn, bookingId);
   return { startedAt: row.startedAt, durationMinutes: row.durationMinutes };
+}
+
+/**
+ * A `tutor_earnings` row, seeded directly — Phase 8 Part 1's fixture.
+ *
+ * **`available_at` is an offset from Postgres's `now()`, not a JavaScript
+ * `Date`**, for the same reason the booking fixture backdates in SQL: the
+ * predicate under test is `available_at <= now()` evaluated by the database, and
+ * a fixture written from the app server's clock would put the boundary case at
+ * the mercy of clock skew between the two.
+ *
+ * The three credit numbers are passed independently so a **corrupt** row
+ * (`net + fee != gross`) can be seeded — that state is one of the outcomes the
+ * sweep has to handle, and it cannot be produced by any shipped writer.
+ */
+export interface FixtureEarningOptions {
+  bookingId: string;
+  tutorId: string;
+  grossCredits?: number;
+  platformFeeCredits?: number;
+  netCredits?: number;
+  status?: "held" | "available" | "withdrawn";
+  /**
+   * Minutes before `now()` for `available_at`. Negative puts it in the future
+   * (not yet due); `null` writes NULL, the row with no release date.
+   */
+  availableMinutesAgo?: number | null;
+}
+
+export async function createFixtureEarning(
+  conn: TestConnection,
+  options: FixtureEarningOptions,
+): Promise<string> {
+  const {
+    bookingId,
+    tutorId,
+    grossCredits = 50,
+    platformFeeCredits = 12,
+    netCredits = 38,
+    status = "held",
+    availableMinutesAgo = 60,
+  } = options;
+
+  const availableAt =
+    availableMinutesAgo === null
+      ? sql`null`
+      : sql`now() - make_interval(mins => ${availableMinutesAgo})`;
+
+  const earningId = randomUUID();
+  await conn.db.execute(sql`
+    insert into tutor_earnings (
+      id, tutor_id, booking_id, gross_credits, platform_fee_credits,
+      net_credits, status, available_at
+    )
+    values (
+      ${earningId}, ${tutorId}, ${bookingId}, ${grossCredits},
+      ${platformFeeCredits}, ${netCredits}, ${status}::earning_status, ${availableAt}
+    )
+  `);
+  return earningId;
+}
+
+/** One earnings row by id, decoded through this connection rather than the writer's. */
+export async function readEarningById(conn: TestConnection, earningId: string) {
+  const [row] = await conn.db
+    .select({
+      status: schema.tutorEarnings.status,
+      netCredits: schema.tutorEarnings.netCredits,
+      availableAt: schema.tutorEarnings.availableAt,
+    })
+    .from(schema.tutorEarnings)
+    .where(eq(schema.tutorEarnings.id, earningId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Cached wallet balance, or null when the tutor has no wallet row at all. */
+export async function readWalletBalance(
+  conn: TestConnection,
+  userId: string,
+): Promise<number | null> {
+  const [row] = await conn.db
+    .select({ creditBalance: schema.wallets.creditBalance })
+    .from(schema.wallets)
+    .where(eq(schema.wallets.userId, userId))
+    .limit(1);
+  return row ? row.creditBalance : null;
+}
+
+/**
+ * Every `session_earning` ledger row for a booking.
+ *
+ * The count is the double-pay assertion: `credit_tx_ref_unique` on
+ * `(type, reference_id)` (§4.4) means two of these for one booking is
+ * impossible, and a test that asserted only on the balance could not tell "paid
+ * once" from "paid twice and refunded".
+ */
+export async function readSessionEarningLedger(
+  conn: TestConnection,
+  bookingId: string,
+) {
+  return conn.db
+    .select({
+      userId: schema.creditTransactions.userId,
+      delta: schema.creditTransactions.delta,
+      balanceAfter: schema.creditTransactions.balanceAfter,
+      referenceType: schema.creditTransactions.referenceType,
+    })
+    .from(schema.creditTransactions)
+    .where(
+      and(
+        eq(schema.creditTransactions.type, "session_earning"),
+        eq(schema.creditTransactions.referenceId, bookingId),
+      ),
+    );
+}
+
+/**
+ * Undo everything the release lane wrote for one booking, and put the tutor's
+ * wallet back exactly as it was.
+ *
+ * **The balance has to be restored, not just the rows deleted.** This lane runs
+ * against a shared seeded tutor, and `reconcile-wallets` (§12) exists to assert
+ * `credit_balance = sum(deltas)` — a test that left a credited balance behind
+ * with its ledger row deleted would seed the exact drift that alarm is for.
+ * `previousBalance` of `null` means the tutor had no wallet row before the test
+ * and the row itself is removed.
+ */
+export async function resetEarningsFixture(
+  conn: TestConnection,
+  params: {
+    bookingId: string;
+    tutorId: string;
+    previousBalance: number | null;
+  },
+): Promise<void> {
+  // **In ONE transaction, and that is not tidiness.** These two statements
+  // restore an invariant — `credit_balance = sum(deltas)` — so applying one
+  // without the other seeds exactly the drift `reconcile-wallets` (§12) exists
+  // to alarm on. An earlier version ran them as two autocommitted statements
+  // and a network-interrupted run left the ledger row behind with the balance
+  // already restored: a permanent orphan on a shared project, referencing a
+  // booking the same teardown had deleted.
+  await conn.db.transaction(async (tx) => {
+    await tx.execute(sql`
+      delete from credit_transactions
+       where type = 'session_earning' and reference_id = ${params.bookingId}
+    `);
+    if (params.previousBalance === null) {
+      await tx.execute(
+        sql`delete from wallets where user_id = ${params.tutorId}`,
+      );
+      return;
+    }
+    await tx.execute(sql`
+      update wallets set credit_balance = ${params.previousBalance}
+       where user_id = ${params.tutorId}
+    `);
+  });
 }

@@ -1177,7 +1177,7 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 - **Tutor-absence takes precedence in the classification, so a booking where NEITHER party joined lands `no_show_tutor` (Phase 6 Part 3C).** It is a money decision rather than a tie-break: an empty room is not evidence the tutor was there, and the safe direction is the one that does not pay. The classification reads `started_at` first (non-null ⇒ the pair met ⇒ `completed`, §4.3), then `tutor_joined_at`, then `student_joined_at`.
 - **`available_at` derives from `ended_at`, and `ended_at` records occurrence, not observation.** For a completed instant session that is the capped `started_at + duration_minutes` (§4.3); for a scheduled one it is `scheduled_end_at`. **The single exception is `no_show_student` on an instant booking, where `ended_at` is `now()` at classification** — there is no session end to record because there was no session. A late sweep therefore moves nobody's withdrawal date.
 - **Fee split (authoritative).** `platform_fee_credits = floor(gross_credits × platform_fee_percent / 100)`, `net_credits = gross_credits − platform_fee_credits`. The fee **rounds down; the remainder goes to the tutor.** Rounding against the payee would accumulate in the platform's favour across many small sessions, so the split rounds down instead. This is implemented once in `src/lib/credits/fees.ts` (`splitEarnings`) and called by both the seed and the earnings pipeline so they cannot diverge. (`platform_fee_percent = 25` → tutor keeps ≥75%.)
-- Cron flips `held` → `available` when due.
+- **Cron flips `held` → `available` when due, and writes the `session_earning` ledger entry in the same transaction (`/api/cron/release-earnings`, §12, built in Phase 8 Part 1).** The credit is `net_credits` — the split is read off the row, never recomputed (see the fee-split bullet above; recomputing would re-price a completed session if `platform_fee_percent` ever moved). `reference_type = 'booking'`, `reference_id = tutor_earnings.booking_id`, so `credit_tx_ref_unique` on `(type, reference_id)` (§4.4) is a second, database-level guarantee that one booking is paid at most once — independent of the status flip. **A crash mid-batch leaves rows unreleased, never half-released:** each row's flip and credit commit together or not at all, so an interrupted run's in-flight row stays `held` and the next run releases it. A row whose stored `net + fee != gross` is skipped and left `held` rather than repaired.
 - `/tutor/withdrawals`: available balance, minimum from settings, PayPal email shown with an edit link. Request creates `withdrawal_requests` (`requested`) and a `withdrawal_hold` ledger entry so the credits can't be double-spent.
 - `/admin/withdrawals`: queue with tutor, amount, USD equivalent, destination email, request date. Actions: **Approve** (`approved`), **Mark paid** (requires an `external_reference`; writes `withdrawal_paid` ledger entry, flips earnings to `withdrawn`, emails the tutor), **Reject** (requires a note; reverses the hold, emails the tutor).
 - Every transition writes to `audit_log`.
@@ -1460,7 +1460,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/expire-requests` | `* * * * *` | **built** (Phase 6 Part 2) |
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | deferred (Phase 8 — not load-bearing, §4.2) |
 | `/api/cron/complete-sessions` | `*/15 * * * *` | **built and scheduled** (Phase 6 Part 3C) |
-| `/api/cron/release-earnings` | `0 * * * *` | Phase 8 |
+| `/api/cron/release-earnings` | `0 * * * *` | **built** (Phase 8 Part 1) |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | Phase 8 |
 
@@ -1516,7 +1516,32 @@ from `/admin/settings` with a "run now" button for debugging.
   `ended_at` an on-time one would — but now that it is scheduled, the
   both-parties-offline case and every no-show also resolve without a person
   present.
-- **release-earnings** — `held` → `available` where `available_at <= now()`.
+- **release-earnings** — `held` → `available` where `available_at <= now()`, **and the
+  `session_earning` ledger credit that goes with it**. Built in Phase 8 Part 1; returns
+  `{ ok, job, released, creditsReleased, notClaimed, corruptSplit, duplicateLedger, failed, …Ids,
+  durationMs }`. **Not tidy-up — this is the only thing in the codebase that pays a tutor for a
+  session** (`complete-sessions` writes the `held` promise and touches no wallet, §7.11), so unlike
+  `expire-requests` nothing else compensates if it stops running. A late run pays the same amount:
+  `available_at` is stored on the row and derived from `ended_at`, so delay costs only the delay.
+
+  **The claim is a per-row `UPDATE … SET status='available' WHERE status='held' AND
+  available_at <= now() RETURNING …`, and only what that statement returns is credited.** Three
+  constraints have to hold together and only this shape satisfies all of them: the claim must be
+  atomic (a `SELECT`-then-`UPDATE` has a window where two overlapping runs both see the same
+  `held` row); the flip and the ledger write must share **one transaction** (a flip without its
+  entry is credits that vanish, an entry without the flip is credits paid twice); and the
+  transaction must be **per row**, so one corrupt row cannot roll back another tutor's money. A
+  single batch `UPDATE … RETURNING` is atomic but commits every flip before any wallet is touched,
+  which is why it is not used. The read that produces the work list is **not** the claim and
+  nothing is paid on its authority.
+
+  **The tutor is credited `net_credits`, and the split is never recomputed here.** `splitEarnings`
+  ran once at completion and its answer is stored on the row; re-deriving it would put a second
+  implementation of the fee rule on the path that pays people, and would silently re-price old
+  sessions whenever `platform_fee_percent` changed. A row where `net + fee != gross` is **corrupt,
+  not repairable**: it is skipped, counted as `corruptSplit`, and left `held` — nothing here can
+  know which of the three numbers is wrong, and `credit_transactions` is append-only (§4.4), so a
+  wrong credit cannot be edited away afterwards.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.
 
