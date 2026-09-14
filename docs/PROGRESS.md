@@ -4,6 +4,25 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-14)
 
+**Phase 8 Part 2 — withdrawals — is BUILT on `phase-8-part2-withdrawals`, PR open, not merged.**
+Tutor request (whole balance, `withdrawal_hold` debit), admin queue at `/admin/withdrawals`
+(approve → mark paid with the PayPal transaction id, or reject with a note, which returns the
+credits), `/tutor/earnings`, and the PayPal email on `/tutor/settings`. Migration `0015` closes a
+real hole: under `0005` a tutor could insert a withdrawal request straight through PostgREST with no
+hold. Full reasoning, the seven-break falsification pass and gate output: DECISIONS, "Phase 8 Part 2".
+
+**Withdrawals stay switched off until a payout rate is set.** `payout_usd_per_credit` has no default
+by design (no rate agreed with Noora yet); until it exists, `/tutor/withdrawals` explains that
+withdrawals aren't open and `/admin/withdrawals` shows a warning.
+
+**After merge, in order:**
+1. Apply `0015` to `mipnoxlhurdbaahmvhhx` (`pnpm db:migrate`, over the pooler), then `pnpm db:verify-rls`.
+2. When Noora confirms the rate: `insert into platform_settings (key, value, description) values ('payout_usd_per_credit', '<rate>'::jsonb, 'USD paid per credit at withdrawal');`
+3. Live check (batched): a tutor with released credits requests, an admin approves and marks paid,
+   the wallet history shows the hold, and a rejected request returns the credits.
+
+**Not verified:** the new pages have not been looked at in a browser at 360px / 1440px.
+
 **Phase 8 Part 1 — `release-earnings` — is MERGED via PR #52 (`b8f2f14`) and SCHEDULED.**
 Before merge, a stray one-off DB inspection script (`inspect-tmp.mjs`, hardcoded user and
 booking ids, accidentally committed in `2ddb6ce`) was removed from the branch in `18269f1`;
@@ -1222,7 +1241,7 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   overlap. Either the constraint postdates those two rows or some write path bypasses
   it. Needs investigation **before cutover** — Bubble bookings get migrated in at that
   point and the same question applies to every row it brings.
-- **The tutor sidebar links to five routes that don't exist:** `/tutor/withdrawals`,
+- **Phase 8 Part 2 builds `/tutor/withdrawals`, `/tutor/earnings` and `/tutor/settings` (payout email only), so only `/tutor/broadcasts` and `/tutor/messages` remain once it merges.** Original note: **The tutor sidebar links to five routes that don't exist:** `/tutor/withdrawals`,
   `/tutor/earnings`, `/tutor/broadcasts`, `/tutor/messages`, `/tutor/settings`. All are
   Phase 8/9 work; today they 404 on prefetch/click. Cosmetic, not a blocker, but leave
   this note rather than rediscovering it per route as each phase lands.

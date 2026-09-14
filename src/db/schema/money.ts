@@ -108,20 +108,31 @@ export const tutorEarnings = pgTable("tutor_earnings", {
   updatedAt: updatedAt(),
 });
 
-export const withdrawalRequests = pgTable("withdrawal_requests", {
-  id: uuidPk(),
-  tutorId: uuid("tutor_id")
-    .notNull()
-    .references(() => profiles.id),
-  amountCredits: integer("amount_credits").notNull(),
-  amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }).notNull(),
-  payoutMethod: payoutMethod("payout_method").notNull().default("paypal"),
-  payoutDestination: text("payout_destination").notNull(),
-  status: withdrawalStatus("status").notNull().default("requested"),
-  adminNote: text("admin_note"),
-  externalReference: text("external_reference"),
-  processedBy: uuid("processed_by").references(() => profiles.id),
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+// Written only by server actions on the trusted connection (drizzle/0015): the
+// request row and its `withdrawal_hold` debit must commit together, which RLS
+// cannot guarantee. At most one open (requested/approved) request per tutor.
+export const withdrawalRequests = pgTable(
+  "withdrawal_requests",
+  {
+    id: uuidPk(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id),
+    amountCredits: integer("amount_credits").notNull(),
+    amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }).notNull(),
+    payoutMethod: payoutMethod("payout_method").notNull().default("paypal"),
+    payoutDestination: text("payout_destination").notNull(),
+    status: withdrawalStatus("status").notNull().default("requested"),
+    adminNote: text("admin_note"),
+    externalReference: text("external_reference"),
+    processedBy: uuid("processed_by").references(() => profiles.id),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("withdrawal_requests_one_open_per_tutor")
+      .on(t.tutorId)
+      .where(sql`${t.status} in ('requested', 'approved')`),
+  ],
+);

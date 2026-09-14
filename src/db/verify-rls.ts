@@ -225,6 +225,36 @@ async function main() {
     const { data } = await rows(tutor.from("favourites").select("id"));
     assert(data.length === 0, "tutor (non-student) sees 0 favourites");
   }
+
+  // withdrawal_requests: reads unchanged, every client write removed
+  // (drizzle/0015). A request row without its withdrawal_hold debit would be a
+  // payout of credits nobody set aside, so the only write path is the server
+  // action that takes the hold in the same transaction (SPEC §5, §7.11).
+  console.log("withdrawal_requests — tutor writes must be DENIED (0015):");
+  {
+    const { error } = await tutor.from("withdrawal_requests").insert({
+      tutor_id: tid,
+      amount_credits: 1000,
+      amount_usd: "1000.00",
+      payout_destination: "attacker@paypal.dev",
+    });
+    assert(!!error, "tutor cannot INSERT a withdrawal request directly (no hold bypass)");
+  }
+  {
+    const { data, error } = await tutor
+      .from("withdrawal_requests")
+      .update({ status: "paid" })
+      .eq("tutor_id", tid)
+      .select("id");
+    assert(!!error || (data ?? []).length === 0, "tutor cannot UPDATE withdrawal_requests");
+  }
+  {
+    const { data, error } = await rows(
+      tutor.from("withdrawal_requests").select("tutor_id"),
+    );
+    const onlyMine = data.every((r) => (r as { tutor_id: string }).tutor_id === tid);
+    assert(!error && onlyMine, `tutor reads only own withdrawal requests (${data.length})`);
+  }
   await tutor.auth.signOut();
 
   console.log("student cannot write tutor_profiles at all:");
