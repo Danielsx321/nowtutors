@@ -14,10 +14,13 @@ resolve from the dev Mac). Verified in `cron.job`: `jobid` 4, `release-earnings`
 `0 * * * *`, `active = true`, command posts to `/api/cron/release-earnings` and reads the
 token from Vault. The merge deployed to Vercel production (status `success` on `b8f2f14`)
 and the live route answers an unauthenticated GET with **401**, i.e. it is deployed and
-guarded. **Not yet verified:** the first hourly run's `net._http_response` summary.
+guarded. The orphan `session_earning` row on the TEST project (`uietkphpfqaicbndunwt`) was
+deleted by Daniels on 2026-09-14 from the Supabase SQL editor; a follow-up count of
+`session_earning` rows whose `reference_id` has no booking returned **0**. **Not yet
+verified:** the first hourly run's `net._http_response` summary.
 
-_The paragraph below is the pre-merge record, kept for its detail; its "not merged" and
-"snippet has NOT been run" lines are superseded by the two facts above._
+_The paragraph below is the pre-merge record, kept for its detail; its "not merged",
+"snippet has NOT been run" and orphan-row lines are superseded by the facts above._
 
 **Phase 8 Part 1 — `release-earnings` — was BUILT and PR-ready (not merged).** The hourly
 cron that flips `tutor_earnings` `held` → `available` and writes the `session_earning`
