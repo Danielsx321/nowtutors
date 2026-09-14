@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-14)
 
-**Phase 8 Part 2 — withdrawals — is BUILT on `phase-8-part2-withdrawals`, PR open, not merged.**
+**Phase 8 Part 2 — withdrawals — is MERGED via PR #55 (`e34404b`), and migration `0015` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 Tutor request (whole balance, `withdrawal_hold` debit), admin queue at `/admin/withdrawals`
 (approve → mark paid with the PayPal transaction id, or reject with a note, which returns the
 credits), `/tutor/earnings`, and the PayPal email on `/tutor/settings`. Migration `0015` closes a
@@ -15,8 +15,8 @@ hold. Full reasoning, the seven-break falsification pass and gate output: DECISI
 by design (no rate agreed with Noora yet); until it exists, `/tutor/withdrawals` explains that
 withdrawals aren't open and `/admin/withdrawals` shows a warning.
 
-**After merge, in order:**
-1. Apply `0015` to `mipnoxlhurdbaahmvhhx` (`pnpm db:migrate`, over the pooler), then `pnpm db:verify-rls`.
+**Post-merge, as of 2026-09-14:**
+1. ~~Apply `0015` to `mipnoxlhurdbaahmvhhx`, then `pnpm db:verify-rls`.~~ **DONE.** Daniels ran `pnpm db:migrate` and `pnpm db:verify-rls` (passed, including the three withdrawal assertions). Checked independently against the database, not just the command output: `drizzle.__drizzle_migrations` has 16 rows; `pg_policies` on `withdrawal_requests` lists only `withdrawals_select`; `authenticated` has neither INSERT nor UPDATE; `withdrawal_requests_one_open_per_tutor` exists. The PostgREST hole from `0005` is closed on production.
 2. When Noora confirms the rate: `insert into platform_settings (key, value, description) values ('payout_usd_per_credit', '<rate>'::jsonb, 'USD paid per credit at withdrawal');`
 3. Live check (batched): a tutor with released credits requests, an admin approves and marks paid,
    the wallet history shows the hold, and a rejected request returns the credits.
