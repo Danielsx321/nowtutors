@@ -3647,6 +3647,12 @@ student's request still produces no modal without a reload. If that is seen, the
 is Realtime's own authorisation of the token (expiry, claims) rather than ordering — re-run the
 three-lane diagnostic with the fix in place before changing anything else.
 
+### 5. Live check with the fix, same test project, 2026-09-14
+
+`next dev` on `fix/realtime-auth-before-subscribe` against `uietkphpfqaicbndunwt`, tutor1 in one browser context with the availability switch on and heartbeats landing every few seconds, the tutor channel logging `SUBSCRIBED`. student1 requested from a second browser; row `dc97fdde` was inserted at 18:20:55Z, `pending`, for tutor1, and **the request modal appeared in the tutor's tab without a reload** (reported by Daniels, who was watching it; it had closed on its own 60s deadline by the time the page was read).
+
+**What this does and does not isolate.** The network was unstable during the check and the tutor channel logged transport failures followed by a re-`SUBSCRIBED` in the same period. A successful resubscribe triggers the mount-time read (#49), which would also surface a pending request, and the console carries no timestamps to order that resubscribe against the insert. So this check is strong corroboration, not a clean isolation of the Realtime path. Run 1 (§1) is what isolates the cause; this confirms the fixed build delivers a request to a live tutor end to end. A cold-load check on the deployed app after merge, on a stable connection, is the clean confirmation.
+
 ### What is NOT here
 
 PR #51's diagnostic code is not merged and is not part of this change; close it once this

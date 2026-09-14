@@ -46,8 +46,7 @@ subscribe, under the existing watchdog, with a generation guard; covers the tuto
 student legs. New DOM tests pin the ordering. SPEC §8 corrected (the socket does not
 "carry the viewer's JWT" merely by using the browser client). Full evidence, mechanism
 and falsification criterion: DECISIONS, "Instant-request fault: the JWT joined after the
-channel". **Still to do:** merge, then a live check — cold tutor page load, student
-requests, modal appears without a reload — and close PR #51 unmerged. Test-data note:
+channel". **Live-checked on the test project (2026-09-14):** with the fix, a student request raised the tutor's modal without a reload — corroborating, not isolated, because the flaky connection also re-subscribed (and so re-read) in the same window (DECISIONS §5). **Still to do:** merge, a cold-load check on the deployed app on a stable connection, and close PR #51 unmerged. Test-data note:
 tutor1/student1 passwords on the test project (`uietkphpfqaicbndunwt`) were reset to the
 seed value during the run; `ensureUsers` in `src/db/seed.ts` never resets existing users.
 
