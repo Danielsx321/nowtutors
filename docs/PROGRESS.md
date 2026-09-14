@@ -16,8 +16,14 @@ token from Vault. The merge deployed to Vercel production (status `success` on `
 and the live route answers an unauthenticated GET with **401**, i.e. it is deployed and
 guarded. The orphan `session_earning` row on the TEST project (`uietkphpfqaicbndunwt`) was
 deleted by Daniels on 2026-09-14 from the Supabase SQL editor; a follow-up count of
-`session_earning` rows whose `reference_id` has no booking returned **0**. **Not yet
-verified:** the first hourly run's `net._http_response` summary.
+`session_earning` rows whose `reference_id` has no booking returned **0**. **First live run verified,
+2026-09-14 17:00 UTC:** `cron.job_run_details` `succeeded`; the route returned 200 with
+`released: 2`, `creditsReleased: 27`, and `notClaimed`, `corruptSplit`, `duplicateLedger`
+and `failed` all 0. Checked against the database, not just the summary: both
+`tutor_earnings` rows (`44e3f23d`, `bb629d37`) are `available`; each has exactly one
+`session_earning` row whose `delta` equals its stored `net_credits` (15 of 19 gross, 12 of 15
+gross); each tutor's `wallets.credit_balance` equals the sum of that tutor's ledger deltas;
+no row is left `held` past `available_at`.
 
 _The paragraph below is the pre-merge record, kept for its detail; its "not merged",
 "snippet has NOT been run" and orphan-row lines are superseded by the facts above._
