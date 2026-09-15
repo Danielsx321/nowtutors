@@ -1811,6 +1811,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 
 **Phase 8 — Earnings, withdrawals, admin.** Earnings accrual and release, withdrawal request flow, full admin panel, audit log, remaining cron jobs.
 *Accept:* E2E test 4 passes; `reconcile-wallets` reports zero drift on seeded data.
+*Status:* **COMPLETE 2026-09-15.** E2E test 4 passed against the test project (56.9s), and in the same run `reconcile-wallets` returned `drift:false` with 0 mismatches across 11 wallets. Parts 1 to 6 merged (last PR #65); migrations `0015` to `0017` applied to production. See PROGRESS and DECISIONS, "Phase 8 acceptance".
 
 **Phase 9 — Messaging and broadcasts.** Conversations, threads, Realtime, unread badges; broadcast create/host/view, `/live`.
 *Accept:* two browsers exchange messages in real time; a broadcast is watchable by two viewers.

@@ -4290,3 +4290,21 @@ mismatches.
 - No emails.
 - No change to the overlap constraint (§7).
 - `0017` is **not** applied to production yet (post-merge RUNBOOK step).
+
+## Phase 8 acceptance — E2E test 4 (`phase-8-acceptance`, 2026-09-15)
+
+**Passed.** Daniels ran `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts` against the test project:
+`✓ 1 released earnings → withdrawal requested → approved → paid → reconcile finds no drift (56.9s)`,
+`1 passed (3.1m)`. The server log in the same run shows `release-earnings` releasing 1 row for 45 credits
+and `reconcile-wallets` returning `drift:false`, `walletsChecked: 11`, `mismatches: 0`,
+`totalAbsoluteDrift: 0`. With `0017` applied to production and Parts 1 to 6 merged, that meets SPEC §16's
+Phase 8 acceptance.
+
+**The first run failed on the spec, not the app.** Release credited 45 credits and `/tutor/withdrawals`
+rendered the balance, the payout email and an enabled button, but the spec looked for a button named
+"Request withdrawal". The component only uses that label when no payout rate is set; with one set it
+reads "Withdraw 45 credits ($45.00)". No action had its own timeout, so the missing button took the
+whole 5-minute test budget to fail. The fix matches `/^withdraw [\d,]+ credits/i`, waits for the page
+heading first, and gives every click and fill a 20-second timeout, so a wrong selector now fails in
+seconds with the locator named. The rerun created a second 45-credit earning for `tutor3`; the spec
+withdraws the whole balance, so both paid out and the wallet ended at 0.
