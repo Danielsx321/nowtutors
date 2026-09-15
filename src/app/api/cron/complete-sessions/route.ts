@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET/POST /api/cron/complete-sessions` — the session-completion sweep
@@ -52,51 +50,10 @@ import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const denied = cronAuthFailure(request, "complete-sessions");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const {
-      completedIds,
-      noShowTutorIds,
-      noShowStudentIds,
-      earningsCreatedIds,
-      earningsSkippedNoPriceIds,
-    } = await runCompleteSessionsSweep();
-
-    const summary = {
-      ok: true as const,
-      job: "complete-sessions",
-      completed: completedIds.length,
-      noShowTutor: noShowTutorIds.length,
-      noShowStudent: noShowStudentIds.length,
-      // What the database did, not what this run intended: on a retry the rows
-      // are already classified and this is 0.
-      earningsCreated: earningsCreatedIds.length,
-      // A payout-earning booking whose price_credits was NULL: no earnings row
-      // was written for it (a zero-credit one would permanently occupy the
-      // UNIQUE booking_id slot), only logged. Should be 0 in steady state.
-      earningsSkippedNoPrice: earningsSkippedNoPriceIds.length,
-      completedIds,
-      noShowTutorIds,
-      noShowStudentIds,
-      earningsCreatedIds,
-      earningsSkippedNoPriceIds,
-      durationMs: Date.now() - startedAt,
-    };
-    // §12: every cron handler logs a structured summary of what it changed.
-    console.info("[cron/complete-sessions]", JSON.stringify(summary));
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/complete-sessions] failed", err);
-    return NextResponse.json(
-      { error: "Completion sweep failed." },
-      { status: 500 },
-    );
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("complete-sessions");
 
 /**
  * Same handler under POST, for the same reason as the other two crons: §12 and

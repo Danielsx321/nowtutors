@@ -4,6 +4,19 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**Phase 8 Part 4 — admin control room — is BUILT on `phase-8-part4-admin-control`; PR open, not merged.**
+`/admin` (counts only, in the admin's timezone, plus a live wallet-drift read), `/admin/audit`
+(filter by action prefix and admin, 25 per page) and `/admin/settings` (per-key validated editor with
+stale-save refusal and audit, plus "run now" for all six §12 jobs). The six cron routes now share one
+job body with the run-now action, with unchanged responses. **No migration, no new dependency, and no
+post-merge production step.** Gates: `pnpm typecheck` and `pnpm lint` clean; `pnpm test` 430 passed
+(35 files, 53 new); `pnpm test:dom` 29 passed; `pnpm build` passed; `pnpm test:db:test` on the new
+file 8 passed. Eleven-break falsification pass, all caught. All six routes exercised over HTTP
+against the test project (401 without or with a wrong token, 200 with the secret, reconcile 0 drift
+across 11 wallets); the three pages redirect a signed-out visitor to `/login`. **Not verified:** the
+pages signed in, at 360px and 1440px (batched live test; Claude doesn't type passwords). See
+DECISIONS, "Phase 8 Part 4".
+
 **Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` — is MERGED via PR #58 (`d417ee4`), deployed, and SCHEDULED on `mipnoxlhurdbaahmvhhx`.**
 Both §12 jobs Phase 8 still owed. Both routes were exercised over HTTP against the test project
 (401 without the secret; with it, reconcile reported 0 mismatches across 11 wallets and expire-unpaid
@@ -24,7 +37,7 @@ _The steps below are the original post-merge list, kept for reference:_
 2. Run `drizzle/snippets/pg_cron_expire_unpaid.sql`.
 3. Confirm both in `select jobid, jobname, schedule, active from cron.job;`.
 
-**Open, not code:** `SENTRY_DSN` is empty locally and unchecked on Vercel, so the drift alarm currently notifies nobody (RUNBOOK).
+**Sentry, 2026-09-15:** `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are now set on Vercel Production (Daniels, then redeployed; the DSN was confirmed in the live client bundle), so drift raises a Sentry error. Still empty in the dev Mac's `.env.local`, which is fine. The first 03:00 UTC scheduled response was not read before this session closed.
 
 **Phase 8 Part 2 — withdrawals — is MERGED via PR #55 (`e34404b`), and migration `0015` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 Tutor request (whole balance, `withdrawal_hold` debit), admin queue at `/admin/withdrawals`

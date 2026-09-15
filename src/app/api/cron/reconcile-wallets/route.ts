@@ -1,8 +1,4 @@
-import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import { readWalletDrift } from "@/db/queries/reconcile-wallets";
-import { summarizeWalletDrift } from "@/lib/wallets/reconcile";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET/POST /api/cron/reconcile-wallets` — the nightly drift alarm (SPEC §4.4,
@@ -27,40 +23,10 @@ import { summarizeWalletDrift } from "@/lib/wallets/reconcile";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const denied = cronAuthFailure(request, "reconcile-wallets");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const { walletsChecked, rows } = await readWalletDrift();
-    const found = summarizeWalletDrift(walletsChecked, rows);
-
-    const summary = {
-      ok: true as const,
-      job: "reconcile-wallets",
-      drift: found.mismatches > 0,
-      ...found,
-      durationMs: Date.now() - startedAt,
-    };
-
-    if (summary.drift) {
-      console.error("[cron/reconcile-wallets] WALLET DRIFT", JSON.stringify(summary));
-      Sentry.captureMessage("reconcile-wallets: wallet balance does not match the ledger", {
-        level: "error",
-        extra: summary,
-      });
-    } else {
-      // §12: every cron handler logs a structured summary of what it found.
-      console.info("[cron/reconcile-wallets]", JSON.stringify(summary));
-    }
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/reconcile-wallets] failed", err);
-    Sentry.captureException(err);
-    return NextResponse.json({ error: "Wallet reconciliation failed." }, { status: 500 });
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("reconcile-wallets");
 
 /** Same handler under POST: `pg_net`'s documented call is `net.http_post`. */
 export const POST = GET;

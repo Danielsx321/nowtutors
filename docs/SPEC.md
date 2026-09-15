@@ -509,7 +509,16 @@ credit_packages              # jsonb array of buyable packages: credits + USD pr
 > threshold is baked into the `live_tutors` view so the view and the presence-cleanup cron
 > share one source of truth.
 
-**`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here.
+> **The admin editor is stricter than the readers (Phase 8 Part 4).** `/admin/settings` validates each
+> key with its own schema (`lib/settings-schema.ts`) and refuses unknown keys, wrong types and
+> out-of-range values, instead of saving something an accessor would silently replace with the seed.
+> `credit_packages` must keep exactly one `is_direct_pay_basis`. `cancellation_enabled` is shown
+> read-only: nothing reads it and there is no user cancel path (§7.3). A save carries the value the
+> page was rendered with and is refused when the row has changed since (compared as jsonb under a row
+> lock). A real change writes `audit_log` (`setting.update`, payload `{key, from, to}`); a save that
+> changes nothing writes nothing.
+
+**`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here. Targets without a uuid (a settings key, a cron job) leave `target_id` null and name the target in `payload`.
 
 ### 4.8 Favourites
 
@@ -613,15 +622,16 @@ SESSION  (participants only)
 /broadcast/[broadcastId]           Tutor's own broadcast host view
 
 ADMIN  (role = admin)
-/admin                             Overview: users, bookings today, revenue, pending withdrawals
+/admin                             Overview: users, bookings today, revenue, pending withdrawals,
+                                   tutor applications, live wallet-drift check (counts only, §14)
 /admin/users[/[id]]                Search, suspend, adjust credits (audited)
 /admin/tutors                      Approval queue
 /admin/bookings                    All bookings, filters, force-complete/cancel
 /admin/payments                    PayPal records, reconciliation view
 /admin/withdrawals                 Queue: approve → pay → mark paid with reference
 /admin/subjects                    CRUD
-/admin/settings                    platform_settings editor
-/admin/audit                       Audit log
+/admin/settings                    platform_settings editor + "run now" for every §12 job
+/admin/audit                       Audit log: newest first, filter by action prefix and actor
 
 API
 POST /api/presence/heartbeat
@@ -1487,7 +1497,10 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 Every handler: verify `Authorization: Bearer ${CRON_SECRET}` — and **fail closed with 503 when the
 variable is unset**, so a missing secret can never degrade into "no auth required" — be idempotent,
 log a structured summary of what it changed, and return counts. Each is also individually invocable
-from `/admin/settings` with a "run now" button for debugging.
+from `/admin/settings` with a "run now" button for debugging. **Built in Phase 8 Part 4:** every
+route is `cronHandler("<job>")` (`lib/cron/handler.ts`) over one job body per job (`lib/cron/jobs.ts`),
+and "run now" calls that same function server-side behind `requireRole('admin')`, never the URL and
+never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or the failure.
 
 - **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
