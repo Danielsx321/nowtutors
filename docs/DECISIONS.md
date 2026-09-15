@@ -4511,3 +4511,27 @@ and anon can't download, outsider can't list, a signed-in user can't upload dire
   only ever served from the Supabase Storage origin through a short-lived link, never from the app's
   origin, and as the declared image or PDF type, so it can't run script in NowTutors. Content sniffing
   was not added.
+
+### 8. Falsification pass (10/10 caught)
+
+Same method as Part 1: each break applied to committed code, or to the test project's storage and
+constraint, then the lane that should catch it was run and the break restored. A break counted only on a
+real "N failed" line.
+
+| Break | Caught by |
+|---|---|
+| an attachment path from any conversation accepted | unit, 3 failed |
+| MIME type and extension needn't agree | unit, 3 failed |
+| no 10 MB limit | unit, 1 failed |
+| file names keep path separators | unit, 1 failed |
+| an empty message with no attachment allowed | unit, 2 failed |
+| the composer uploads again on every retry | DOM, 1 failed |
+| thread reads expose the raw storage path | DB lane, 1 failed |
+| `message-attachments` made public (test project) | verify-rls, 4 failed |
+| a signed-in read policy added on the bucket (test project) | verify-rls, 3 failed |
+| `messages_body_or_attachment` dropped (test project) | DB lane, 1 failed |
+
+Working tree clean after the restores, and `db:verify-rls:test` passed again afterwards. **Not covered by
+any lane:** the action-level checks (participant check before signing an upload or download, and the
+`storage.info` verification in `sendMessage`), because the actions depend on `next/headers`. The probe in
+§6 exercised the storage calls they make; the signed-in check is batched for Daniels.
