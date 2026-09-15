@@ -434,7 +434,8 @@ already-running script.
   PASSED, with every line under "messaging + broadcasts — client writes must be DENIED (0018)" ticked. It
   signs in the seeded `student1`, `student2` and `tutor1` and writes one fixture message with the service
   role, which it removes again.
-- [ ] **Apply `drizzle/0019_message_attachments_bucket.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 2.
+- [x] **Apply `drizzle/0019_message_attachments_bucket.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 2.
+  **Applied 2026-09-15** after PR #69 merged (`f1c37e4`); `pnpm db:verify-rls` PASSED on production, including the six bucket checks.
   Run after the Part 2 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
   `pnpm db:verify-rls`. It adds the `messages_body_or_attachment` CHECK and creates the private
   `message-attachments` bucket (10 MB; jpg, png, PDF; no client policies). **Until it runs, attaching a file
