@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 8 Part 5 — admin users and subjects — is BUILT on `phase-8-part5-admin-users-subjects`; PR open, not merged.**
+**Phase 8 Part 5 — admin users and subjects — is MERGED via PR #63 (`1452c03`), deployed, and `0016` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 `/admin/users` (search by email or name, filter by role or suspension), `/admin/users/[id]` (profile,
 sessions, earnings, paginated ledger, plus suspend, audited credit adjustment and promote to admin) and
 `/admin/subjects` (add, rename, hide/show; the slug never changes and nothing is deleted). **One
@@ -18,9 +18,12 @@ falsification pass, all caught, one of them `0016` reverted on the test database
 redirect a signed-out visitor to `/login`. **Not verified:** the pages signed in, at 360px and 1440px
 (batched live test). See DECISIONS, "Phase 8 Part 5".
 
-**Post-merge, TO DO:** apply `0016` to `mipnoxlhurdbaahmvhhx` with `pnpm db:migrate`, then
-`pnpm db:verify-rls` (RUNBOOK). Until then suspend and promote fail on production; credit adjustments
-and subjects work.
+**Post-merge, DONE 2026-09-15.** Daniels ran `pnpm db:migrate` on `main` ("migrations applied
+successfully"; the only output was the usual `drizzle` schema and `__drizzle_migrations` "already
+exists" notices), then `pnpm db:verify-rls` against `mipnoxlhurdbaahmvhhx`: **RLS verification
+PASSED**, including "student cannot promote themselves to admin" and "student cannot change their own
+is_suspended". Suspend and promote now work on production. Still to do: the signed-in page checks
+(batched live test).
 
 **Phase 8 Part 4 — admin control room — is MERGED via PR #60 (`d83cc3d`) and deployed.**
 `/admin` (counts only, in the admin's timezone, plus a live wallet-drift read), `/admin/audit`

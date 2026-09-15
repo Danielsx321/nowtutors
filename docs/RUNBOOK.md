@@ -417,8 +417,9 @@ already-running script.
     re-create — running either of the other two first fails outright, since their
     `vault.decrypted_secrets` lookups find nothing. `app_base_url` on the new project must point at
     whatever URL is now serving production, not at `nowtutors-brown.vercel.app`.
-- [ ] **Apply `drizzle/0016_profiles_guard_trusted_server.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 8
-  Part 5, after its PR merges. Until it runs, `/admin/users` suspend and promote fail on production
+- [x] **Apply `drizzle/0016_profiles_guard_trusted_server.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 8
+  Part 5. **Applied 2026-09-15** after PR #63 merged; `pnpm db:verify-rls` passed with both new guard
+  checks. Kept for reference (and for a fresh production project, where `pnpm db:migrate` covers it). Until it runs, `/admin/users` suspend and promote fail on production
   with a database error (the trigger refuses the server connection); credit adjustments and
   `/admin/subjects` work without it. From `~/nowtutors` on `main`: `pnpm db:migrate`, then
   `pnpm db:verify-rls` (it must still show "student cannot promote themselves to admin" and "student
