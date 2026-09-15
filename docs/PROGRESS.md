@@ -4,7 +4,14 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 8 Part 6 — admin bookings, refunds and acceptance — is BUILT on `phase-8-part6-admin-bookings-acceptance`; PR open, not merged.**
+**PHASE 8 COMPLETE (2026-09-15).** E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) PASSED against the
+test project, run by Daniels on `phase-8-acceptance`: `✓ 1 … → paid → reconcile finds no drift (56.9s)`,
+`1 passed (3.1m)`. In that run `release-earnings` released 1 row (45 credits), the tutor requested and the
+admin approved and marked the withdrawal paid in the browser, and `reconcile-wallets` answered
+`{"ok":true,"drift":false,"walletsChecked":11,"mismatches":0,"totalAbsoluteDrift":0}`. The first run
+failed on a spec selector, not the app (see DECISIONS, "Phase 8 acceptance").
+
+**Phase 8 Part 6 — admin bookings, refunds and acceptance — is MERGED via PR #65 (`969af9d`), and `0017` is APPLIED to `mipnoxlhurdbaahmvhhx`** (Daniels ran `pnpm db:migrate`: "migrations applied successfully"). The build record below is kept as written.
 Money rules were settled with Noora first (2026-09-15, all four recommendations accepted; SPEC §7.3, §7.6,
 §7.11, §18). `/admin/bookings` (filter by status, participant and date) and `/admin/bookings/[id]` with
 **force-cancel** (full credits refund of what the booking debit took; tutor held earnings reversed,
@@ -20,8 +27,8 @@ signed-out visitor to `/login`. The overlap carry-forward is investigated (likel
 production query in DECISIONS §7). **Not yet done:** E2E test 4 run (Daniels runs it, RUNBOOK) and the
 signed-in page checks. See DECISIONS, "Phase 8 Part 6".
 
-**Post-merge, TO DO:** `pnpm db:migrate` on `mipnoxlhurdbaahmvhhx` for `0017` (RUNBOOK). Phase 8 is
-marked complete in SPEC §16 only once E2E test 4's output is recorded.
+**Post-merge, DONE 2026-09-15:** `0017` applied to `mipnoxlhurdbaahmvhhx`; E2E test 4 passed (above); SPEC §16
+marks Phase 8 complete. Still batched: the signed-in page checks (live-test list).
 
 **Phase 8 Part 5 — admin users and subjects — is MERGED via PR #63 (`1452c03`), deployed, and `0016` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 `/admin/users` (search by email or name, filter by role or suspension), `/admin/users/[id]` (profile,

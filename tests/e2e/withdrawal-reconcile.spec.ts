@@ -101,7 +101,9 @@ test("released earnings → withdrawal requested → approved → paid → recon
   const tutorPage = await tutorContext.newPage();
   await signIn(tutorPage, TUTOR_EMAIL, /\/tutor(\/|$)/);
   await tutorPage.goto("/tutor/withdrawals");
-  await tutorPage.getByRole("button", { name: /^request withdrawal$/i }).click();
+  await expect(tutorPage.getByRole("heading", { name: /^withdrawals$/i })).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+  // The label is "Withdraw N credits ($X)" once a payout rate is set (it is, above).
+  await tutorPage.getByRole("button", { name: /^withdraw [\d,]+ credits/i }).click({ timeout: ACTION_TIMEOUT_MS });
   await expect(tutorPage.getByText(/withdrawal requested/i)).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
   await tutorContext.close();
 
@@ -116,7 +118,7 @@ test("released earnings → withdrawal requested → approved → paid → recon
   const adminPage = await adminContext.newPage();
   await signIn(adminPage, ADMIN_EMAIL, /\/admin(\/|$)/);
   await adminPage.goto("/admin/withdrawals?status=requested");
-  await adminPage.getByRole("button", { name: /^approve$/i }).first().click();
+  await adminPage.getByRole("button", { name: /^approve$/i }).first().click({ timeout: ACTION_TIMEOUT_MS });
   await expect
     .poll(async () => (await sql`select status from withdrawal_requests where id = ${requested.id}`)[0]?.status, {
       timeout: ACTION_TIMEOUT_MS,
@@ -125,9 +127,9 @@ test("released earnings → withdrawal requested → approved → paid → recon
 
   const reference = `E2E-${Date.now()}`;
   await adminPage.goto("/admin/withdrawals?status=approved");
-  await adminPage.getByRole("button", { name: /^mark paid$/i }).first().click();
-  await adminPage.getByLabel(/paypal transaction id/i).fill(reference);
-  await adminPage.getByRole("button", { name: /^confirm paid$/i }).click();
+  await adminPage.getByRole("button", { name: /^mark paid$/i }).first().click({ timeout: ACTION_TIMEOUT_MS });
+  await adminPage.getByLabel(/paypal transaction id/i).fill(reference, { timeout: ACTION_TIMEOUT_MS });
+  await adminPage.getByRole("button", { name: /^confirm paid$/i }).click({ timeout: ACTION_TIMEOUT_MS });
   await expect
     .poll(async () => (await sql`select status from withdrawal_requests where id = ${requested.id}`)[0]?.status, {
       timeout: ACTION_TIMEOUT_MS,
