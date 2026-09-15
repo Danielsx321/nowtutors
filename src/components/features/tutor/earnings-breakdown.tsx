@@ -15,6 +15,8 @@ const STATUS = {
   held: { label: "Held", variant: "warning" },
   available: { label: "Available", variant: "success" },
   withdrawn: { label: "Withdrawn", variant: "neutral" },
+  // Phase 8 Part 6: an admin cancelled the session, so these earnings aren't paid.
+  reversed: { label: "Reversed", variant: "danger" },
 } as const;
 
 /**

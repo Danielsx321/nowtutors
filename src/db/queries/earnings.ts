@@ -1,5 +1,5 @@
 import "server-only";
-import { db } from "@/db";
+import { db, type DbTransaction } from "@/db";
 import { tutorEarnings } from "@/db/schema";
 
 /**
@@ -46,9 +46,12 @@ export interface HeldEarning {
  */
 export async function insertHeldEarnings(
   rows: HeldEarning[],
+  // An admin force-complete (Phase 8 Part 6) passes its transaction so the status
+  // change and the earnings row commit together; the cron keeps using `db`.
+  executor: Pick<DbTransaction, "insert"> = db,
 ): Promise<string[]> {
   if (rows.length === 0) return [];
-  const inserted = await db
+  const inserted = await executor
     .insert(tutorEarnings)
     .values(
       rows.map((r) => ({

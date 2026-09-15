@@ -417,6 +417,19 @@ already-running script.
     re-create — running either of the other two first fails outright, since their
     `vault.decrypted_secrets` lookups find nothing. `app_base_url` on the new project must point at
     whatever URL is now serving production, not at `nowtutors-brown.vercel.app`.
+- [ ] **Apply `drizzle/0017_admin_booking_reversals.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 8 Part 6,
+  after its PR merges. It only adds three enum values (`earning_reversal`, `purchase_reversal`,
+  `reversed`). Until it runs, force-cancel of a booking with released earnings, and "Reverse this
+  refund", fail on production with an invalid enum value; everything else in Part 6 works. From
+  `~/nowtutors` on `main`: `pnpm db:migrate`. Confirm with
+  `select enum_range(null::earning_status), enum_range(null::credit_transaction_type);` (both lists end
+  with the new values).
+- [ ] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance.** Test project only;
+  it drives real sign-ins with the seeded password, so a person runs it:
+  `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts`. Needs `pnpm db:seed:test` done at some point
+  and nothing listening on port 3000. It creates a released earning for `tutor3`, requests, approves and
+  marks the withdrawal paid in the browser, then asserts `reconcile-wallets` reports 0 mismatches. Paste
+  the runner output into PROGRESS; SPEC §16 marks Phase 8 complete only with it.
 - [x] **Apply `drizzle/0016_profiles_guard_trusted_server.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 8
   Part 5. **Applied 2026-09-15** after PR #63 merged; `pnpm db:verify-rls` passed with both new guard
   checks. Kept for reference (and for a fresh production project, where `pnpm db:migrate` covers it). Until it runs, `/admin/users` suspend and promote fail on production
