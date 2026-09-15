@@ -4696,3 +4696,28 @@ afterwards. **16/16 caught.**
   and E2E test 7 (Part 4) drives the route for real.
 - `broadcast_viewers.left_at` isn't written. No broadcast chat (Q3). No "going live" notification
   (Phase 10).
+
+## Phase 9 acceptance: E2E tests 6 and 7 (`phase-9-acceptance`)
+
+Plan Step 9. SPEC §16's Phase 9 criterion is "two browsers exchange messages in real time; a broadcast is watchable
+by two viewers". Two specs, one per half, run by a person against the test project.
+
+- **Test 6 asserts "without a reload" literally.** Neither page is reloaded or navigated between a send and the
+  assertion that sees it: the tutor's badge reads 1 on the page they were already on, and the student sees the reply
+  on the thread they were already on. Every unread message to both accounts is marked read first, because the seed
+  leaves one unread in their thread on purpose, so the badge starts from nothing. The two messages are deleted
+  afterwards.
+- **Test 7 checks a picture, not a join.** A viewer counts as watching when some `<video>` the Agora SDK attached has
+  `readyState >= 2` (a decoded frame), read from the page. The plan proposed a `data-remote-playing` attribute set by
+  `ViewerStage`; reading the video element needs no app change and asserts the same thing. Chromium runs with a fake
+  camera and microphone and auto-accepted prompts.
+- **Test 7 checks the rows too:** `ended`, `peak_viewers = 2`, two distinct `broadcast_viewers` users, and tutor3 out
+  of broadcast mode. `peak_viewers` must be exactly 2, which also proves the host wasn't counted.
+- **Leftovers can't wedge a rerun.** Test 7 ends any live broadcast tutor3 was left with before starting, and again
+  in `afterAll`. It refuses to start if tutor3 has an `in_progress` session, rather than altering one.
+- **Budgets.** Realtime delivery 45 s and push events 60 s cover the free-tier Realtime tenant's cold start and the
+  retrying channel's backoff (SPEC §8). A viewer's first frame gets 90 s: a cold token service plus the Agora join.
+  The token service is pinged before anyone joins.
+
+Result: not yet run.
+
