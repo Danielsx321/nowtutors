@@ -106,15 +106,24 @@ test("E2E 6: a student and a tutor exchange messages without reloading", async (
   await expect(tutorPage.getByText(reply)).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
 
   // 4. The student sees the reply without a reload, and the open thread marks it
-  //    read, so their badge goes away.
+  //    read. Marking read is an action the thread fires after the reply paints,
+  //    so wait for the database to say so rather than read it once: a badge
+  //    assertion alone could pass before the reply's own badge bump arrived.
   await expect(studentPage.getByText(reply)).toBeVisible({ timeout: REALTIME_TIMEOUT_MS });
+  const unread = () =>
+    sql<{ body: string }[]>`
+      select body from messages
+       where conversation_id = ${conversationId} and body in (${hello}, ${reply}) and read_at is null
+    `.then((rows) => rows.map((r) => r.body));
+  await expect
+    .poll(unread, { message: "messages still unread", timeout: REALTIME_TIMEOUT_MS, intervals: [1_000] })
+    .toEqual([]);
   await expect(studentPage.getByTestId("unread-badge")).toHaveCount(0, { timeout: REALTIME_TIMEOUT_MS });
 
-  // 5. The database agrees: one row per message, both read.
-  const rows = await sql<{ body: string; read: boolean }[]>`
-    select body, read_at is not null as read from messages
+  // 5. One row per message: nothing was sent twice.
+  const [count] = await sql<{ n: number }[]>`
+    select count(*)::int as n from messages
      where conversation_id = ${conversationId} and body in (${hello}, ${reply})
   `;
-  expect(rows.map((r) => r.body).sort()).toEqual([hello, reply].sort());
-  expect(rows.every((r) => r.read)).toBe(true);
+  expect(count.n).toBe(2);
 });
