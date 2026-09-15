@@ -4,7 +4,10 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 9 Part 4 (acceptance) specs are WRITTEN on `phase-9-acceptance`, not yet run.** E2E test 6
+**PHASE 9 COMPLETE (2026-09-15).** Both acceptance specs PASSED against the test project, run by Daniels on
+`phase-9-acceptance`: E2E test 6 `✓ … exchange messages without reloading (57.1s)`, E2E test 7 `✓ … two signed-in viewers
+watch one broadcast, and both see it end (1.6m)`, `1 passed (2.6m)`. The first runs failed on the tests' setup, not the app
+(DECISIONS, "Phase 9 acceptance"). The build record below is kept as written. **Phase 9 Part 4 (acceptance) specs were WRITTEN on `phase-9-acceptance`.** E2E test 6
 (`tests/e2e/messaging-realtime.spec.ts`: two browsers message each other, badge and reply arrive without a reload)
 and E2E test 7 (`tests/e2e/broadcast-two-viewers.spec.ts`: tutor3 broadcasts with a fake camera, student2 and student1
 watch from `/live`, the host counts 2, both viewers see it end). Typecheck and lint clean; Playwright lists both.

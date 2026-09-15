@@ -4719,5 +4719,21 @@ by two viewers". Two specs, one per half, run by a person against the test proje
   retrying channel's backoff (SPEC §8). A viewer's first frame gets 90 s: a cold token service plus the Agora join.
   The token service is pinged before anyone joins.
 
-Result: not yet run.
+**Result: both PASSED (2026-09-15), run by Daniels against the test project.** Test 6 `(57.1s)`; test 7 `(1.6m)`,
+`1 passed (2.6m)`, with the sweep's warm ping reporting the token service up (`agoraWarmPing ok, 200`).
+
+**The first runs failed on test setup, never on the app:**
+- **Test 6** passed every realtime step, then read "both messages read" once, straight after a badge assertion that can
+  pass before the reply is marked read. It now waits for the database (polling up to 45 s) and names any message still
+  unread.
+- **Test 7, first run:** `.env.test` had carried placeholder Agora values since the test project was set up (token
+  service `localhost:9999`, a different App ID). No earlier E2E test touched video, so nothing noticed. With Daniels'
+  approval the real `NEXT_PUBLIC_AGORA_APP_ID` and `AGORA_TOKEN_SERVICE_URL` were copied from `.env.local`; the token
+  service only mints short-lived tokens, so sharing it with production is safe.
+- **Test 7, second run:** the spec pinged the token service directly from the Playwright runner, which has no CA bundle
+  for this machine ("unable to get local issuer certificate"). It now wakes the service through the app's own
+  `sweep-presence` (the server runs under `with-ca-certs.mjs`), up to three tries.
+
+SPEC §16 marks Phase 9 COMPLETE. Still open outside the acceptance criterion: the Agora `live` mode check on production and
+the batched signed-in live checks (items 10 to 12).
 

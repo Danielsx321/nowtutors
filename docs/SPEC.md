@@ -1940,7 +1940,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 
 **Phase 9 — Messaging and broadcasts.** Conversations, threads, Realtime, unread badges; broadcast create/host/view, `/live`.
 *Accept:* two browsers exchange messages in real time; a broadcast is watchable by two viewers.
-*Status:* Parts 1 (messaging) and 2 (attachments) merged, with `0018` and `0019` on production. Part 3 (live broadcasts, `0020`) built on `phase-9-part3-broadcasts`. Part 4 is the acceptance run: E2E tests 6 and 7.
+*Status:* **COMPLETE 2026-09-15.** E2E test 6 passed (57.1s: student2 and tutor3 exchanged messages, the badge and the reply arrived without a reload, both marked read) and E2E test 7 passed (1.6m: tutor3 broadcast with a fake camera, student2 and student1 both played the host's video, the host counted 2, both saw it end; the row read `ended`, `peak_viewers = 2`), both against the test project. Parts 1 to 3 merged (PRs #67, #69, #71); migrations `0018` to `0020` applied to production. See PROGRESS and DECISIONS, "Phase 9 acceptance".
 
 **Phase 10 — Email, polish, launch prep.** All templates, reminder cron, empty/loading/error states everywhere, accessibility pass, Lighthouse pass, `RUNBOOK.md` complete, production env configured, LessonSpace waiting room set, PayPal live credentials, one supervised real-card test.
 *Accept:* the runbook checklist is fully ticked.
