@@ -42,7 +42,7 @@ _The steps below are the original post-merge list, kept for reference:_
 2. Run `drizzle/snippets/pg_cron_expire_unpaid.sql`.
 3. Confirm both in `select jobid, jobname, schedule, active from cron.job;`.
 
-**Sentry, 2026-09-15:** `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are now set on Vercel Production (Daniels, then redeployed; the DSN was confirmed in the live client bundle), so drift raises a Sentry error. Still empty in the dev Mac's `.env.local`, which is fine. The first 03:00 UTC scheduled response was not read before this session closed.
+**Sentry, 2026-09-15:** `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are now set on Vercel Production (Daniels, then redeployed; the DSN was confirmed in the live client bundle), so drift raises a Sentry error. Still empty in the dev Mac's `.env.local`, which is fine. The first 03:00 UTC scheduled response was not read before this session closed. **Alert path verified end to end, 2026-09-15:** a test error sent through the live site's own Sentry client (event `16b920af`, `/login`, environment `vercel-production`) created an issue in the `javascript-nextjs-10` project, and Daniels received the email from the default rule "Send a notification for high priority issues". A console-typed `throw` is not a valid test: Chrome doesn't report DevTools console errors to Sentry.
 
 **Phase 8 Part 2 — withdrawals — is MERGED via PR #55 (`e34404b`), and migration `0015` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 Tutor request (whole balance, `withdrawal_hold` debit), admin queue at `/admin/withdrawals`
