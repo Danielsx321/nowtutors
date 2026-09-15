@@ -19,7 +19,7 @@ export const DropdownMenuContent = React.forwardRef<
       data-slot="popover"
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-48 overflow-hidden rounded-md border border-gray-200 bg-white p-1 text-gray-700 shadow-md",
+        "z-50 min-w-48 overflow-hidden rounded-md border border-border bg-surface-raised p-1 text-text shadow-md",
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ export const DropdownMenuItem = React.forwardRef<
     ref={ref}
     className={cn(
       "flex cursor-pointer select-none items-center gap-2 rounded-sm px-3 py-2 text-body outline-none transition-colors",
-      "focus:bg-purple-100 focus:text-purple-700",
+      "focus:bg-surface-muted focus:text-text",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       destructive && "text-danger focus:bg-danger/10 focus:text-danger",
       "[&_svg]:size-4 [&_svg]:shrink-0",
@@ -58,7 +58,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
     checked={checked}
     className={cn(
       "relative flex cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-3 text-body outline-none",
-      "focus:bg-purple-100 focus:text-purple-700",
+      "focus:bg-surface-muted focus:text-text",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}
@@ -66,7 +66,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
   >
     <span className="absolute left-2 grid place-items-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="size-4 text-purple-500" />
+        <Check className="size-4 text-accent" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -80,7 +80,7 @@ export const DropdownMenuLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-3 py-1.5 text-caption font-medium text-gray-500", className)}
+    className={cn("px-3 py-1.5 text-caption font-medium text-text-muted", className)}
     {...props}
   />
 ));
@@ -92,7 +92,7 @@ export const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("my-1 h-px bg-gray-200", className)}
+    className={cn("my-1 h-px bg-surface-muted", className)}
     {...props}
   />
 ));

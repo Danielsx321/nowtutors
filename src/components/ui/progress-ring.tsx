@@ -14,7 +14,7 @@ export interface ProgressRingProps
 
 /**
  * Circular progress indicator — the instant-request 60-second countdown ring
- * (SPEC §10.2). Turns from purple → warning → danger as it empties.
+ * (SPEC §10.2). Ink while calm, warning then danger as it empties.
  */
 export function ProgressRing({
   value,
@@ -29,7 +29,7 @@ export function ProgressRing({
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
   const color =
-    v > 0.5 ? "text-purple-500" : v > 0.2 ? "text-warning" : "text-danger";
+    v > 0.5 ? "text-primary" : v > 0.2 ? "text-warning" : "text-danger";
 
   return (
     <div
@@ -46,7 +46,7 @@ export function ProgressRing({
           r={r}
           fill="none"
           strokeWidth={strokeWidth}
-          className="text-gray-200"
+          className="text-border"
           stroke="currentColor"
         />
         <circle
@@ -63,7 +63,7 @@ export function ProgressRing({
         />
       </svg>
       {label != null && (
-        <span className="absolute text-body font-bold text-gray-700">
+        <span className="absolute text-body font-bold text-text">
           {label}
         </span>
       )}

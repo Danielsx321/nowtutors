@@ -12,9 +12,9 @@ export const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      "focus-ring peer grid size-5 shrink-0 place-items-center rounded-sm border border-gray-500 bg-white transition-colors",
-      "data-[state=checked]:border-purple-500 data-[state=checked]:bg-purple-500 data-[state=checked]:text-white",
-      "data-[state=indeterminate]:border-purple-500 data-[state=indeterminate]:bg-purple-500 data-[state=indeterminate]:text-white",
+      "focus-ring peer grid size-5 shrink-0 place-items-center rounded-sm border border-border-strong bg-surface-raised transition-colors",
+      "data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-on-primary",
+      "data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-on-primary",
       "disabled:cursor-not-allowed disabled:opacity-50",
       className,
     )}

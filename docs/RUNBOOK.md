@@ -453,6 +453,12 @@ already-running script.
   `select indexdef from pg_indexes where indexname = 'broadcasts_one_live_per_tutor';` (one row). No new env
   var and no new cron: the deploy gives `sweep-presence` its stale-broadcast half, and its response gains
   `broadcastsEnded`.
+- [ ] **Design overhaul (Phase 9.5), Part 1 review**: no migration and no prod step for any part of the
+  overhaul. Two checks on the Part 1 Vercel preview before Part 2 starts: (a) open `/dev/kitchen-sink` at 360px
+  on a real Android phone and confirm Funnel Sans reads at 13px (the "small" row in the Tokens section); if it
+  doesn't, the drop-in swap is Schibsted Grotesk (display) plus Figtree (text) in `src/app/layout.tsx` and
+  `globals.css`, recorded in DECISIONS; (b) send Noora the preview link to `/dev/kitchen-sink` for the six
+  assumptions listed in PROGRESS. Parts 2 to 6 each add nothing here.
 - [ ] **Agora `live` mode check**: Phase 9 Part 3. Broadcasts use the same App ID and token service as
   instant sessions, in `live` mode (host plus audience at the low-latency level). After the deploy, a tutor
   starts a broadcast on production and a signed-in student in another browser opens it from `/live`: the

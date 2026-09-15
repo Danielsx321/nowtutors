@@ -1,49 +1,101 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Brand tokens — SPEC §10.1. This file is the ONLY place raw colour values,
-   font sizes, radii, and shadows are allowed to live. Everything else styles
-   through the Tailwind utilities these tokens generate.
+   Design tokens — SPEC §10.1, docs/DESIGN.md. This file is the ONLY place raw
+   colour values, font sizes, radii and shadows live. Components reference
+   roles (surface, text, primary, signal, live...) never colours, so a palette
+   change is an edit here and nowhere else.
+
+   Two themes, same roles: light on `:root`, dark under `.theme-dark`. The
+   dark scope is for the live rooms (session, classroom, broadcast viewer) and
+   for dark islands like the footer. No component knows which theme it is in.
+
+   `src/lib/design/tokens.ts` holds the same values as data; the unit test
+   `tests/unit/design-tokens.test.ts` checks the two agree and that every
+   sanctioned pair clears its WCAG floor.
    ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-muted: #F4F5F7;
+  --surface-inverse: #15171C;
+  --text: #15171C;
+  --text-muted: #5A6070;
+  --text-on-inverse: #FFFFFF;
+  --primary: #15171C;
+  --on-primary: #FFFFFF;
+  --signal: #FEE401;
+  --on-signal: #15171C;
+  --accent: #6B2A8A;
+  --live: #1E7A46;
+  --live-surface: #E6F7EC;
+  --border: #E4E6EA;
+  --border-strong: #8A909C;
+  --focus: #6B2A8A;
+  --danger: #B3261E;
+  --on-danger: #FFFFFF;
+  --danger-surface: #FBEAE9;
+  --warning: #8A5A00;
+  --warning-surface: #FFF4D6;
+  --success: #1E7A46;
+  --success-surface: #E6F7EC;
+
+  /* Scrim behind modals and drawers: the inverse surface at 60%. */
+  --scrim: rgb(21 23 28 / 0.6);
+
+  color-scheme: light;
+}
+
+.theme-dark {
+  --surface: #111216;
+  --surface-raised: #1B1D23;
+  --surface-muted: #1B1D23;
+  --surface-inverse: #15171C;
+  --text: #F2F3F5;
+  --text-muted: #A4A9B4;
+  --text-on-inverse: #FFFFFF;
+  --primary: #F2F3F5;
+  --on-primary: #15171C;
+  --signal: #FEE401;
+  --on-signal: #111216;
+  --accent: #D2A8EA;
+  --live: #5FD68A;
+  --live-surface: #1B1D23;
+  --border: #2A2E37;
+  --border-strong: #6B7280;
+  --focus: #D2A8EA;
+  --danger: #FF8A80;
+  --on-danger: #111216;
+  --danger-surface: #1B1D23;
+  --warning: #FFC857;
+  --warning-surface: #1B1D23;
+  --success: #5FD68A;
+  --success-surface: #1B1D23;
+
+  --scrim: rgb(0 0 0 / 0.7);
+
+  color-scheme: dark;
+}
+
 @theme {
-  /* Brand */
-  --color-purple-500: #8434a8; /* primary on LIGHT surfaces only — buttons, links, active states. FILL-ONLY on ink (1.34:1 as text/border — forbidden). */
-  --color-purple-700: #6b2a8a; /* hover */
-  --color-purple-100: #f3e8f8; /* tints, selected backgrounds */
+  /* Tailwind's own palette is gone: every colour utility below comes from a
+     role. `bg-red-500` no longer exists on purpose. */
+  --color-*: initial;
 
-  /* Ink — ONE surface, hue-210 ramp (sampled from the Bubble shell). There is a
-     single ink surface (#34495E); a card/dropdown/drawer on ink cannot separate
-     by being lighter — it separates by an ink-700 border or a shadow. ink-800 is
-     an INTERACTION state (hover/pressed), NEVER a surface. */
-  --color-ink-1000: #1c2733; /* near-black footer surface, darker than ink-950 (Bubble parity) */
-  --color-ink-950: #263544; /* active nav item, modal scrim */
-  --color-ink-900: #34495e; /* THE surface: shell, topbar, cards */
-  --color-ink-800: #3e566e; /* hover / pressed on ink — NOT a surface */
-  --color-ink-700: #4a6076; /* borders, dividers on ink */
-  --color-ink-300: #acbac8; /* muted / secondary text on ink (4.69:1) */
-
-  --color-gold-400: #fee401; /* CTA + focus ring on ink — high contrast (7.22:1) */
-  --color-live-500: #44c96f; /* live indicators only — dots, pulses (non-text) */
-  --color-live-400: #4fd179; /* LIVE badge fill — carries ink-900 text (4.75:1) */
-
-  /* Neutrals */
-  --color-white: #ffffff;
-  --color-gray-50: #fafafb;
-  --color-gray-200: #e7e5ea;
-  --color-gray-500: #6e6880;
-  --color-gray-700: #453d57;
-
-  /* Semantic */
-  --color-success: #44c96f;
-  --color-warning: #f5a524;
-  --color-danger: #e5484d;
-
-  /* Type — the DM Sans face is provided by next/font via --font-dm-sans */
-  --font-sans: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui,
+  /* Type. The three faces are loaded by next/font in src/app/layout.tsx and
+     exposed as --font-funnel-display, --font-funnel-sans and --font-dm-sans.
+     `font-display` for titles and names, `font-sans` for everything else,
+     `font-wordmark` for the logo only (pinned so the app face can change
+     without touching the wordmark). */
+  --font-display: var(--font-funnel-display), "Funnel Display", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-sans: var(--font-funnel-sans), "Funnel Sans", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-wordmark: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui,
     sans-serif;
 
-  /* Type scale — SPEC §10.1. Paired size/leading so `text-h1` (etc.) carries
-     its own line-height (Phase 2 amendment #3). */
+  /* Type scale. Paired size/leading so `text-h1` (etc.) carries its own
+     line-height. */
   --text-display: 40px;
   --text-display--line-height: 44px;
   --text-h1: 32px;
@@ -61,59 +113,128 @@
   --text-caption: 12px;
   --text-caption--line-height: 16px;
 
-  /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  /* Radii, derived from one base. Controls `md`, cards `xl` (20px outer with
+     a 14px photo inset), chips and primary buttons `full`. */
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 6px); /* 6px */
+  --radius-md: calc(var(--radius) - 2px); /* 10px */
+  --radius-lg: calc(var(--radius) + 2px); /* 14px, photo insets */
+  --radius-xl: calc(var(--radius) + 8px); /* 20px, cards */
   --radius-full: 9999px;
 
-  /* Elevation — subtle, brand-tinted rather than pure black */
-  --shadow-sm: 0 1px 2px 0 rgb(51 32 66 / 0.06);
-  --shadow-md: 0 4px 12px -2px rgb(51 32 66 / 0.1);
-  --shadow-lg: 0 12px 32px -8px rgb(51 32 66 / 0.18);
+  /* Elevation. Cards have no shadow at rest (they separate by border); these
+     are for things that float: popovers, drawers, modals. */
+  --shadow-sm: 0 1px 2px 0 rgb(21 23 28 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(21 23 28 / 0.1);
+  --shadow-lg: 0 12px 32px -8px rgb(21 23 28 / 0.18);
 
   /* Layout */
   --container-page: 1200px;
 
   /* Motion — shared easing for the hand-rolled Radix keyframes below */
   --ease-out-brand: cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  /* Focus rings — SPEC §10.3. Two tokens, one per surface: purple is invisible
-     on ink (1.34:1, below the 3:1 non-text floor), so ink surfaces ring in gold. */
-  --focus-ring: var(--color-purple-500); /* light surfaces */
-  --focus-ring-on-ink: var(--color-gold-400); /* ink surfaces */
+/* Role → utility mapping. `inline` so the utilities read the variable at use
+   time and pick up the `.theme-dark` override. */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-on-inverse: var(--text-on-inverse);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-signal: var(--signal);
+  --color-on-signal: var(--on-signal);
+  --color-accent: var(--accent);
+  --color-live: var(--live);
+  --color-live-surface: var(--live-surface);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-focus: var(--focus);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-scrim: var(--scrim);
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     COMPATIBILITY ALIASES — REMOVE IN PART 6 of the design overhaul.
+     The old colour-named utilities (`bg-ink-900`, `text-gray-500`...) still
+     appear in pages that Parts 2 to 5 convert. Each maps to the nearest role
+     so nothing goes invisible in between. Deleting this block is the proof
+     the sweep is finished: `pnpm typecheck && pnpm build` fail on any leftover.
+     ═══════════════════════════════════════════════════════════════════════ */
+  --color-white: var(--text-on-inverse);
+  --color-black: var(--surface-inverse);
+  --color-ink-1000: var(--surface-inverse);
+  --color-ink-950: var(--surface-inverse);
+  --color-ink-900: var(--surface-inverse);
+  --color-ink-800: var(--border-strong);
+  --color-ink-700: var(--border-strong);
+  --color-ink-300: var(--border);
+  --color-purple-50: var(--surface-muted);
+  --color-purple-100: var(--surface-muted);
+  --color-purple-300: var(--accent);
+  --color-purple-500: var(--accent);
+  --color-purple-700: var(--accent);
+  --color-gold-400: var(--signal);
+  --color-live-500: var(--live);
+  --color-live-400: var(--live);
+  --color-gray-50: var(--surface-muted);
+  --color-gray-100: var(--surface-muted);
+  --color-gray-200: var(--border);
+  --color-gray-300: var(--border);
+  --color-gray-400: var(--border-strong);
+  --color-gray-500: var(--text-muted);
+  --color-gray-700: var(--text);
+  --color-red-500: var(--danger);
+  /* ═══════════════════════ END COMPATIBILITY ALIASES ══════════════════════ */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
    Base
    ───────────────────────────────────────────────────────────────────────── */
 body {
+  background-color: var(--surface);
+  color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
 }
 
-/* Focus rings — SPEC §10.3. Two surface-specific utilities, 2px / 2px offset.
-   `.focus-ring` (purple) is the default for light-surface primitives;
-   `.focus-ring-on-ink` (gold) is used by anything rendered on an ink surface,
-   where a purple ring would be invisible. */
+/* Titles, names and the hero set in the display face. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+/* Numbers line up in tables and money surfaces. */
+table,
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus ring for every surface (SPEC §10.3): 2px accent, 2px offset.
+   Interactive content on a dark background sits inside `.theme-dark`, so the
+   ring re-resolves to the dark accent there and stays at or above 3:1. */
 @utility focus-ring {
   outline: none;
   &:focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
-  }
-}
-@utility focus-ring-on-ink {
-  outline: none;
-  &:focus-visible {
-    outline: 2px solid var(--focus-ring-on-ink);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 }
 
-/* Page container — 1200px max, 20px gutter mobile / 24px desktop (§10.1).
-   Desktop gutter tightened 32→24 in the density pass (denser, Bubble-comparable). */
+/* Page container — 1200px max, 20px gutter mobile / 24px desktop. Pages are
+   full-bleed by default; this is for the rare boxed reading-width page. */
 @utility container-page {
   width: 100%;
   max-width: var(--container-page);
@@ -125,10 +246,10 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Radix animation keyframes — hand-rolled, no animation dependency (Phase 2
-   amendment #4). Enter/exit are driven by Radix `data-state` attributes on the
-   primitives. All motion is gated behind `prefers-reduced-motion` at the
-   bottom of this file.
+   Keyframes — hand-rolled, no animation dependency. Enter/exit are driven by
+   Radix `data-state` attributes on the primitives. Live-signal motion (ring,
+   pulse) lives here too. All motion is gated behind `prefers-reduced-motion`
+   at the bottom of this file.
    ───────────────────────────────────────────────────────────────────────── */
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
@@ -146,12 +267,21 @@ body {
 @keyframes popover-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { 100% { transform: translateX(100%); } }
+/* The live dot breathes; the on-air ring glows. Both have static fallbacks. */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+@keyframes on-air {
+  0%, 100% { box-shadow: 0 0 0 3px var(--signal), 0 0 0 5px transparent; }
+  50% { box-shadow: 0 0 0 3px var(--signal), 0 0 0 7px rgb(254 228 1 / 0.35); }
+}
 
-/* Overlays (Modal, Drawer scrim) */
+/* Overlays (Modal, Drawer, AlertDialog scrim) */
 [data-slot="overlay"][data-state="open"] { animation: overlay-in 150ms var(--ease-out-brand); }
 [data-slot="overlay"][data-state="closed"] { animation: overlay-out 120ms var(--ease-out-brand); }
 
-/* Centred dialog (Modal) */
+/* Centred dialogs (Modal, AlertDialog) */
 [data-slot="modal-content"][data-state="open"] { animation: dialog-in 180ms var(--ease-out-brand); }
 [data-slot="modal-content"][data-state="closed"] { animation: dialog-out 140ms var(--ease-out-brand); }
 
@@ -165,10 +295,13 @@ body {
 
 .animate-spin-brand { animation: spin 0.7s linear infinite; }
 .animate-shimmer::after { animation: shimmer 1.4s infinite; }
+.animate-pulse-live { animation: pulse-live 1.6s ease-in-out infinite; }
+.animate-on-air { animation: on-air 2s ease-in-out infinite; }
 
 /* ─────────────────────────────────────────────────────────────────────────
    Reduced motion — SPEC §10.3. Kill every animation/transition, including the
-   Radix keyframes above.
+   Radix keyframes above. The live dot and on-air ring fall back to their
+   static first frame (a solid dot, a solid ring).
    ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

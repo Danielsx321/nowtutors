@@ -50,7 +50,7 @@ export function Pagination({
       {...props}
     >
       <button
-        className={cn(btn, "text-gray-500 hover:bg-gray-50")}
+        className={cn(btn, "text-text-muted hover:bg-surface-muted")}
         onClick={() => go(page - 1)}
         disabled={page <= 1}
         aria-label="Previous page"
@@ -59,7 +59,7 @@ export function Pagination({
       </button>
       {pages.map((p, i) =>
         p === "…" ? (
-          <span key={`e${i}`} className="grid size-9 place-items-center text-gray-500">
+          <span key={`e${i}`} className="grid size-9 place-items-center text-text-muted">
             …
           </span>
         ) : (
@@ -68,8 +68,8 @@ export function Pagination({
             className={cn(
               btn,
               p === page
-                ? "bg-purple-500 text-white"
-                : "text-gray-700 hover:bg-gray-50",
+                ? "bg-primary text-on-primary"
+                : "text-text hover:bg-surface-muted",
             )}
             onClick={() => go(p)}
             aria-current={p === page ? "page" : undefined}
@@ -80,7 +80,7 @@ export function Pagination({
         ),
       )}
       <button
-        className={cn(btn, "text-gray-500 hover:bg-gray-50")}
+        className={cn(btn, "text-text-muted hover:bg-surface-muted")}
         onClick={() => go(page + 1)}
         disabled={page >= pageCount}
         aria-label="Next page"

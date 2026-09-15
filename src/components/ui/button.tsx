@@ -4,26 +4,33 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 
+/**
+ * Buttons are pills (DESIGN.md, "Shape"). `primary` is the ink fill and the
+ * default action everywhere; `signal` is the yellow fill and is reserved for
+ * live actions ("Request now", "Go live", "Join"): it is the product's one
+ * loud colour and must stay rare.
+ */
 const buttonVariants = cva(
   // base
-  "focus-ring relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "focus-ring relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        primary: "bg-purple-500 text-white hover:bg-purple-700",
+        primary: "bg-primary text-on-primary hover:bg-primary/85",
         secondary:
-          "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
-        ghost: "text-purple-500 hover:bg-purple-100",
-        danger: "bg-danger text-white hover:brightness-95",
-        // On-ink variants (SPEC §10.1): purple is fill-only-with-white-text and is
-        // avoided entirely on ink surfaces here — gold/white carry the contrast instead.
-        ink: "bg-gold-400 text-ink-900 hover:brightness-95",
-        "ink-ghost": "text-white hover:bg-ink-800",
+          "border border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
+        ghost: "text-text hover:bg-surface-muted",
+        signal: "bg-signal text-on-signal hover:brightness-95",
+        danger: "bg-danger text-on-danger hover:brightness-95",
+        /** @deprecated alias of `signal`. REMOVE IN PART 6. */
+        ink: "bg-signal text-on-signal hover:brightness-95",
+        /** @deprecated white ghost for the old ink header, gone with it. REMOVE IN PART 6. */
+        "ink-ghost": "text-text-on-inverse hover:bg-text-on-inverse/10",
       },
       size: {
-        sm: "h-9 px-3 text-small [&_svg]:size-4",
-        md: "h-11 px-4 text-body [&_svg]:size-5",
-        lg: "h-12 px-6 text-body-lg [&_svg]:size-5",
+        sm: "h-9 px-4 text-small [&_svg]:size-4",
+        md: "h-11 px-5 text-body [&_svg]:size-5",
+        lg: "h-12 px-7 text-body-lg [&_svg]:size-5",
         icon: "size-11 [&_svg]:size-5",
       },
     },

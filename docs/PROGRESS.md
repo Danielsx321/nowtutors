@@ -4,6 +4,29 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**DESIGN OVERHAUL ("Phase 9.5") Part 1, foundation, is BUILT on `design-part1-foundation`, PR open, not merged.**
+The client said the design looked dated; Daniels decided (2026-09-15) the redesign comes before Phase 10, name and
+logo kept. Six PR-sized parts, no migration, no money or booking rule change; the plan is in the workspace at
+`plans/2026-09-15-nowtutors-design-overhaul.md`, the research under
+`outputs/deep-research/2026-09-15-nowtutors-design-overhaul/`. Part 1 built: semantic tokens in `globals.css` (light
+on `:root`, dark under `.theme-dark`, Tailwind's palette switched off, a compatibility-alias block headed REMOVE IN
+PART 6 so every unconverted page stays legible), Funnel Display + Funnel Sans + DM Sans (wordmark only) via
+`next/font`, `docs/DESIGN.md` (the design contract: token roles, type, shape, the live-signal rule, the wordmark
+rule, the banned list), `src/lib/design/{contrast,tokens}.ts` and `tests/unit/design-tokens.test.ts` (74 cases:
+every sanctioned pair clears its WCAG floor in both themes, `globals.css` matches `tokens.ts`, no raw hex in `src/`
+outside the token files), all 34 primitives restyled onto the roles (buttons are pills, `signal` variant added,
+tracked all-caps table headers gone, `numeric` cells), new primitives `AlertDialog`, `Progress`, `StatRow`,
+`LiveChip` (replaces `LivePill`, which now re-exports it), `OnAirRing`, `Money`, and `Wordmark` in
+`components/layout/`. `@radix-ui/react-alert-dialog` and `@radix-ui/react-progress` added (SPEC §2). SPEC §10
+rewritten, §16 gained the Phase 9.5 row; DECISIONS "Design overhaul Part 1" has the 19 settled points. Kitchen sink
+toggles light / dark and opens with a Tokens table showing every pair's computed ratio. **Deviation from the plan:**
+the old `surface="ink"` props still render (on the inverse tokens) rather than being ignored, because ignoring them
+would have painted white text onto white cards on the profile, tutor card and topbar until Part 3 (DECISIONS §5).
+Gates: typecheck and lint clean, 675 unit (74 new), 50 DOM, build passed. **Assumptions for Noora to confirm before
+Part 3:** Direction A, yellow kept (rationed to the live signal and wordmark), the wordmark block treatment, photos
+required at approval, reviews deferred, guarantee wording. **Next:** Daniels merges PR; Part 2 (shell) starts from
+`main`.
+
 **PHASE 9 COMPLETE (2026-09-15).** Both acceptance specs PASSED against the test project, run by Daniels on
 `phase-9-acceptance`: E2E test 6 `✓ … exchange messages without reloading (57.1s)`, E2E test 7 `✓ … two signed-in viewers
 watch one broadcast, and both see it end (1.6m)`, `1 passed (2.6m)`. The first runs failed on the tests' setup, not the app
