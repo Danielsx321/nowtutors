@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/layout/wordmark";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { NavItem } from "@/components/layout/nav-config";
 
-function itemIsActive(pathname: string, href: string) {
+export function itemIsActive(pathname: string, href: string) {
   // Exact match for role-root links (e.g. /tutor), prefix match otherwise, so
   // /tutor doesn't light up on /tutor/bookings.
   const segments = href.split("/").filter(Boolean);
@@ -14,45 +16,77 @@ function itemIsActive(pathname: string, href: string) {
 }
 
 /**
- * The nav list for the authenticated shell. Dark-surface styling: white/gold
- * text, purple used only as a fill on the active item (SPEC §10.1 — purple on
- * ink fails contrast for small text, so it is never text on ink here).
+ * The nav list for the authenticated shell. Light surface: the active item is
+ * a muted fill with an accent bar down its left edge, which reads at a glance
+ * without colouring the text.
+ *
+ * `collapsed` is the tablet rail (md to lg): icons only, label in a tooltip,
+ * but the accessible name stays on the link so the E2E's
+ * `getByRole("link", { name: /^messages/i })` keeps matching at every width.
  */
 export function SidebarNav({
   items,
+  collapsed,
   onNavigate,
 }: {
   items: NavItem[];
+  collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-col gap-1" aria-label="Primary">
+    <nav className="flex flex-col gap-0.5" aria-label="Primary">
       {items.map((item) => {
         const active = itemIsActive(pathname, item.href);
         const Icon = item.icon;
-        return (
+        const link = (
           <Link
-            key={item.href}
             href={item.href}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "focus-ring-on-ink flex items-center gap-3 rounded-md px-3 py-2.5 text-body font-medium transition-colors",
+              "focus-ring relative flex items-center gap-3 rounded-md text-body font-medium transition-colors",
+              collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5",
               active
-                ? "bg-purple-500 text-white"
-                : "text-gray-200 hover:bg-ink-800 hover:text-white",
+                ? "bg-surface-muted text-text"
+                : "text-text-muted hover:bg-surface-muted hover:text-text",
             )}
           >
-            <Icon className="size-5 shrink-0" aria-hidden />
-            {item.label}
+            {active && (
+              <span
+                className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent"
+                aria-hidden
+              />
+            )}
+            <Icon
+              className={cn("size-5 shrink-0", active && "fill-current/10")}
+              aria-hidden
+            />
+            <span className={cn(collapsed && "sr-only")}>{item.label}</span>
           </Link>
+        );
+        return (
+          <div key={item.href} className={cn(item.groupStart && "mt-3 border-t border-border pt-3")}>
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : (
+              link
+            )}
+          </div>
         );
       })}
     </nav>
   );
 }
 
+/**
+ * Desktop sidebar. Hidden below `md`, an icon rail between `md` and `lg`
+ * (where a 256px sidebar eats a third of the screen), full width at `lg`.
+ * Below `md` the same items live in the bottom bar and its More drawer.
+ */
 export function Sidebar({
   items,
   roleLabel,
@@ -61,16 +95,21 @@ export function Sidebar({
   roleLabel: string;
 }) {
   return (
-    <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-ink-900 p-4 md:flex">
-      <div className="flex items-center gap-2 px-2 pt-2">
-        <span className="text-h3 font-bold text-white">
-          Now<span className="text-gold-400">Tutors</span>
-        </span>
-      </div>
-      <p className="px-3 text-caption font-medium uppercase tracking-wide text-ink-300">
-        {roleLabel}
-      </p>
-      <SidebarNav items={items} />
-    </aside>
+    <>
+      <aside className="hidden w-16 shrink-0 flex-col gap-6 border-r border-border bg-surface px-2 py-4 md:flex lg:hidden">
+        <div className="grid place-items-center" aria-hidden>
+          <span className="font-wordmark text-h3 font-bold text-text">N</span>
+        </div>
+        <SidebarNav items={items} collapsed />
+      </aside>
+
+      <aside className="hidden w-64 shrink-0 flex-col gap-5 border-r border-border bg-surface p-4 lg:flex">
+        <div className="px-2 pt-2">
+          <Wordmark href="/" size="sm" />
+        </div>
+        <p className="px-3 text-caption font-medium text-text-muted">{roleLabel}</p>
+        <SidebarNav items={items} />
+      </aside>
+    </>
   );
 }

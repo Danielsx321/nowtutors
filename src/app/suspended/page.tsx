@@ -1,6 +1,6 @@
-import { GraduationCap, ShieldAlert } from "lucide-react";
-import Link from "next/link";
+import { ShieldAlert } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Wordmark } from "@/components/layout/wordmark";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/actions/auth";
 
@@ -9,15 +9,9 @@ export const metadata = { title: "Account suspended · NowTutors" };
 /** Where requireRole() sends a suspended account (SPEC §5). */
 export default function SuspendedPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-surface-muted">
       <header className="container-page py-6">
-        <Link
-          href="/"
-          className="focus-ring inline-flex items-center gap-2 rounded-sm text-h3 font-bold text-gray-700"
-        >
-          <GraduationCap className="size-6 text-purple-500" aria-hidden />
-          NowTutors
-        </Link>
+        <Wordmark href="/" size="sm" />
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-16">
         <EmptyState

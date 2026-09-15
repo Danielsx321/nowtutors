@@ -1,21 +1,14 @@
-import Link from "next/link";
-import { GraduationCap } from "lucide-react";
+import { Wordmark } from "@/components/layout/wordmark";
 
 /**
- * Public auth shell — a centered card on the light surface (SPEC §6, §10). Auth
+ * Public auth shell: a centred card on the muted canvas (SPEC §6, §10). Auth
  * pages are public; per-page server logic redirects an already-signed-in user.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-surface-muted">
       <header className="w-full px-4 py-6 md:px-6">
-        <Link
-          href="/"
-          className="focus-ring inline-flex items-center gap-2 rounded-sm text-h3 font-bold text-gray-700"
-        >
-          <GraduationCap className="size-6 text-purple-500" aria-hidden />
-          NowTutors
-        </Link>
+        <Wordmark href="/" size="sm" />
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="w-full max-w-md">{children}</div>
