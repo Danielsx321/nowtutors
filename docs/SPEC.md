@@ -248,6 +248,14 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 
 **`subjects`** — `id, name, slug unique, icon, sort_order, is_active`. Seeded (Section 18 open question: the canonical list).
 
+> **Admin-managed from `/admin/subjects` (Phase 8 Part 5).** An admin can add, rename, hide and show subjects, and each change writes `audit_log` (`subject.create`, `subject.rename`, `subject.deactivate`, `subject.activate`).
+>
+> - **Slug:** set once at creation with the seed's slugify rules, and never changed by a rename. It's what browse filters and the onboarding and profile forms send.
+> - **Names:** 2 to 80 characters, unique ignoring case.
+> - **No delete.** `bookings`, `session_requests` and `broadcasts` reference `subjects.id` with no cascade, and `tutor_subjects` / `student_subjects` cascade, so a delete would either fail or silently strip subjects from profiles.
+> - **Hiding** (`is_active = false`) drops a subject from browse, onboarding, the tutor profile editor and the booking subject list, which already filter on it. Tutors who teach it keep the row, and their public profile still lists it.
+> - **New subjects** go to the end of `sort_order`. There's no reordering UI.
+
 **`tutor_subjects`** — `tutor_id, subject_id, level enum('beginner','intermediate','advanced','all')`. PK `(tutor_id, subject_id)`.
 
 **`student_subjects`** — a student's **subjects of interest**, collected at onboarding (§7.1). `student_id uuid FK → profiles.id, subject_id uuid FK → subjects.id`, PK `(student_id, subject_id)`, index on `(student_id)`. **No `level`** (levels are a tutor concept). References `subjects.id` by FK — deliberately not a slug array — so an admin subject rename can never orphan a stored interest (see DECISIONS). RLS: the owning student reads and writes only their own rows; **no public read** (unlike `tutor_subjects`). Migration `drizzle/0009_student_subjects.sql`.
@@ -577,6 +585,12 @@ Policy summary:
 > **An action called from a layout must guard the same way that layout does.** `requireRole('tutor')` enforces approval by default; the `(tutor)` LAYOUT passes `{ requireApproval: false }` so `/tutor/pending-approval` — which lives under it — does not redirect-loop. Any action called by a component mounted in that layout therefore has to relax approval too, or the two guards disagree and an unapproved tutor legitimately sitting under the layout gets a `redirect()` from every call. Where that call is a fire-and-forget, the `NEXT_REDIRECT` cannot navigate anything: it becomes an **unhandled promise rejection**, silent in production. This applies today to `getIncomingRequest` and `listPendingIncomingRequests`, both called by `IncomingRequests` (§7.4, §8) and both scoped to `tutor_id = me` — **ownership is what authorizes those reads, not approval**, and an unapproved tutor is not in `live_tutors` (§3.1) so no request can be addressed to them anyway. `acceptSessionRequest` / `declineSessionRequest` keep approval enforced: they create a booking and charge a student, and neither runs unawaited.
 
 Admin access is by `profiles.role = 'admin'` only. There is no admin signup route; the first admin is set by SQL, subsequent ones promoted in the admin panel with an audit entry.
+
+> **The admin users write path (`drizzle/0016`, Phase 8 Part 5).** `profiles_guard` (`drizzle/0003`) only let `is_admin()` change `role` or `is_suspended`, and `is_admin()` reads `auth.uid()`, which is null on the trusted server connection. So suspend and promote were refused by the database even for a real admin (verified on the test project). `0016` adds `AND NOT public.is_trusted_server()` to both checks, the same fix `0012` made for `tutor_approval_guard`. A signed-in user is still refused on both, which `db:verify-rls` asserts through PostgREST. Every `/admin/users` action calls `requireRole('admin')` first and writes `audit_log` in the same transaction: `user.suspend` / `user.unsuspend`, `user.promote_admin`, `wallet.adjust`.
+>
+> - **Suspend:** an admin can't suspend themselves. Suspending a live tutor also sets `is_live = false`.
+> - **Adjust credits:** students and tutors only, through `creditWallet` as `admin_adjustment`, at most 10,000 credits either way, with a required note of 5 to 500 characters. The note goes in `audit_log` only. The ledger row's description is "Adjusted by NowTutors support", because the user sees it. A per-form request key is the ledger `reference_id`, so a double submit lands once.
+> - **Promote:** the admin types the account's email to confirm. It's refused for an admin, an account that hasn't onboarded, a suspended account, a non-zero wallet, open bookings (`pending_payment`, `confirmed`, `in_progress`), an open withdrawal, or held or available earnings. The check runs under locks on the profile and wallet rows. There is no demote in v1.
 
 ---
 

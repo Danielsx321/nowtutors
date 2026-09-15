@@ -3966,3 +3966,144 @@ the pages signed in, which needs a password typed; it is on the batched live-tes
 
 No users, credit adjustment or subjects (Part 5); no admin bookings (Part 6); no settings history view
 beyond the audit log; no display of scheduled cron responses; no emails.
+
+## Phase 8 Part 5 — admin users and subjects (`phase-8-part5-admin-users-subjects`, 2026-09-15)
+
+`/admin/users`, `/admin/users/[id]` and `/admin/subjects`. One migration (`0016`, a trigger function only,
+no table change) and no new dependency.
+
+### 1. `profiles_guard` had to learn the trusted server connection (`drizzle/0016`)
+
+Pre-flight found that `profiles_guard` (`0003`) only lets `is_admin()` change `role` after onboarding or
+`is_suspended`, and `is_admin()` reads `auth.uid()`, which is null on the server connection the admin
+actions use. RUNBOOK already said so for the first-admin SQL ("service role included"). It was proven
+on the test project before any code, inside a rolled-back transaction: `session_user = postgres`,
+`is_trusted_server() = true`, and both updates raised. So without a migration, suspend and promote would
+have failed for every real admin.
+
+`0016` adds `AND NOT public.is_trusted_server()` to both checks, exactly the change `0012` made to
+`tutor_approval_guard`. The attack the guard exists for (a user escalating or unsuspending themselves
+through PostgREST) is still refused, and `db:verify-rls` now asserts both through a signed-in student.
+The DB lane can't show that part: `SET ROLE` doesn't change `session_user`, so every test connection is
+trusted. Side effect: the SQL editor (a `postgres` session) can run the first-admin `update` without
+disabling the trigger; RUNBOOK keeps the old form for a project without 0016.
+
+**Post-merge production step:** `pnpm db:migrate` then `pnpm db:verify-rls` on `mipnoxlhurdbaahmvhhx`.
+Until then suspend and promote fail on production; adjustments and subjects don't need it.
+
+### 2. Adjust credits: ledger only, note kept internal, one request key per form
+
+`creditWallet` with `type: admin_adjustment`, `created_by` the admin, inside the action's transaction,
+with the `wallet.adjust` audit row after it. Guard rails, not product rules: students and tutors only
+(admins and not-onboarded accounts have no wallet page); a non-zero whole number up to 10,000 either way;
+a note of 5 to 500 characters.
+
+- **The note lives in `audit_log` only.** The ledger `description` is what the user reads in wallet
+  history, and an admin's reason can name another person or a dispute. The row says "Adjusted by
+  NowTutors support".
+- **Deviation from the plan ("no reference id").** The form sends a request key made when the form is
+  filled in, and it becomes the ledger `reference_id`. A double click or a retried request hits the
+  `(type, reference_id)` unique index and is reported as "already applied"; a deliberate second
+  adjustment gets a new key. The plan's goal (repeats allowed, each audited) still holds.
+- **The ledger call runs in a savepoint** (`tx.transaction`). A duplicate key is a unique violation,
+  which would otherwise abort the outer transaction and make the audit insert fail.
+- A debit below zero comes back as a message with the current balance, and nothing is written.
+
+### 3. Suspend
+
+An admin can't suspend themselves (checked before any transaction). Suspending another admin is
+allowed. A no-op writes no audit row. Suspending a live tutor also sets `is_live = false`, `live_mode =
+null` in the same transaction, so instant requests stop now rather than at the next presence sweep.
+Nothing else changes: existing bookings, requests, earnings and withdrawals stay as they are. What a
+suspension should do to those is a product call for later.
+
+### 4. Promote: typed email, and nothing left stranded
+
+Admins have no wallet, bookings or earnings pages, so promotion is refused while the account has a
+non-zero wallet, bookings in `pending_payment`, `confirmed` or `in_progress`, a requested or approved
+withdrawal, or `held`/`available` earnings. It's also refused for an admin, an account that hasn't
+onboarded, and a suspended account. The admin types the account's email (any case) so a mis-click can't
+make someone an admin. The facts are read under `FOR UPDATE` on the profile and wallet rows; every paid
+checkout debits through the wallet lock, so one can't slip in between the check and the role change. A
+free booking created in that window isn't covered; that's acceptable for an admin-only action. **No
+demote in v1**: SPEC §5 only asks for promotion, and a demote needs its own rules (last admin, the
+admin's own session).
+
+### 5. Search matches literally
+
+`position(q in lower(email|display_name|full_name)) > 0`, not `LIKE`, for the same reason the audit
+filter uses `split_part`: a `%` or `_` typed by an admin is a character, not a wildcard. The query is
+trimmed, lower-cased and capped at 100 characters. Filters are `student`, `tutor`, `admin`, `unset` (no
+role yet) and `suspended`, as URL parameters.
+
+### 6. Subjects: the slug is permanent and nothing is deleted
+
+Browse filters and the onboarding and profile forms send slugs, so a rename changes `name` only.
+New subjects take the seed's slugify rules and go to the end of `sort_order`. Names must be unique
+ignoring case (the schema doesn't require it, but two "Algebra" entries in a picker would be a bug);
+a name whose slug is already taken is refused with the slug named. There is no delete: `bookings`,
+`session_requests` and `broadcasts` reference `subjects.id` without cascade, and `tutor_subjects` and
+`student_subjects` cascade, so a delete either fails or silently strips subjects from profiles. Hiding
+(`is_active = false`) is enough, because every picker already filters on it; tutors who teach a hidden
+subject keep it. No reordering or icon editing (nothing renders `icon`).
+
+### 7. Pages
+
+`/admin/users` follows `/admin/audit`: server page, links for filters and pages, 25 per page.
+`/admin/users/[id]` shows profile, sessions by status, tutor earnings and open withdrawal, and the user's
+ledger through the existing `getWalletHistory` and `TransactionHistory` (paginated, never the whole
+ledger). A malformed id is a 404 before any query. Controls are one client component; suspend asks for a
+second click, promote needs the typed email. `/admin/subjects` is a list with inline rename and
+hide/show.
+
+### 8. Tests
+
+Unit: `admin-users-rules.test.ts` (14: adjustment bounds and note trimming, who can be adjusted or
+suspended, every promotion blocker and its order and message, search and filter parsing, subject slugs
+and names) and `admin-users-actions.test.ts` (20: all six actions refuse a non-admin before any
+transaction, even with bad input; self-suspension refused before a transaction; actor from the guard;
+validation before the transaction; every result mapped to its message). DB lane,
+`admin-users.test.ts` (12, test project): suspend a live tutor (offline, one audit row, repeat writes
+nothing), unsuspend, not found; promote a clean tutor who then passes `is_admin()`; promotion refused for
+a student with credits and a wrong email, and for an admin; adjustment through the ledger with the
+generic description, the audited note and ledger sum equal to the balance; the same request key twice
+lands once and the transaction is still usable; a debit below zero writes nothing; admin wallets and
+unknown users refused; **a real two-connection race where the second submit of the same key waits on the
+wallet lock and lands as a duplicate**; search treats `%` and `_` literally and each filter holds;
+the detail read matches the wallet and earnings; subject create, name and slug conflicts, rename keeps
+the slug, hide and no-op, counts. The race test commits, then restores student2's balance with a
+compensating adjustment (the ledger is append-only, so two `admin_adjustment` rows remain on the test
+project) and deletes its audit rows. `db:verify-rls:test`: three new checks, all pass.
+
+### 9. Falsification: thirteen breaks, all caught
+
+Each break was applied by a script, the narrowest test was run with `pnpm exec`/`pnpm test:db:test -t`,
+and a break only counted when a real "N failed" line appeared; the file was restored after each.
+(a) `adjustUserCredits` parses input before the guard, 2 unit tests fail; (b) self-suspension allowed, 1;
+(c) promotion ignores the wallet balance, 1 unit and 1 DB; (d) search via `LIKE`, the literal-search DB
+test fails; (e) ledger call without the savepoint, the duplicate-key DB test fails (aborted
+transaction); (f) no request key as the ledger reference, the same test fails; (g) a suspended tutor stays
+live, 1 DB; (h) rename rewrites the slug, 1 DB; (i) **`0016` reverted on the test project** (the
+trusted-server clause removed from the live function), 3 DB tests fail, then `0016` was re-applied and the
+function checked to contain `is_trusted_server` again; (j) create skips the name check, 1 DB; (k) the
+suspension actor taken from input, 1 unit; (l) admin wallets adjustable, 1 DB. The race test was kept out
+of the break runs, because a break there would commit extra ledger rows.
+
+### 10. Verification
+
+`pnpm typecheck`, `pnpm lint` clean; `pnpm test` 464 passed (37 files, 34 new); `pnpm test:dom` 29
+passed; `pnpm build` passed (with `NODE_EXTRA_CA_CERTS`; the three new routes listed; the known Sentry
+`require-in-the-middle` warning only); `pnpm test:db:test` on the new file 12 passed against
+`uietkphpfqaicbndunwt`; `pnpm db:verify-rls:test` passed, including the three new `profiles_guard`
+checks. `0016` is applied to the test project (`pnpm db:migrate:test`), where the probe that raised
+before now succeeds. Dev server against the test project: `/admin/users` (with and without query
+parameters), `/admin/users/<uuid>`, `/admin/users/not-a-uuid` and `/admin/subjects` redirect a
+signed-out visitor to `/login`. **Not done:** viewing the pages signed in (needs a password typed); on
+the batched live-test list.
+
+### What is NOT here
+
+No demote; no delete of users or subjects; no subject reordering or icon editing; no bulk actions; no
+effect of a suspension on existing bookings, requests, earnings or withdrawals; no admin bookings,
+force-complete or force-cancel (Part 6); no emails. `0016` is **not** applied to production yet (post-merge
+step in RUNBOOK).

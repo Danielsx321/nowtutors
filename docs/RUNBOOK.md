@@ -417,11 +417,21 @@ already-running script.
     re-create — running either of the other two first fails outright, since their
     `vault.decrypted_secrets` lookups find nothing. `app_base_url` on the new project must point at
     whatever URL is now serving production, not at `nowtutors-brown.vercel.app`.
+- [ ] **Apply `drizzle/0016_profiles_guard_trusted_server.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 8
+  Part 5, after its PR merges. Until it runs, `/admin/users` suspend and promote fail on production
+  with a database error (the trigger refuses the server connection); credit adjustments and
+  `/admin/subjects` work without it. From `~/nowtutors` on `main`: `pnpm db:migrate`, then
+  `pnpm db:verify-rls` (it must still show "student cannot promote themselves to admin" and "student
+  cannot change their own is_suspended" as passing). Confirm with
+  `select prosrc like '%is_trusted_server%' from pg_proc where proname = 'profiles_guard';` → `true`.
 - [ ] First-admin promotion SQL — Phase 1/8. **The statement itself is verified
   (2026-08-25) on the current dev/prod project; still unticked because it needs
   running again on the fresh production project at cutover, not because it's unproven.**
-  `profiles_guard` blocks role changes for non-admins, service role included, so the
-  trigger has to be disabled for the statement and re-enabled immediately after:
+  **After `drizzle/0016`** the SQL editor (which connects as `postgres`, a trusted server session)
+  can run the `update` on its own; the disable/enable form below still works and is kept for a
+  project where 0016 hasn't been applied. Before 0016, `profiles_guard` blocked role changes for
+  non-admins, service role included, so the trigger had to be disabled for the statement and
+  re-enabled immediately after:
   ```sql
   begin;
   alter table public.profiles disable trigger profiles_guard;
