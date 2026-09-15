@@ -4737,3 +4737,49 @@ by two viewers". Two specs, one per half, run by a person against the test proje
 SPEC §16 marks Phase 9 COMPLETE. Still open outside the acceptance criterion: the Agora `live` mode check on production and
 the batched signed-in live checks (items 10 to 12).
 
+
+## Design overhaul Part 1: foundation (`design-part1-foundation`, 2026-09-15)
+
+The client (Noora) said the design looked dated and generic. Daniels decided on 2026-09-15 that a redesign comes before Phase 10, keeping the name and the logo and giving the admin a lighter pass. The research (four agent reports, competitor and NowTutors screenshots, a critic pass and a synthesis) lives in the workspace under `outputs/deep-research/2026-09-15-nowtutors-design-overhaul/`; the six-part plan is `plans/2026-09-15-nowtutors-design-overhaul.md`. This entry records what Part 1 settled.
+
+1. **Direction A, "On Air", supersedes "the brand carries over exactly."** SPEC §10 said the visual identity was fixed; it is now rewritten. White canvas, ink text and ink primary buttons, yellow rationed to one job, deep plum for links and focus, one green for live, Funnel Display plus Funnel Sans. The alternatives (B "Daylight Classroom", C "Night Class") are documented in research report 04 with contrast-checked palettes if Noora declines. **Assumption to confirm with Noora during Part 1, before Part 3** (the first part she sees on production).
+
+2. **Two AA failures were shipping.** White on the old live green (`#44C96F`) measured 2.14:1; the old purple on the ink surface measured 1.34:1, which is why two focus-ring utilities existed. Every sanctioned pair in the new set clears 4.5:1 (text) or 3:1 (controls) in both themes, and `tests/unit/design-tokens.test.ts` (74 cases) fails the build if a value drifts.
+
+3. **Semantic tokens, not a value swap.** `ink-900` meaning "dark surface" was baked into 52 files. Roles (`surface`, `text`, `primary`, `signal`, `accent`, `live`, `border`, `focus`, `danger`...) are what components reference now; the dark room theme redefines the same roles under `.theme-dark`, so no component knows which theme it's in. Tailwind's default palette is switched off (`--color-*: initial`) so nothing can reach for `bg-red-500`.
+
+4. **Compatibility aliases in Part 1, deleted in Part 6.** Every old utility (`ink-*`, `purple-*`, `gold-400`, `live-4/500`, `gray-*`, `white`, plus the undeclared Tailwind defaults `gray-100/300/400`, `purple-50/300`, `red-500` and `black` that some pages had been using) maps to the nearest role in a clearly headed block. Every page keeps compiling and stays legible between parts, PRs stay reviewable, and deleting the block at the end proves the sweep finished. One giant PR was rejected: Daniels reviews and merges each part.
+
+5. **`surface="ink"` props render, they are not ignored.** The plan said to accept the old props and ignore them. Doing that would have painted white text (`text-white` on the profile hero, the tutor card and the topbar) onto a now-white card, which is exactly the "went invisible through the aliases" failure Part 1's verification exists to catch. So `Card`, `StatCard`, `PriceTag`, `RatingStars`, `CreditBalance` and the `ink-ghost` button keep rendering their old dark treatment on the inverse tokens, marked deprecated, until Parts 3 to 5 convert their callers and Part 6 deletes the props. `LivePill` became a re-export of `LiveChip` (its `surface` prop is accepted and ignored, because the chip reads on both).
+
+6. **One focus ring, and dark islands.** `focus` equals `accent`, and the light accent on near-black measures 1.98:1, below the 3:1 control floor. Rather than reintroduce a second ring token, interactive dark areas (the footer, the rooms) sit inside a `.theme-dark` scope, where every role re-resolves and the ring becomes the dark accent at 8.99:1. The token test checks the `focus / surface-inverse` pair in the dark theme only, with a comment saying why; `surface-inverse` alone is for non-interactive fills (tooltip, the wordmark block). Part 2 puts the footer inside `.theme-dark`.
+
+7. **Yellow is a fill, never text or a border on white** (1.29:1). Enforced by the token role sentence, by DESIGN.md's banned list, and by the test, which has no yellow-as-text pair and asserts none is added.
+
+8. **One live colour family, two states.** "Live now" (green text on the green surface, plus the yellow on-air ring on the photo, plus the yellow "Request now") for a tutor taking instant requests; "LIVE" (same green, plus a viewer count, no ring) for a broadcast. Phase 9 Q5 made the two states mutually exclusive, so the pairing is unambiguous. No red. The chip is always text: a bare dot is decoration, never the indicator.
+
+9. **Wordmark on a block.** The old wordmark set "Tutors" in yellow text, which only ever lived on dark backgrounds. On a white canvas that's 1.29:1, so `Wordmark` renders "Now" in ink and "Tutors" in ink on a yellow block (13.93:1), in DM Sans 700 pinned through `font-wordmark` so the app font change doesn't move the logo. Assumption for Noora; an SVG export of the current rendering is the alternative.
+
+10. **Fonts are a `next/font` change, no dependency.** Funnel Display (600 to 800), Funnel Sans (400 to 600) and DM Sans (700, wordmark only) are bundled at build; all three exist in the installed `next/font` data. The 13px Funnel Sans check on a 360px Android screen is a Part 1 review item; Schibsted Grotesk plus Figtree is the verified drop-in if it fails.
+
+11. **Two Radix packages added:** `@radix-ui/react-alert-dialog` (money and destructive confirms; `role="alertdialog"`, which Playwright's `getByRole("dialog")` does not match, so any spec that swaps a Modal for it changes in the same PR) and `@radix-ui/react-progress` (linear bars; the countdown ring keeps `ProgressRing`). Approved by Daniels 2026-09-15, added to SPEC §2 in the same commit.
+
+12. **Buttons are pills; `signal` is a variant and it is rare.** `primary` (ink), `secondary`, `ghost`, `signal` (yellow, live actions only), `danger`. The old `ink` variant aliases `signal`; `ink-ghost` keeps its white-ghost rendering for the old dark header until Part 2 replaces it. Both deleted in Part 6.
+
+13. **Reviews stay deferred; the card ships Experience, Sessions, Rate.** `RatingStars` stays in the inventory (filled stars are ink now, not yellow), unrendered, and `StatRow` documents the slot. Raised with Noora as its own question.
+
+14. **Money anchor computed, never hard-coded.** `Money` takes `usdPerCredit` from the direct-pay basis package and renders "≈ $X". The tutor payout rate ($1 per credit) never appears on a student surface.
+
+15. **The raw-hex grep is a test now**, not a manual step. Every `#hex` in `src/` outside `globals.css` and `tokens.ts` fails `pnpm test`. The one allowed exception is `google-button.tsx`: Google's sign-in logo colours are Google's, not ours to tokenise.
+
+16. **Tables lost their tracked all-caps headers** (on the generic-tell list) and gained `numeric` on head and cell for right-aligned tabular figures. Table headers sit on `surface-muted` in sentence case.
+
+17. **Dark mode as a user toggle is deferred** (Phase 11 material: `next-themes` and a second audit). `.theme-dark` exists for the rooms and dark islands only.
+
+18. **Guarantee copy will be gated** behind `TRUST_GUARANTEE_CONFIRMED = false` when Part 3 introduces `lib/copy/trust.ts`; "Secure payment via PayPal" ships regardless. Suggested wording for Noora: "If your tutor doesn't show, your credits come back."
+
+19. **Photos will be required at approval** (Part 6): `approveTutor` refuses without `avatar_url`, the queue shows why, onboarding requires it for tutors. Existing approved tutors without a photo get the quiet initials fallback (surface-muted, muted text: a missing photo should read as missing, not as a lilac design choice) and a nudge on `/tutor/profile`. No schema change. Recorded now so the Avatar change in Part 1 has its reason on file.
+
+**Kitchen sink.** `/dev/kitchen-sink` now toggles light / dark (the dark side wraps the page in `.theme-dark`, the scope the rooms use) instead of light / ink, opens with a Tokens section that lists every sanctioned pair and its computed ratio for the theme on screen, and has a "Live signal, proof, money" section for the new primitives. The old `TutorCard`, header, footer, sidebar and topbar still render through the aliases until their parts land.
+
+**Gates.** Typecheck and lint clean; `pnpm test` 675 passed (74 new); `pnpm test:dom` 50 passed; `pnpm build` passed. No migration, no prod step.

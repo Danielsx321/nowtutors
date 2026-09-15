@@ -1,5 +1,6 @@
-// Barrel export for the Section 10.2 primitives. Import from "@/components/ui".
+// Barrel export for the SPEC §10.2 primitives. Import from "@/components/ui".
 export * from "./alert";
+export * from "./alert-dialog";
 export * from "./avatar";
 export * from "./badge";
 export * from "./breadcrumb";
@@ -14,10 +15,14 @@ export * from "./empty-state";
 export * from "./field-error";
 export * from "./input";
 export * from "./label";
+export * from "./live-chip";
 export * from "./live-pill";
 export * from "./modal";
+export * from "./money";
+export * from "./on-air-ring";
 export * from "./pagination";
 export * from "./price-tag";
+export * from "./progress";
 export * from "./progress-ring";
 export * from "./radio";
 export * from "./rating-stars";
@@ -25,6 +30,7 @@ export * from "./select";
 export * from "./skeleton";
 export * from "./spinner";
 export * from "./stat-card";
+export * from "./stat-row";
 export * from "./subject-chip";
 export * from "./switch";
 export * from "./table";

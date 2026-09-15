@@ -26,21 +26,21 @@ export function Calendar({
         months: "relative",
         month: "space-y-3",
         month_caption: "flex h-9 items-center justify-center",
-        caption_label: "text-body font-medium text-gray-700",
+        caption_label: "text-body font-medium text-text",
         nav: "absolute inset-x-0 top-0 flex items-center justify-between",
         button_previous:
-          "focus-ring grid size-9 place-items-center rounded-md text-gray-500 hover:bg-gray-50",
+          "focus-ring grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-muted",
         button_next:
-          "focus-ring grid size-9 place-items-center rounded-md text-gray-500 hover:bg-gray-50",
+          "focus-ring grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-muted",
         month_grid: "w-full border-collapse",
         weekdays: "flex",
-        weekday: "w-9 text-caption font-medium text-gray-500",
+        weekday: "w-9 text-caption font-medium text-text-muted",
         week: "flex w-full",
         day: "size-9 p-0 text-center",
         day_button:
-          "focus-ring size-9 rounded-md text-small text-gray-700 transition-colors hover:bg-purple-100 aria-selected:bg-purple-500 aria-selected:text-white",
-        today: "font-bold text-purple-700",
-        outside: "text-gray-200",
+          "focus-ring size-9 rounded-md text-small text-text transition-colors hover:bg-surface-muted aria-selected:bg-primary aria-selected:text-on-primary",
+        today: "font-bold text-accent",
+        outside: "text-border-strong",
         disabled: "opacity-40 pointer-events-none",
         hidden: "invisible",
         ...classNames,
@@ -111,13 +111,13 @@ export function DatePicker({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "focus-ring flex h-11 w-full items-center gap-2 rounded-md border bg-white px-3 text-body transition-colors",
-          "disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60",
-          invalid ? "border-danger" : "border-gray-200 hover:border-gray-500",
-          value ? "text-gray-700" : "text-gray-500",
+          "focus-ring flex h-11 w-full items-center gap-2 rounded-md border bg-surface-raised px-3 text-body transition-colors",
+          "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60",
+          invalid ? "border-danger" : "border-border hover:border-border-strong",
+          value ? "text-text" : "text-text-muted",
         )}
       >
-        <CalendarIcon className="size-4 text-gray-500" aria-hidden />
+        <CalendarIcon className="size-4 text-text-muted" aria-hidden />
         {value ? format(value, "PPP") : placeholder}
       </button>
       {open && (
@@ -126,7 +126,7 @@ export function DatePicker({
           data-state="open"
           role="dialog"
           aria-label="Choose date"
-          className="absolute z-50 mt-2 rounded-md border border-gray-200 bg-white shadow-md"
+          className="absolute z-50 mt-2 rounded-md border border-border bg-surface-raised shadow-md"
         >
           <Calendar
             mode="single"

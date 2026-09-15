@@ -1,20 +1,23 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export type Surface = "light" | "ink";
+/** The preview theme. `dark` wraps the page in `.theme-dark`, the scope the
+ *  live rooms use, so every primitive is checked in both palettes. */
+export type Surface = "light" | "dark";
 
-/** Surface-aware text classes so on-surface copy stays legible on both
- *  backgrounds — this is what makes the light/ink toggle catch the
- *  purple-on-ink contrast trap from SPEC §10.1 (amendment #1). */
-export function heading(surface: Surface) {
-  return surface === "ink" ? "text-white" : "text-gray-700";
+/* Under semantic tokens the same classes are right on both themes; these
+   helpers stay so the section files read the same as before. */
+export function heading(_surface: Surface) {
+  void _surface;
+  return "text-text";
 }
-export function muted(surface: Surface) {
-  return surface === "ink" ? "text-ink-300" : "text-gray-500";
+export function muted(_surface: Surface) {
+  void _surface;
+  return "text-text-muted";
 }
-/** Surface-correct focus ring: gold on ink, purple on light (SPEC §10.3). */
-export function ring(surface: Surface) {
-  return surface === "ink" ? "focus-ring-on-ink" : "focus-ring";
+export function ring(_surface: Surface) {
+  void _surface;
+  return "focus-ring";
 }
 
 export function Section({
@@ -30,7 +33,7 @@ export function Section({
 }) {
   return (
     <section id={id} className="scroll-mt-20 space-y-6">
-      <h2 className={cn("text-h2 font-bold", heading(surface))}>{title}</h2>
+      <h2 className={cn("font-display text-h2 font-semibold", heading(surface))}>{title}</h2>
       {children}
     </section>
   );
@@ -50,9 +53,7 @@ export function Demo({
 }) {
   return (
     <div className="space-y-2">
-      <p className={cn("text-caption font-medium uppercase tracking-wide", muted(surface))}>
-        {label}
-      </p>
+      <p className={cn("text-small font-medium", muted(surface))}>{label}</p>
       <div className={cn("flex flex-wrap items-center gap-3", className)}>
         {children}
       </div>

@@ -96,7 +96,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
               <DrawerTitle>Filters</DrawerTitle>
             </DrawerHeader>
             <DrawerBody>
-              <p className="text-body text-gray-500">
+              <p className="text-body text-text-muted">
                 Filter controls (subject, price, language) live here on real
                 pages.
               </p>

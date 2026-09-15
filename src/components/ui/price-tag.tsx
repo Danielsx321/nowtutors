@@ -6,17 +6,21 @@ export interface PriceTagProps extends React.HTMLAttributes<HTMLSpanElement> {
   unit?: string; // e.g. "hr", "min", "session"
   usd?: number; // optional secondary USD label
   size?: "sm" | "md" | "lg";
-  /** `ink` for dark surfaces (e.g. the ink TutorCard); `light` on white. */
+  /** @deprecated kept rendering for the old dark cards. REMOVE IN PART 6. */
   surface?: "light" | "ink";
 }
 
 const sizeMap = {
-  sm: { amount: "text-body font-bold", unit: "text-caption" },
-  md: { amount: "text-h3 font-bold", unit: "text-small" },
-  lg: { amount: "text-h2 font-bold", unit: "text-small" },
+  sm: { amount: "text-body font-semibold", unit: "text-caption" },
+  md: { amount: "text-h3 font-semibold", unit: "text-small" },
+  lg: { amount: "text-h2 font-semibold", unit: "text-small" },
 } as const;
 
-/** Displays a credit price, with an optional per-unit and USD equivalent. */
+/**
+ * Displays a credit price, with an optional per-unit and USD equivalent.
+ * Prefer `Money` for new surfaces: it carries the "≈ $" anchor from the basis
+ * package instead of a caller-supplied USD figure.
+ */
 export function PriceTag({
   credits,
   unit,
@@ -27,11 +31,15 @@ export function PriceTag({
   ...props
 }: PriceTagProps) {
   const s = sizeMap[size];
-  const amountColor = surface === "ink" ? "text-white" : "text-gray-700";
-  const unitColor = surface === "ink" ? "text-ink-300" : "text-gray-500";
+  const amountColor = surface === "ink" ? "text-text-on-inverse" : "text-text";
+  const unitColor = surface === "ink" ? "text-text-on-inverse/70" : "text-text-muted";
   return (
-    <span className={cn("inline-flex items-baseline gap-1", className)} {...props}>
-      <span className={cn(amountColor, s.amount)}>
+    <span
+      data-numeric
+      className={cn("inline-flex items-baseline gap-1", className)}
+      {...props}
+    >
+      <span className={cn(amountColor, "font-display", s.amount)}>
         {credits.toLocaleString()}
       </span>
       <span className={cn(unitColor, s.unit)}>

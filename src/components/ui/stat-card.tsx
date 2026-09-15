@@ -9,10 +9,11 @@ export interface StatCardProps
   icon?: React.ReactNode;
   hint?: React.ReactNode;
   trend?: { direction: "up" | "down"; label: string };
+  /** @deprecated kept rendering for the old dark dashboards. REMOVE IN PART 6. */
   surface?: "white" | "ink";
 }
 
-/** Dashboard metric tile — label, big value, optional icon/trend. */
+/** Dashboard metric tile: label, big value in tabular figures, optional icon/trend. */
 export function StatCard({
   label,
   value,
@@ -23,26 +24,17 @@ export function StatCard({
   className,
   ...props
 }: StatCardProps) {
+  const ink = surface === "ink";
+  const muted = ink ? "text-text-on-inverse/70" : "text-text-muted";
   return (
-    <Card surface={surface} className={cn("p-4", className)} {...props}>
+    <Card surface={surface} className={cn("p-5", className)} {...props}>
       <div className="flex items-start justify-between gap-3">
-        <p
-          className={cn(
-            "text-small font-medium",
-            surface === "ink" ? "text-ink-300" : "text-gray-500",
-          )}
-        >
-          {label}
-        </p>
+        <p className={cn("text-small font-medium", muted)}>{label}</p>
         {icon && (
           <span
             className={cn(
               "grid size-9 place-items-center rounded-md",
-              // On the single ink surface the chip recesses (ink-950) rather
-              // than elevating with a lighter fill.
-              surface === "ink"
-                ? "bg-ink-950 text-gold-400"
-                : "bg-purple-100 text-purple-500",
+              ink ? "bg-text-on-inverse/10 text-text-on-inverse" : "bg-surface-muted text-text-muted",
             )}
             aria-hidden
           >
@@ -50,7 +42,9 @@ export function StatCard({
           </span>
         )}
       </div>
-      <p className="mt-2 text-h1 font-bold">{value}</p>
+      <p data-numeric className="mt-2 font-display text-h1 font-semibold">
+        {value}
+      </p>
       {(hint || trend) && (
         <div className="mt-1 flex items-center gap-2 text-small">
           {trend && (
@@ -63,11 +57,7 @@ export function StatCard({
               {trend.direction === "up" ? "▲" : "▼"} {trend.label}
             </span>
           )}
-          {hint && (
-            <span className={surface === "ink" ? "text-ink-300" : "text-gray-500"}>
-              {hint}
-            </span>
-          )}
+          {hint && <span className={muted}>{hint}</span>}
         </div>
       )}
     </Card>

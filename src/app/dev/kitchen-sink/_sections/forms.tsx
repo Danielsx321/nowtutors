@@ -97,37 +97,37 @@ export function FormsSection({ surface }: { surface: Surface }) {
         </Field>
 
         <Field>
-          <span className="text-small font-medium text-gray-700">Checkbox</span>
+          <span className="text-small font-medium text-text">Checkbox</span>
           <div className="flex flex-col gap-2 pt-1">
-            <label className="flex items-center gap-2 text-body text-gray-700">
+            <label className="flex items-center gap-2 text-body text-text">
               <Checkbox
                 checked={check}
                 onCheckedChange={(c) => setCheck(c)}
               />
               Toggle me
             </label>
-            <label className="flex items-center gap-2 text-body text-gray-700">
+            <label className="flex items-center gap-2 text-body text-text">
               <Checkbox
                 checked="indeterminate"
                 onCheckedChange={() => setCheck(true)}
               />
               Indeterminate
             </label>
-            <label className="flex items-center gap-2 text-body text-gray-500">
+            <label className="flex items-center gap-2 text-body text-text-muted">
               <Checkbox disabled /> Disabled
             </label>
           </div>
         </Field>
 
         <Field>
-          <span className="text-small font-medium text-gray-700">
+          <span className="text-small font-medium text-text">
             Radio — duration
           </span>
           <RadioGroup value={radio} onValueChange={setRadio} className="pt-1">
             {["30", "60", "90"].map((v) => (
               <label
                 key={v}
-                className="flex items-center gap-2 text-body text-gray-700"
+                className="flex items-center gap-2 text-body text-text"
               >
                 <RadioGroupItem value={v} /> {v} minutes
               </label>
@@ -136,8 +136,8 @@ export function FormsSection({ surface }: { surface: Surface }) {
         </Field>
 
         <Field className="md:col-span-2">
-          <span className="text-small font-medium text-gray-700">Switch</span>
-          <label className="flex items-center gap-3 pt-1 text-body text-gray-700">
+          <span className="text-small font-medium text-text">Switch</span>
+          <label className="flex items-center gap-3 pt-1 text-body text-text">
             <Switch checked={on} onCheckedChange={setOn} />
             Available for instant sessions
           </label>

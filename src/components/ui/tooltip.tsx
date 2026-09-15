@@ -18,13 +18,13 @@ export const TooltipContent = React.forwardRef<
       data-slot="popover"
       sideOffset={sideOffset}
       className={cn(
-        "z-50 max-w-xs rounded-md bg-ink-900 px-2.5 py-1.5 text-small text-white shadow-md",
+        "z-50 max-w-xs rounded-md bg-surface-inverse px-2.5 py-1.5 text-small text-text-on-inverse shadow-md",
         className,
       )}
       {...props}
     >
       {children}
-      <TooltipPrimitive.Arrow className="fill-ink-900" />
+      <TooltipPrimitive.Arrow className="fill-surface-inverse" />
     </TooltipPrimitive.Content>
   </TooltipPrimitive.Portal>
 ));

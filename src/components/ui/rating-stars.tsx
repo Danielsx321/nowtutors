@@ -10,11 +10,15 @@ export interface RatingStarsProps
   count?: number;
   size?: keyof typeof sizes;
   showValue?: boolean;
-  /** `ink` for dark surfaces (e.g. the ink TutorCard); `light` on white. */
+  /** @deprecated kept rendering for the old dark cards. REMOVE IN PART 6. */
   surface?: "light" | "ink";
 }
 
-/** Read-only 5-star rating with fractional fill (gold). */
+/**
+ * Read-only 5-star rating with fractional fill. In the inventory but not
+ * rendered anywhere until reviews exist (SPEC §18). Filled stars are ink, not
+ * yellow: yellow is the live signal and nothing else (DESIGN.md).
+ */
 export function RatingStars({
   value,
   count,
@@ -24,11 +28,11 @@ export function RatingStars({
   className,
   ...props
 }: RatingStarsProps) {
-  // Filled stars are gold on both surfaces (7.22:1 on ink). Only the empty
-  // track and the value label change: empty stars use ink-700 on ink.
-  const emptyColor = surface === "ink" ? "text-ink-700" : "text-gray-200";
-  const valueColor = surface === "ink" ? "text-white" : "text-gray-700";
-  const countColor = surface === "ink" ? "text-ink-300" : "text-gray-500";
+  const ink = surface === "ink";
+  const emptyColor = ink ? "text-border-strong" : "text-border";
+  const fillColor = ink ? "text-text-on-inverse" : "text-text";
+  const valueColor = ink ? "text-text-on-inverse" : "text-text";
+  const countColor = ink ? "text-text-on-inverse/70" : "text-text-muted";
   const clamped = Math.max(0, Math.min(5, value));
   const label =
     count != null
@@ -48,7 +52,7 @@ export function RatingStars({
           ))}
         </div>
         <div
-          className="absolute inset-0 flex overflow-hidden text-gold-400"
+          className={cn("absolute inset-0 flex overflow-hidden", fillColor)}
           style={{ width: `${(clamped / 5) * 100}%` }}
         >
           {Array.from({ length: 5 }).map((_, i) => (
@@ -57,7 +61,7 @@ export function RatingStars({
         </div>
       </div>
       {showValue && (
-        <span className={cn("text-small font-medium", valueColor)} aria-hidden>
+        <span data-numeric className={cn("text-small font-medium", valueColor)} aria-hidden>
           {clamped.toFixed(1)}
           {count != null && (
             <span className={countColor}> ({count})</span>

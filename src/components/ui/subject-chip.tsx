@@ -26,8 +26,8 @@ export function SubjectChip({
   const base = cn(
     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-small font-medium transition-colors",
     selected
-      ? "border-purple-500 bg-purple-100 text-purple-700"
-      : "border-gray-200 bg-white text-gray-700",
+      ? "border-primary bg-primary text-on-primary"
+      : "border-border bg-surface-raised text-text",
     className,
   );
 
@@ -36,7 +36,7 @@ export function SubjectChip({
       <button
         type="button"
         aria-pressed={selected}
-        className={cn(base, "focus-ring hover:border-purple-500")}
+        className={cn(base, "focus-ring hover:border-border-strong")}
         {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
       >
         {children}
@@ -52,7 +52,7 @@ export function SubjectChip({
           type="button"
           onClick={onRemove}
           aria-label="Remove"
-          className="focus-ring -mr-1 grid size-4 place-items-center rounded-full hover:bg-purple-500 hover:text-white"
+          className="focus-ring -mr-1 grid size-4 place-items-center rounded-full hover:bg-on-primary/20"
         >
           <X className="size-3" />
         </button>

@@ -25,13 +25,13 @@ export const ModalContent = React.forwardRef<
   <Dialog.Portal>
     <Dialog.Overlay
       data-slot="overlay"
-      className="fixed inset-0 z-50 bg-ink-950/60"
+      className="fixed inset-0 z-50 bg-scrim"
     />
     <Dialog.Content
       ref={ref}
       data-slot="modal-content"
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-lg",
+        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface-raised p-6 shadow-lg",
         sizes[size],
         className,
       )}
@@ -41,7 +41,7 @@ export const ModalContent = React.forwardRef<
       {!hideClose && (
         <Dialog.Close
           aria-label="Close"
-          className="focus-ring absolute right-4 top-4 grid size-8 place-items-center rounded-md text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+          className="focus-ring absolute right-4 top-4 grid size-8 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-text"
         >
           <X className="size-5" />
         </Dialog.Close>
@@ -64,7 +64,7 @@ export const ModalTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Dialog.Title
     ref={ref}
-    className={cn("text-h3 font-bold text-gray-700", className)}
+    className={cn("text-h3 font-bold text-text", className)}
     {...props}
   />
 ));
@@ -76,7 +76,7 @@ export const ModalDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Dialog.Description
     ref={ref}
-    className={cn("text-body text-gray-500", className)}
+    className={cn("text-body text-text-muted", className)}
     {...props}
   />
 ));

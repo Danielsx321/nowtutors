@@ -17,20 +17,20 @@ export function Toaster() {
         unstyled: true,
         classNames: {
           toast:
-            "flex w-full items-start gap-3 rounded-md border border-gray-200 bg-white p-4 text-body text-gray-700 shadow-md",
-          title: "font-medium text-gray-700",
-          description: "text-small text-gray-500",
+            "flex w-full items-start gap-3 rounded-md border border-border bg-surface-raised p-4 text-body text-text shadow-md",
+          title: "font-medium text-text",
+          description: "text-small text-text-muted",
           icon: "mt-0.5 shrink-0",
           actionButton:
-            "focus-ring ml-auto rounded-md bg-purple-500 px-2.5 py-1 text-small font-medium text-white hover:bg-purple-700",
+            "focus-ring ml-auto rounded-md bg-primary px-2.5 py-1 text-small font-medium text-on-primary hover:bg-primary/85",
           cancelButton:
-            "focus-ring rounded-md px-2.5 py-1 text-small font-medium text-gray-500 hover:bg-gray-50",
+            "focus-ring rounded-md px-2.5 py-1 text-small font-medium text-text-muted hover:bg-surface-muted",
           closeButton:
-            "focus-ring rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50",
+            "focus-ring rounded-md border border-border bg-surface-raised text-text-muted hover:bg-surface-muted",
           success: "[&_[data-icon]]:text-success",
           error: "[&_[data-icon]]:text-danger",
           warning: "[&_[data-icon]]:text-warning",
-          info: "[&_[data-icon]]:text-purple-500",
+          info: "[&_[data-icon]]:text-text-muted",
         },
       }}
     />

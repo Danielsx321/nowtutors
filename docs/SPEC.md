@@ -67,7 +67,7 @@ Locked unless there is a specific reason to deviate.
 | ORM / migrations | **Drizzle ORM + drizzle-kit** | Migrations committed to the repo, never applied by hand in the dashboard |
 | Auth | **Supabase Auth** | Email/password + Google OAuth — parity with current app, no custom crypto |
 | Styling | **Tailwind CSS v4** + CSS custom properties for brand tokens | See Section 13 |
-| UI primitives | **shadcn/ui** (Radix under the hood) | Copy-in components, restyled to the NowTutors palette |
+| UI primitives | **shadcn/ui** (Radix under the hood) | Copy-in components, restyled to the NowTutors palette. Radix packages in use: dialog, dropdown-menu, select, tabs, tooltip, checkbox, radio-group, switch, label, slot, and (design overhaul Part 1, approved 2026-09-15) **alert-dialog** and **progress** |
 | Forms | **react-hook-form + zod** | One zod schema per form, reused server-side for validation |
 | Realtime | **Supabase Realtime** (Postgres changes + presence) | Replaces all `Do every 10 seconds` polling |
 | Video (instant + broadcast) | **Agora Web SDK (`agora-rtc-sdk-ng`)** | Existing Render token service reused |
@@ -1528,86 +1528,55 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 
 ## 10. Design system
 
-The brand is established and carries over exactly. This section exists so Claude Code produces the current visual identity rather than inventing one.
+**Amended 2026-09-15 (design overhaul, "Phase 9.5").** The earlier text of this section (the brand-continuity rule, the ink-shell model, the purple/gold/ink token set) is superseded. The name and the wordmark stay; the visual identity is new. Direction **"On Air"**: a white canvas, ink text and ink primary buttons, signal yellow rationed to the live signal and the wordmark, a deep plum accent for links and focus, one green for live, Funnel Display and Funnel Sans. The full contract, with the reasoning and the banned list, is **`docs/DESIGN.md`**; this section is the summary that binds the build.
 
 ### 10.1 Tokens
 
-```css
-@theme {
-  /* Brand */
-  --color-purple-500: #8434A8;   /* primary on LIGHT surfaces; FILL-ONLY on ink */
-  --color-purple-700: #6B2A8A;   /* hover */
-  --color-purple-100: #F3E8F8;   /* tints, selected backgrounds */
+Tokens are **roles, not colours**. Components reference `surface`, `text`, `primary`, `signal`, `live`... never a hue. Two themes share the same roles: light on `:root`, dark under `.theme-dark` (scoped to the live rooms and to dark islands such as the footer; no user toggle in v1). Tailwind's default palette is switched off (`--color-*: initial`).
 
-  /* Ink — ONE surface, hue-210 ramp (sampled from the Bubble shell). ink-900 is
-     the only ink surface; ink-800 is an INTERACTION state, never a surface. */
-  --color-ink-950:    #263544;   /* active nav item, modal scrim */
-  --color-ink-900:    #34495E;   /* THE ink surface: shell, topbar, cards */
-  --color-ink-800:    #3E566E;   /* hover / pressed on ink — NOT a surface */
-  --color-ink-700:    #4A6076;   /* borders, dividers on ink */
-  --color-ink-300:    #ACBAC8;   /* muted / secondary text on ink (4.69:1) */
+| Token | Light | Dark (rooms) | Role |
+|---|---|---|---|
+| `surface` / `surface-raised` / `surface-muted` / `surface-inverse` | `#FFFFFF` / `#FFFFFF` / `#F4F5F7` / `#15171C` | `#111216` / `#1B1D23` / `#1B1D23` / `#15171C` | canvas; cards and popovers (separated by border, no shadow at rest); grouped areas; non-interactive dark fills |
+| `text` / `text-muted` / `text-on-inverse` | `#15171C` / `#5A6070` / `#FFFFFF` | `#F2F3F5` / `#A4A9B4` / `#FFFFFF` | body and headings; secondary (6.28:1 light, 7.15:1 dark); text on the inverse surface |
+| `primary` / `on-primary` | `#15171C` / `#FFFFFF` | `#F2F3F5` / `#15171C` | the primary button |
+| `signal` / `on-signal` | `#FEE401` / `#15171C` | `#FEE401` / `#111216` | the live and instant signal, the wordmark block. **Fill only; never text or a border on white** (1.29:1). 13.93:1 |
+| `accent` | `#6B2A8A` | `#D2A8EA` | links, selected states, the focus ring (9.04:1, 8.45:1) |
+| `live` / `live-surface` | `#1E7A46` / `#E6F7EC` | `#5FD68A` / `#1B1D23` | "Live now" and "LIVE" text and dot; the chip background (4.81:1) |
+| `border` / `border-strong` | `#E4E6EA` / `#8A909C` | `#2A2E37` / `#6B7280` | hairlines (decorative); inputs and controls (3.21:1) |
+| `focus` | = accent | = accent | the one focus ring |
+| `danger` / `on-danger` / `danger-surface` | `#B3261E` / `#FFFFFF` / `#FBEAE9` | `#FF8A80` / `#111216` / `#1B1D23` | destructive |
+| `warning` / `warning-surface` | `#8A5A00` / `#FFF4D6` | `#FFC857` / `#1B1D23` | warning |
+| `success` | = live | = live | one green |
 
-  --color-gold-400:   #FEE401;   /* CTA + focus ring on ink — high contrast */
-  --color-live-500:   #44C96F;   /* live indicators only — dots, pulses (non-text) */
-  --color-live-400:   #4FD179;   /* LIVE badge fill — carries ink-900 text (4.75:1) */
-  --color-ink-1000:   #1C2733;   /* near-black — public footer surface ONLY, darker than ink-950 (Bubble parity) */
+The values are declared once in `src/app/globals.css` and mirrored as data in `src/lib/design/tokens.ts`. `tests/unit/design-tokens.test.ts` asserts the two agree, that every sanctioned foreground/background pair clears its floor (4.5:1 text, 3:1 controls) in both themes, and that no raw hex exists in `src/` outside those two files (the Google sign-in logo excepted).
 
-  /* Neutrals */
-  --color-white: #FFFFFF;
-  --color-gray-50: #FAFAFB;
-  --color-gray-200: #E7E5EA;
-  --color-gray-500: #6E6880;
-  --color-gray-700: #453D57;
+**Compatibility aliases (temporary).** `globals.css` carries the old colour-named utilities (`ink-*`, `purple-*`, `gold-400`, `live-4/500`, `gray-*`, `white`) mapped to the nearest role under a block headed REMOVE IN PART 6, so pages not yet converted stay legible between Parts 2 and 5. Part 6 deletes the block; a clean `pnpm typecheck && pnpm build` after that is the proof the sweep finished. New code must not use them.
 
-  /* Semantic */
-  --color-success: #44C96F;
-  --color-warning: #F5A524;
-  --color-danger:  #E5484D;
+**Type.** Funnel Display 600 to 800 (`font-display`) for page and section titles, tutor names, the hero and stat values; Funnel Sans 400 to 600 (`font-sans`) for everything else; DM Sans 700 (`font-wordmark`) for the wordmark only. All three bundled by `next/font`. Scale unchanged: display 40/44, h1 32/38, h2 24/30, h3 20/26, body-lg 17/26, body 15/24, small 13/20, caption 12/16. Tabular figures on money and in tables (`data-numeric`).
 
-  /* Type */
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+**Shape.** `--radius: 0.75rem`. Controls `md` (10px), cards `xl` (20px) with a `lg` (14px) photo inset, chips and every button `full`. Spacing on the 4px grid; pages full-bleed with a `px-4 md:px-6` gutter (`container-page` remains for the rare boxed page).
 
-  /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-full: 9999px;
+**The wordmark** is one component (`components/layout/wordmark.tsx`): "Now" in `text`, "Tutors" in `on-signal` on a `signal` block, DM Sans 700. `tone="onDark"` for footers and rooms. Assumption for the client to confirm; an SVG export is the alternative.
 
-  /* Focus rings — one per surface (§10.3) */
-  --focus-ring:         var(--color-purple-500);  /* light surfaces */
-  --focus-ring-on-ink:  var(--color-gold-400);    /* ink surfaces */
-}
-```
-
-Type scale (DM Sans throughout, weights 400/500/700): display 40/44, h1 32/38, h2 24/30, h3 20/26, body-lg 17/26, body 15/24, small 13/20, caption 12/16.
-
-Spacing on a 4px grid. **Pages are full-bleed by default** (`feat/browse-page-ink-theme`, superseding the earlier "boxed at 1200px" default below): a page's outer wrapper spans the full viewport width with a small edge gutter, `px-4` mobile / `px-6` desktop (16px/24px), matching the gutter already used by `PublicHeader`/`PublicFooter`/the browse body. This is a page-*wrapper* rule only — an individual component (a settings form, an auth card) can still choose its own narrower natural width (e.g. `mx-auto max-w-2xl` on `/tutor/profile`, `mx-auto w-full max-w-xl` on `/onboarding`); the fix is that the page shell no longer forces a 1200px box around everything inside it.
-
-~~Container max-width 1200px, page gutter 20px mobile / 24px desktop (desktop gutter tightened from 32px in the density pass).~~ **Superseded.** The `container-page` `@utility` (1200px max-width, defined in `globals.css`) still exists and is still valid CSS, but it is **no longer applied as the page-level default** anywhere — it was pulled from `PublicHeader`, `PublicFooter`, `AppShell`'s content panel, the `(auth)` layout header, `/tutors/[slug]`, and `/dev/kitchen-sink` in the same change that made `/` full-bleed (that earlier change said the browse page was a one-off exception; it wasn't — full-bleed is now the intended layout everywhere). `container-page` remains available for the rare page that wants a boxed reading-width; today only `/suspended` still uses it.
-
-**The ink surface (parity with the Bubble build).** The authenticated app is an **ink shell** (sidebar + topbar) wrapping a **white content panel**, with **ink cards** inside that panel — ink shell → white panel → ink cards. There is exactly **one** ink surface (`ink-900`, `#34495E`, sampled from the live build; sidebar and cards are the same value). Elevation-by-lightness is unavailable: an ink card, a dropdown over the ink topbar, or the drawer contents cannot separate from their background by being lighter — they separate by an `ink-700` border or a shadow. `ink-800` is an **interaction state** (hover/pressed), never a surface; `ink-950` is the darker recess (active nav item, modal scrim) — **not** a card sub-panel. **A card is one `ink-900` fill throughout:** the `TutorCard` media/avatar band is the *same* `ink-900` as its content and separates only by an `ink-700` bottom border (an earlier build tinted that band `ink-950`; corrected — a card must not carry two tones). Verified contrast on `ink-900`: white body 9.29:1, `ink-300` secondary 4.69:1, `live-400` badge fill 4.75:1 (its `ink-900` text 4.75:1), gold focus ring 7.22:1 — all pass.
-
-**Rules:** gold is for primary CTAs only, never for body text or borders. Live green appears only on live status — never as a generic success colour in the same view as a LIVE badge. **Purple on ink is fill-only, carrying white text** (white on `purple-500` = 6.91:1): at **1.34:1** purple fails not just the 4.5:1 text floor but the 3:1 non-text UI floor, so it is never text, a border, a focus ring, or an active-indicator bar on ink — gold does that job. On ink, body/headings/names use white freely, secondary text uses `ink-300` (4.69:1). Purple remains the primary on light surfaces, unchanged.
-
-**Public shell (browse page, added `feat/browse-page-ink-theme`).** The public `PublicHeader` and the `/` (browse) filters rail now render on `ink-900`, mirroring the Bubble shell — parity with the authenticated ink shell, extended to the public browse experience. Wordmark and nav links are white, the active nav item and the wordmark accent are gold (7.22:1). **Neither the header CTAs nor the filters rail use a purple fill on ink** — the "Sign up" button and checked checkboxes/switch use `bg-gold-400` + `text-ink-900` (7.22:1) instead, and "Log in" / "Clear all" use a white-text ghost treatment (new `Button` variants `ink` / `ink-ghost`) — purple-on-ink is avoided here entirely rather than relied upon as fill-only, to keep the public shell visually distinct from the purple-primary marketing surfaces. Measured: white body 9.29:1, gold-on-ink 7.22:1, `ink-300` hover/secondary 4.69:1, white on the `ink-800` hover state 7.61:1 — all pass.
-
-`PublicFooter` renders on the new `ink-1000` (near-black, see token above), one step darker than the header's `ink-900`, matching the Bubble footer. All footer text is white (15.14:1); the gold hover/accent measures 11.76:1. `ink-1000` is scoped to the public footer only — it is not part of the authenticated ink shell (§10.1 "ONE ink surface" still holds for the app shell/cards; `ink-1000` is an additional, footer-specific surface, not a replacement).
-
-`TutorFilters` (the shared filter form used by both the desktop rail and the mobile drawer) takes a `surface: "light" | "ink"` prop (default `"light"`) so the mobile drawer — a separate, light-surface container — is unaffected; only the desktop `/` sidebar passes `surface="ink"`. Unchecked checkbox borders on ink use `ink-300` (4.69:1, clears the 3:1 non-text floor); the `Sort` select gets its own on-ink treatment (`ink-800` fill, `ink-700` border, white value text) so it doesn't inherit the shared component's light-surface white background.
+**Dark islands.** Interactive content on a dark background sits inside a `.theme-dark` scope, never on a bare `surface-inverse`, so the single focus ring re-resolves to the dark accent (8.99:1) instead of the light plum on near-black (1.98:1). The footer is a dark island; a tooltip is not.
 
 ### 10.2 Component inventory
 
-Port the 27 NT- global styles into these components. Building this list in Phase 2 before any page work means no page ever needs a one-off inline style — which is what caused the "named colour variables only partially wired" problem.
+Primitives (`src/components/ui/`): `Button` (primary / secondary / ghost / **signal** / danger × sm / md / lg / icon, loading, asChild), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `DatePicker`, `TimePicker`, `Label`, `FieldError`, `Card` (`interactive`), `StatCard`, `Badge` (neutral / accent / live / success / warning / danger / solid), **`LiveChip`** (replaces `LivePill`: always a text label, "Live now" or "LIVE" with an optional viewer count), **`OnAirRing`** (the yellow ring for instant-available tutors, `still` variant), **`StatRow`** (Experience, Sessions, Rate), **`Money`** (credits with the "≈ $" anchor from the basis package), **`AlertDialog`** (money and destructive confirms; `role="alertdialog"`), **`Progress`** (linear), `ProgressRing` (the 60-second countdown), `Avatar` (initials fallback on `surface-muted`), `RatingStars` (in the inventory, unrendered until reviews exist, §18), `SubjectChip`, `Tabs`, `Modal`, `Drawer`, `Toast`, `Tooltip`, `DropdownMenu`, `Pagination`, `EmptyState`, `Skeleton`, `Spinner`, `PriceTag`, `CreditBalance`, `Table` (`numeric` cells), `Breadcrumb`, `Alert`. Plus `Wordmark` in `components/layout/`.
 
-`Button` (primary/secondary/ghost/danger × sm/md/lg, loading, icon), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `DatePicker`, `TimePicker`, `Label`, `FieldError`, `Card`, `StatCard`, `Badge`, `LivePill`, `Avatar` (with initials fallback), `RatingStars`, `SubjectChip`, `Tabs`, `Modal`, `Drawer`, `Toast`, `Tooltip`, `DropdownMenu`, `Pagination`, `EmptyState`, `Skeleton`, `Spinner`, `ProgressRing` (the 60-second request countdown), `PriceTag`, `CreditBalance`, `Table`, `Breadcrumb`, `Alert`.
+Composed: `TutorCard`, `BookingCard`, `SlotPicker`, `AvailabilityGrid`, `MessageBubble`, `ConversationListItem`, `TransactionRow`, `VideoTile`, `SessionControlBar`, `IncomingRequestModal`, `WaitingForTutorModal`. Parts 2 to 6 of the overhaul add the shell pieces (`BottomNav`), the room pieces (`Lobby`, `ControlBar`, `SidePanel`, `ConnectionBanner`, `SessionEnded`), the tutor pieces (`TodayFeed`, `EarningsStages`, `PayoutInFlight`) and the admin `DataTable`; each lands in its part's SPEC amendment.
 
-Composed: `TutorCard`, `BookingCard`, `SlotPicker`, `AvailabilityGrid`, `MessageBubble`, `ConversationListItem`, `TransactionRow`, `VideoTile`, `SessionControlBar`, `IncomingRequestModal`, `WaitingForTutorModal`.
-
-**Surface variants.** `Card`/`StatCard` carry an explicit `surface="ink"` variant (ink-900 fill, ink-700 border, white text). `PriceTag` and `RatingStars` take a `surface="ink"` prop — because they compose onto the ink `TutorCard`: `PriceTag` numerals go white (unit/USD → ink-300); `RatingStars` keeps gold fill (7.22:1 on ink) with empty stars in ink-700 and the value label white/ink-300. `LivePill` and fill-based `Badge`s are surface-agnostic. `Breadcrumb` and `Pagination` stay **light-surface only** with no ink variant — they render on the white content panel (breadcrumbs in the topbar region were the reason the topbar could not go ink under the old model; under the ink-shell model breadcrumbs live in the white panel, not the ink topbar).
+**Surface variants are gone.** `Card`, `StatCard`, `PriceTag`, `RatingStars`, `LivePill` and `CreditBalance` still *accept* their old `surface="ink"` / `tone="ink"` props and render them on the inverse tokens so unconverted callers stay legible, but the props are deprecated and deleted in Part 6 along with `LivePill` (a re-export of `LiveChip`), the `ink` / `ink-ghost` button aliases and the alias block. A component styles itself the same way on both themes and lets `.theme-dark` do the rest.
 
 ### 10.3 Quality floor
 
-Responsive from 360px. Visible keyboard focus rings, 2px width / 2px offset, **surface-specific**: `--focus-ring` (purple-500) on light surfaces, `--focus-ring-on-ink` (gold-400) on ink — a purple ring on ink is invisible (1.34:1), so this is an accessibility requirement, not a preference. `prefers-reduced-motion` respected. All interactive elements at least 44×44px on touch. Real `<button>`/`<a>` elements, labelled inputs, `aria-live` on toasts and the session timer. Loading and empty states designed, not afterthoughts — an empty bookings list invites the student to browse tutors.
+Responsive from 360px. **One** visible keyboard focus ring, 2px `focus` / 2px offset, on every surface (dark islands re-resolve it). WCAG AA on every sanctioned pair in both themes, enforced by the token test. `prefers-reduced-motion` respected, with a static alternative for every animation (the live dot and on-air ring included). All interactive elements at least 44×44px on touch. Real `<button>` / `<a>` elements, labelled inputs, `aria-live` on toasts and the session timer.
+
+**The live signal rule.** Two states, one green family, mutually exclusive (§7.8): instant-available is the yellow `OnAirRing` plus a "Live now" `LiveChip` plus the `signal` "Request now" button; broadcasting is a "LIVE" `LiveChip` with the viewer count and no ring. The chip is always text; a bare dot is never the indicator. No red for live. An offline tutor shows no status text.
+
+**Money confirms** restate the exact amount and destination in an `AlertDialog` with outcome-labelled buttons ("Withdraw $45 to PayPal" / "Keep credits"), nothing preselected. The "≈ $" anchor on student surfaces is computed from the direct-pay basis package, never hard-coded; the tutor payout rate never appears on a student surface.
+
+Loading and empty states designed, not afterthoughts: an empty bookings list invites the student to browse tutors.
 
 ---
 
@@ -1941,6 +1910,10 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 **Phase 9 — Messaging and broadcasts.** Conversations, threads, Realtime, unread badges; broadcast create/host/view, `/live`.
 *Accept:* two browsers exchange messages in real time; a broadcast is watchable by two viewers.
 *Status:* **COMPLETE 2026-09-15.** E2E test 6 passed (57.1s: student2 and tutor3 exchanged messages, the badge and the reply arrived without a reload, both marked read) and E2E test 7 passed (1.6m: tutor3 broadcast with a fake camera, student2 and student1 both played the host's video, the host counted 2, both saw it end; the row read `ended`, `peak_viewers = 2`), both against the test project. Parts 1 to 3 merged (PRs #67, #69, #71); migrations `0018` to `0020` applied to production. See PROGRESS and DECISIONS, "Phase 9 acceptance".
+
+**Phase 9.5 — Design overhaul ("On Air").** Added 2026-09-15 at the client's request (the design read as dated). Six PR-sized parts, no migration, no money or booking rule change: (1) semantic tokens, fonts, restyled primitives, `docs/DESIGN.md`, the token contrast test; (2) shell (header, footer, app shell, sidebar, mobile bottom bar); (3) public and student surfaces led by the tutor card; (4) live moments with dark scoped to the rooms; (5) tutor surfaces; (6) admin, the photo-at-approval rule, alias cleanup, acceptance. Plan: workspace `plans/2026-09-15-nowtutors-design-overhaul.md`.
+*Accept:* every E2E spec (1 to 7 plus a design smoke) passes on Daniels' run; `grep -rE 'ink-|gold-|purple-|live-4|live-5|gray-' src` returns nothing and the alias block is gone; Lighthouse accessibility 90+ on `/`, `/tutors`, one profile and `/dashboard`; the client has the before-and-after set.
+*Status:* **Part 1 (foundation) built 2026-09-15**, PR open. Parts 2 to 6 pending.
 
 **Phase 10 — Email, polish, launch prep.** All templates, reminder cron, empty/loading/error states everywhere, accessibility pass, Lighthouse pass, `RUNBOOK.md` complete, production env configured, LessonSpace waiting room set, PayPal live credentials, one supervised real-card test.
 *Accept:* the runbook checklist is fully ticked.

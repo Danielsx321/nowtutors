@@ -23,15 +23,15 @@ export const RadioGroupItem = React.forwardRef<
   <RadioGroupPrimitive.Item
     ref={ref}
     className={cn(
-      "focus-ring grid size-5 shrink-0 place-items-center rounded-full border border-gray-500 bg-white transition-colors",
-      "data-[state=checked]:border-purple-500",
+      "focus-ring grid size-5 shrink-0 place-items-center rounded-full border border-border-strong bg-surface-raised transition-colors",
+      "data-[state=checked]:border-primary",
       "disabled:cursor-not-allowed disabled:opacity-50",
       className,
     )}
     {...props}
   >
     <RadioGroupPrimitive.Indicator className="grid place-items-center">
-      <span className="size-2.5 rounded-full bg-purple-500" />
+      <span className="size-2.5 rounded-full bg-primary" />
     </RadioGroupPrimitive.Indicator>
   </RadioGroupPrimitive.Item>
 ));

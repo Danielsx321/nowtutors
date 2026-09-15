@@ -29,8 +29,10 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 /**
  * User avatar with a generated initials fallback (SPEC §7.2). Falls back to
- * initials both when no src is given and when the image fails to load — so the
- * "photos not rendering" failure never shows a broken image.
+ * initials both when no src is given and when the image fails to load, so the
+ * "photos not rendering" failure never shows a broken image. The fallback is
+ * quiet (muted surface, muted text): a missing photo should read as missing,
+ * not as a design choice (DESIGN.md, "Photos").
  */
 export function Avatar({
   src,
@@ -44,7 +46,7 @@ export function Avatar({
   return (
     <span
       className={cn(
-        "relative inline-grid shrink-0 place-items-center overflow-hidden rounded-full bg-purple-100 font-medium text-purple-700",
+        "relative inline-grid shrink-0 place-items-center overflow-hidden rounded-full bg-surface-muted font-display font-semibold text-text-muted",
         sizes[size],
         className,
       )}

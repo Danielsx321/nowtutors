@@ -12,7 +12,7 @@ export interface SpinnerProps extends React.HTMLAttributes<HTMLSpanElement> {
   label?: string;
 }
 
-/** Indeterminate loading spinner. Brand-purple ring, transparent top. */
+/** Indeterminate loading spinner. Ink ring on a muted track, transparent top. */
 export function Spinner({
   size = "md",
   label = "Loading",
@@ -29,7 +29,7 @@ export function Spinner({
       <span
         aria-hidden
         className={cn(
-          "block rounded-full border-purple-100 border-t-purple-500 animate-spin-brand",
+          "block rounded-full border-border border-t-primary animate-spin-brand",
           sizes[size],
         )}
       />

@@ -24,23 +24,23 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 px-6 py-12 text-center",
+        "flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center",
         className,
       )}
       {...props}
     >
       {icon && (
         <span
-          className="grid size-12 place-items-center rounded-full bg-purple-100 text-purple-500"
+          className="grid size-12 place-items-center rounded-full bg-surface-muted text-text-muted"
           aria-hidden
         >
           {icon}
         </span>
       )}
       <div className="space-y-1">
-        <p className="text-h3 font-bold text-gray-700">{title}</p>
+        <p className="text-h3 font-bold text-text">{title}</p>
         {description && (
-          <p className="mx-auto max-w-sm text-body text-gray-500">
+          <p className="mx-auto max-w-sm text-body text-text-muted">
             {description}
           </p>
         )}

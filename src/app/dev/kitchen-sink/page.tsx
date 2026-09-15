@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { ring, type Surface } from "./_sections/kit";
+import { type Surface } from "./_sections/kit";
 import { FoundationsSection } from "./_sections/foundations";
+import { SignalSection } from "./_sections/signal";
 import { ButtonsSection } from "./_sections/buttons";
 import { FormsSection } from "./_sections/forms";
 import { FeedbackSection } from "./_sections/feedback";
@@ -14,7 +15,8 @@ import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
 
 const sections = [
-  { id: "foundations", label: "Foundations" },
+  { id: "foundations", label: "Tokens" },
+  { id: "signal", label: "Live signal" },
   { id: "buttons", label: "Buttons" },
   { id: "forms", label: "Forms" },
   { id: "feedback", label: "Feedback" },
@@ -29,64 +31,32 @@ export default function KitchenSink() {
   const [surface, setSurface] = React.useState<Surface>("light");
 
   return (
-    <div
-      className={cn(
-        "min-h-screen transition-colors",
-        surface === "ink" ? "bg-ink-900" : "bg-gray-50",
-      )}
-    >
-      <header
-        className={cn(
-          "sticky top-0 z-30 border-b backdrop-blur",
-          surface === "ink"
-            ? "border-ink-700 bg-ink-900/90"
-            : "border-gray-200 bg-white/90",
-        )}
-      >
+    <div className={cn("min-h-screen bg-surface text-text transition-colors", surface === "dark" && "theme-dark")}>
+      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
           <div>
-            <h1
-              className={cn(
-                "text-h3 font-bold",
-                surface === "ink" ? "text-white" : "text-gray-700",
-              )}
-            >
-              Kitchen Sink
-            </h1>
-            <p
-              className={cn(
-                "text-caption",
-                surface === "ink" ? "text-ink-300" : "text-gray-500",
-              )}
-            >
-              Every §10.2 primitive, in every state.
+            <h1 className="font-display text-h3 font-semibold text-text">Kitchen Sink</h1>
+            <p className="text-caption text-text-muted">
+              Every §10.2 primitive, in every state, in both themes.
             </p>
           </div>
 
-          {/* Surface toggle — amendment #1: verify each primitive on both a
-              light surface and ink-900. */}
+          {/* Theme toggle: `dark` wraps the page in `.theme-dark`, the scope the
+              live rooms use, so every primitive is checked on both palettes. */}
           <div
             role="group"
-            aria-label="Preview surface"
-            className={cn(
-              "inline-flex rounded-full border p-1",
-              surface === "ink" ? "border-ink-700 bg-ink-950" : "border-gray-200 bg-white",
-            )}
+            aria-label="Preview theme"
+            className="inline-flex rounded-full border border-border bg-surface-raised p-1"
           >
-            {(["light", "ink"] as const).map((s) => (
+            {(["light", "dark"] as const).map((s) => (
               <button
                 key={s}
                 type="button"
                 aria-pressed={surface === s}
                 onClick={() => setSurface(s)}
                 className={cn(
-                  "rounded-full px-4 py-1.5 text-small font-medium capitalize transition-colors",
-                  ring(surface),
-                  surface === s
-                    ? "bg-purple-500 text-white"
-                    : surface === "ink"
-                      ? "text-ink-300"
-                      : "text-gray-500",
+                  "focus-ring rounded-full px-4 py-1.5 text-small font-medium capitalize transition-colors",
+                  surface === s ? "bg-primary text-on-primary" : "text-text-muted hover:text-text",
                 )}
               >
                 {s}
@@ -100,11 +70,7 @@ export default function KitchenSink() {
             <a
               key={s.id}
               href={`#${s.id}`}
-              className={cn(
-                "rounded-sm text-small hover:underline",
-                ring(surface),
-                surface === "ink" ? "text-ink-300" : "text-gray-500",
-              )}
+              className="focus-ring rounded-sm text-small text-text-muted hover:text-accent hover:underline"
             >
               {s.label}
             </a>
@@ -114,6 +80,7 @@ export default function KitchenSink() {
 
       <main className="w-full space-y-16 px-4 py-12 md:px-6">
         <FoundationsSection surface={surface} />
+        <SignalSection surface={surface} />
         <ButtonsSection surface={surface} />
         <FormsSection surface={surface} />
         <FeedbackSection surface={surface} />

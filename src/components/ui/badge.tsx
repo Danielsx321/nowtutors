@@ -7,13 +7,16 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        neutral: "bg-gray-200 text-gray-700",
-        purple: "bg-purple-100 text-purple-700",
-        success: "bg-success/15 text-success",
-        warning: "bg-warning/15 text-warning",
-        danger: "bg-danger/15 text-danger",
-        // solid, for use on light surfaces where emphasis is needed
-        solid: "bg-purple-500 text-white",
+        neutral: "bg-surface-muted text-text",
+        accent: "bg-accent/10 text-accent",
+        live: "bg-live-surface text-live",
+        success: "bg-success-surface text-success",
+        warning: "bg-warning-surface text-warning",
+        danger: "bg-danger-surface text-danger",
+        // solid, for the rare place a filled label is needed on a light surface
+        solid: "bg-primary text-on-primary",
+        /** @deprecated alias of `accent`, REMOVE IN PART 6 */
+        purple: "bg-accent/10 text-accent",
       },
     },
     defaultVariants: { variant: "neutral" },

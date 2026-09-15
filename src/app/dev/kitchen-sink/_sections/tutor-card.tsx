@@ -3,11 +3,10 @@ import { Section, type Surface } from "./kit";
 import { TutorCard } from "@/components/features/tutor-card";
 import type { TutorCardData, LiveStatus } from "@/db/queries/tutors";
 
-// TutorCard is the first Composed component (Phase 3). It is intrinsically an
-// ink card (Phase 2 ink amendment §3), designed to sit on the white content
-// panel — ink shell → white panel → ink cards. So this demo always renders the
-// three live states on a white panel regardless of the page surface toggle; the
-// toggle governs the surrounding chrome/headings only.
+// TutorCard is the first Composed component (Phase 3). Until Part 3 of the
+// design overhaul rebuilds it, it renders the old dark card through the
+// compatibility aliases; the three live states are shown so nothing goes
+// invisible in between.
 const BASE: Omit<TutorCardData, "userId" | "slug" | "displayName" | "liveStatus"> = {
   avatarUrl: null,
   country: "GB",
@@ -39,8 +38,7 @@ function mock({ status, name, favourited }: (typeof STATES)[number]): TutorCardD
 export function TutorCardSection({ surface }: { surface: Surface }) {
   return (
     <Section id="tutor-card" title="TutorCard (composed)" surface={surface}>
-      {/* The white content panel the ink cards actually live on. */}
-      <div className="rounded-lg bg-white p-6 shadow-sm">
+      <div className="rounded-lg border border-border bg-surface-raised p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {STATES.map((s) => (
             <TutorCard

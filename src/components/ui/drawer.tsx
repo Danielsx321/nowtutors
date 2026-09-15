@@ -23,13 +23,13 @@ export const DrawerContent = React.forwardRef<
   <Dialog.Portal>
     <Dialog.Overlay
       data-slot="overlay"
-      className="fixed inset-0 z-50 bg-ink-950/60"
+      className="fixed inset-0 z-50 bg-scrim"
     />
     <Dialog.Content
       ref={ref}
       data-slot="drawer-content"
       className={cn(
-        "fixed inset-y-0 right-0 z-50 flex w-[calc(100%-3rem)] max-w-sm flex-col border-l border-gray-200 bg-white shadow-lg",
+        "fixed inset-y-0 right-0 z-50 flex w-[calc(100%-3rem)] max-w-sm flex-col border-l border-border bg-surface-raised shadow-lg",
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ export const DrawerContent = React.forwardRef<
       {!hideClose && (
         <Dialog.Close
           aria-label="Close"
-          className="focus-ring absolute right-4 top-4 grid size-8 place-items-center rounded-md text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+          className="focus-ring absolute right-4 top-4 grid size-8 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-text"
         >
           <X className="size-5" />
         </Dialog.Close>
@@ -54,7 +54,7 @@ export function DrawerHeader({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex flex-col gap-1 border-b border-gray-200 p-5 pr-12", className)}
+      className={cn("flex flex-col gap-1 border-b border-border p-5 pr-12", className)}
       {...props}
     />
   );
@@ -66,7 +66,7 @@ export const DrawerTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Dialog.Title
     ref={ref}
-    className={cn("text-h3 font-bold text-gray-700", className)}
+    className={cn("text-h3 font-bold text-text", className)}
     {...props}
   />
 ));
@@ -78,7 +78,7 @@ export const DrawerDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Dialog.Description
     ref={ref}
-    className={cn("text-body text-gray-500", className)}
+    className={cn("text-body text-text-muted", className)}
     {...props}
   />
 ));
@@ -97,7 +97,7 @@ export function DrawerFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex gap-2 border-t border-gray-200 p-5", className)}
+      className={cn("flex gap-2 border-t border-border p-5", className)}
       {...props}
     />
   );

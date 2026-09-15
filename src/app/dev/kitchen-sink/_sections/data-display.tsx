@@ -40,14 +40,14 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
 
   return (
     <Section id="data-display" title="Data display" surface={surface}>
-      <Demo label="Card — white & ink surfaces" surface={surface} className="items-stretch">
+      <Demo label="Card: raised surface, hairline border, no shadow at rest" surface={surface} className="items-stretch">
         <Card className="w-72">
           <CardHeader>
             <CardTitle>Scheduled session</CardTitle>
             <CardDescription>Tomorrow, 3:00 PM</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-body text-gray-500">
+            <p className="text-body text-text-muted">
               60 minutes of Physics with Dr. Rao.
             </p>
           </CardContent>
@@ -56,23 +56,6 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
             <Button size="sm" variant="ghost">
               Reschedule
             </Button>
-          </CardFooter>
-        </Card>
-        <Card surface="ink" className="w-72">
-          <CardHeader>
-            <CardTitle>Go live</CardTitle>
-            <CardDescription className="text-ink-300">
-              Broadcast to your audience
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-body text-ink-300">
-              The single ink surface — separated from the shell by its ink-700
-              border, not by a lighter fill.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button size="sm">Start broadcast</Button>
           </CardFooter>
         </Card>
       </Demo>
@@ -93,7 +76,6 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
           trend={{ direction: "up", label: "12%" }}
         />
         <StatCard
-          surface="ink"
           className="w-56"
           label="Available credits"
           value="1,240"
@@ -139,15 +121,15 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         </Card>
       </Demo>
 
-      <Demo label="Badge & LivePill" surface={surface}>
+      <Demo label="Badge & LiveChip" surface={surface}>
         <Badge>Neutral</Badge>
-        <Badge variant="purple">Purple</Badge>
+        <Badge variant="accent">Accent</Badge>
+        <Badge variant="live">Live</Badge>
         <Badge variant="success">Success</Badge>
         <Badge variant="warning">Warning</Badge>
         <Badge variant="danger">Danger</Badge>
         <Badge variant="solid">Solid</Badge>
         <LivePill />
-        <LivePill surface="ink" />
       </Demo>
 
       <Demo label="Avatar (image, initials fallback, broken src)" surface={surface}>
@@ -165,10 +147,10 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <Avatar size="xl" name="Marie Curie" />
       </Demo>
 
-      <Demo label="Rating stars (track the surface)" surface={surface}>
-        <RatingStars value={4.5} count={128} surface={surface} />
-        <RatingStars value={3} count={12} size="lg" surface={surface} />
-        <RatingStars value={0} showValue={false} surface={surface} />
+      <Demo label="Rating stars (in the inventory, unrendered until reviews exist)" surface={surface}>
+        <RatingStars value={4.5} count={128} />
+        <RatingStars value={3} count={12} size="lg" />
+        <RatingStars value={0} showValue={false} />
       </Demo>
 
       <Demo label="Subject chips (static, selectable, removable)" surface={surface}>
@@ -188,11 +170,10 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <SubjectChip onRemove={() => {}}>Removable</SubjectChip>
       </Demo>
 
-      <Demo label="Price & credit balance (track the surface)" surface={surface}>
-        <PriceTag credits={60} unit="hr" usd={6} size="lg" surface={surface} />
-        <PriceTag credits={1} unit="min" size="md" surface={surface} />
+      <Demo label="PriceTag & CreditBalance (prefer Money on new surfaces)" surface={surface}>
+        <PriceTag credits={60} unit="hr" usd={6} size="lg" />
+        <PriceTag credits={1} unit="min" size="md" />
         <CreditBalance credits={1240} />
-        <CreditBalance credits={1240} tone="ink" />
       </Demo>
 
       <Demo label="Breadcrumb" surface={surface} className="items-stretch">

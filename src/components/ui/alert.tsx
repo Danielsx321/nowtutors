@@ -4,14 +4,14 @@ import { Info, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
-  "flex gap-3 rounded-md border p-4 text-body",
+  "flex gap-3 rounded-md border p-4 text-body text-text",
   {
     variants: {
       variant: {
-        info: "border-purple-100 bg-purple-100 text-purple-700",
-        success: "border-success/30 bg-success/10 text-gray-700",
-        warning: "border-warning/30 bg-warning/10 text-gray-700",
-        danger: "border-danger/30 bg-danger/10 text-gray-700",
+        info: "border-border bg-surface-muted",
+        success: "border-success/30 bg-success-surface",
+        warning: "border-warning/30 bg-warning-surface",
+        danger: "border-danger/30 bg-danger-surface",
       },
     },
     defaultVariants: { variant: "info" },
@@ -26,7 +26,7 @@ const icons = {
 } as const;
 
 const iconColor = {
-  info: "text-purple-500",
+  info: "text-text-muted",
   success: "text-success",
   warning: "text-warning",
   danger: "text-danger",
@@ -55,8 +55,8 @@ export function Alert({
     >
       <Icon className={cn("mt-0.5 size-5 shrink-0", iconColor[key])} aria-hidden />
       <div className="min-w-0">
-        {title && <p className="font-bold text-gray-700">{title}</p>}
-        {children && <div className="text-gray-700">{children}</div>}
+        {title && <p className="font-semibold">{title}</p>}
+        {children && <div>{children}</div>}
       </div>
     </div>
   );
