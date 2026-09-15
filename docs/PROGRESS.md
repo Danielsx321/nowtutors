@@ -4,9 +4,10 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 9 Part 3 (live broadcasts) is BUILT on `phase-9-part3-broadcasts`, not merged.** Migration
-`drizzle/0020` (partial unique index `broadcasts_one_live_per_tutor`) is **applied to the test project
-only**. Built: `/tutor/broadcasts` (start form and past broadcasts), `/broadcast/[id]` (host view: camera,
+**Phase 9 Part 3 (live broadcasts) is MERGED via PR #71 (`802c8d3`), deployed, and `0020` is APPLIED to
+`mipnoxlhurdbaahmvhhx`** (Daniels ran `pnpm db:migrate`, then `pnpm db:verify-rls` PASSED, 2026-09-15). Broadcasts are
+live on production. The build record below is kept as written. Migration
+`drizzle/0020` (partial unique index `broadcasts_one_live_per_tutor`) was applied to the test project first. Built: `/tutor/broadcasts` (start form and past broadcasts), `/broadcast/[id]` (host view: camera,
 mic and camera toggles, live viewer count, End broadcast), `/live` and `/live/[id]` (signed-out visitors
 get a sign-in button; signed-in viewers join as Agora audience), the `{ broadcastId }` branch of
 `/api/agora/token`, a Supabase Realtime Presence viewer count with `peak_viewers`, and Q5: a broadcasting
@@ -18,8 +19,7 @@ start; `db:verify-rls:test` PASSED after `0020`. Falsification 16/16 breaks caug
 `nowtutors-test` preview: `/tutor/broadcasts` and `/broadcast/<id>` redirect to `/login`, `/live` renders
 its empty state, an unknown or malformed `/live/<id>` is 404, and the token route answers 401. Two
 unrelated DB-lane failures on this machine are explained in DECISIONS "Phase 9 Part 3" §10 (a network
-flake, and the Mac's clock running about 2.65 s slow). **Post-merge production step:** `pnpm db:migrate`,
-then `pnpm db:verify-rls`, then the Agora `live` mode check (RUNBOOK). The signed-in check is batched
+flake, and the Mac's clock running about 2.65 s slow). **Post-merge production step: migration DONE 2026-09-15;** the Agora `live` mode check (RUNBOOK) is still to do. The signed-in check is batched
 (live-test item 12). Part 4 (E2E tests 6 and 7) is next.
 
 **Phase 9 Part 2 — message attachments — is MERGED via PR #69 (`f1c37e4`), deployed, and `0019` is APPLIED to

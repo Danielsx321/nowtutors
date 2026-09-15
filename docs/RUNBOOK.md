@@ -443,7 +443,8 @@ already-running script.
   `db:verify-rls` must print PASSED including the six `message-attachments` lines. The deployed app needs
   `SUPABASE_SERVICE_ROLE_KEY` on Vercel Production (already set, marked Sensitive 2026-09-15): the
   attachment actions are the first app code to use the service role.
-- [ ] **Apply `drizzle/0020_one_live_broadcast.sql` to `mipnoxlhurdbaahmvhhx`**: Phase 9 Part 3.
+- [x] **Apply `drizzle/0020_one_live_broadcast.sql` to `mipnoxlhurdbaahmvhhx`**: Phase 9 Part 3.
+  **Applied 2026-09-15** after PR #71 merged (`802c8d3`); `pnpm db:verify-rls` PASSED on production.
   Run after the Part 3 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
   `pnpm db:verify-rls` (must still print PASSED). It adds the partial unique index
   `broadcasts_one_live_per_tutor` on `broadcasts (tutor_id) where status = 'live'`. **Until it runs**,
