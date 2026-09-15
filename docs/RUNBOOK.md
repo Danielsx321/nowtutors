@@ -424,7 +424,8 @@ already-running script.
   `~/nowtutors` on `main`: `pnpm db:migrate`. Confirm with
   `select enum_range(null::earning_status), enum_range(null::credit_transaction_type);` (both lists end
   with the new values).
-- [ ] **Apply `drizzle/0018_comms_broadcast_write_paths.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 1.
+- [x] **Apply `drizzle/0018_comms_broadcast_write_paths.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 1.
+  **Applied 2026-09-15** after PR #67 merged (`c3d307e`); `pnpm db:verify-rls` PASSED on production.
   Run after the Part 1 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
   `pnpm db:verify-rls`. It removes every `anon`/`authenticated` write on `conversations`, `messages`,
   `broadcasts` and `broadcast_viewers`, and adds `messages.client_key` plus two indexes. **Until it runs,
