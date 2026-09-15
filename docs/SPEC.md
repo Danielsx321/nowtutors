@@ -499,6 +499,13 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 > **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"):** watching a broadcast requires sign-in, so the
 > column stays nullable but is only ever written for a signed-in viewer, by the server. `drizzle/0018`
 > removed every client write on `broadcasts` and `broadcast_viewers`, including the `anon` insert.
+>
+> **Phase 9 Part 3 (`drizzle/0020`).** Partial unique index `broadcasts_one_live_per_tutor` on
+> `(tutor_id) where status = 'live'`, so a tutor can never hold two live broadcasts. `agora_channel` is
+> `broadcast_{id}`, written in SQL by the start transaction (§7.8); no caller names it. `peak_viewers`
+> only rises: the host reports each new high in the Presence count and the server stores
+> `greatest(peak_viewers, n)`, capped at 10,000. `broadcast_viewers` gets one open row per signed-in viewer
+> per broadcast, written by the token route; `left_at` is not written in v1.
 
 ### 4.7 Platform
 
@@ -933,6 +940,8 @@ Rules:
 
 **Going live.** Tutor toggles "Available for instant sessions" on `/tutor`. Sets `is_live = true`, `live_mode = 'instant'`, `last_seen_at = now()`. **Toggling off sets `is_live = false` immediately, and is the only thing that does.** Amended in Phase 6 Part 1: this line previously also promised "or navigating away cleanly". Nothing now clears presence on navigation — see the staleness note below for why the `pagehide` beacon that would have implemented it was removed. Leaving the page simply stops the heartbeat, and the tutor ages out of the view within the staleness window like any other departure.
 
+**Broadcast mode (Phase 9 Part 3, Q5).** `live_mode = 'broadcast'` is set only by starting a broadcast (§7.8) and cleared only by ending it or by the sweep. The instant toggle can't change a tutor in broadcast mode in either direction: `setTutorLive` carries `live_mode is distinct from 'broadcast'` in its WHERE clause, so a toggle racing a broadcast start re-evaluates against the new row and matches nothing, and the action answers "You're broadcasting right now. End your broadcast first." `/tutor` shows the toggle locked, with a link back to the broadcast.
+
 **Ending a session does NOT clear `is_live` (explicit non-behaviour, Phase 6 pre-build decision).** A tutor who finishes an instant session is usually still available for another one; clearing `is_live` on session end would silently drop them off the live list. Presence is owned exclusively by the heartbeat and the staleness sweep cron below — never by session lifecycle. This is called out because a later reader implementing end-session will otherwise assume it's a missing step.
 
 **Staleness — two independent defences** (three until Phase 6 Part 1; see below)**:**
@@ -1204,7 +1213,7 @@ Tutor-only controls (whiteboard admin, recording, end-for-all) come from the `te
 
 Tutor: `/tutor/broadcasts` → title, description, subject → creates `broadcasts` row, `agora_channel = broadcast_{id}`, sets `is_live = true, live_mode = 'broadcast'` → `/broadcast/[id]` as Agora host (`publisher` token).
 
-Viewer: `/live` lists live broadcasts; `/live/[id]` joins as `subscriber`. Live chat via `messages`-style broadcast chat table or Agora RTM — **[open question: does the current build have broadcast chat?]** Viewer count from Agora's presence, `peak_viewers` updated periodically.
+Viewer: `/live` lists live broadcasts; `/live/[id]` joins as `subscriber`. Live chat via `messages`-style broadcast chat table or Agora RTM — **[open question: does the current build have broadcast chat?]** Viewer count from Agora's presence, `peak_viewers` updated periodically. *(Superseded in Phase 9 Part 3: the count comes from Supabase Realtime Presence and `peak_viewers` only rises on a new high; see "Built in Phase 9 Part 3" below.)*
 
 > **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"):** broadcasts are **video only at launch, with no
 > chat** (chat can follow launch). `/live` is public, but **watching requires sign-in** (any role), and
@@ -1213,6 +1222,38 @@ Viewer: `/live` lists live broadcasts; `/live/[id]` joins as `subscriber`. Live 
 > locked until the broadcast ends (built in Part 3). The viewer-count mechanism is decided in Part 3.
 
 End broadcast: status `ended`, `ended_at`, `is_live = false`. Cron sweep also ends broadcasts whose host has gone stale.
+
+> **Built in Phase 9 Part 3:**
+> - **Start** (`/tutor/broadcasts`, `startBroadcast`): an approved tutor with a verified email who isn't
+>   suspended. One transaction locks the tutor's `tutor_profiles` row, then refuses an inactive subject, an
+>   existing live broadcast (the form links back to it) and an `in_progress` booking; inserts the row with
+>   `agora_channel = 'broadcast_' || id` in SQL; sets `is_live = true, live_mode = 'broadcast',
+>   last_seen_at = now()`; and expires the tutor's pending instant requests. Title 3 to 120 characters,
+>   description up to 1,000, subject optional. The accept transaction (§7.4) takes the same row lock
+>   first, so a start and an accept serialize and whichever commits second is refused.
+> - **Host view** `/broadcast/[id]` (session group, so the heartbeat keeps the host fresh; anyone but the
+>   host gets 404): Agora `live` mode as host, camera and microphone, mic and camera toggles, the live
+>   viewer count, and End broadcast with a two-step confirm.
+> - **End** (`endBroadcast`): host only, idempotent on an ended row. `status = 'ended'`, `ended_at = now()`,
+>   and `is_live = false, live_mode = null` only while `live_mode = 'broadcast'`. **Closing the tab
+>   doesn't end it:** the host drops out of `live_tutors` within two minutes and the sweep ends the row.
+> - **Liveness for everyone but the host is derived**, like a tutor's (§3.1): `status = 'live'` AND the host
+>   is in `live_tutors` with `live_mode = 'broadcast'`. `/live`, `/live/[id]` and the viewer token all use it,
+>   so a host who closed the tab disappears without waiting for the sweep.
+> - **Viewer** `/live/[id]`: a signed-out visitor sees the title, the tutor and a sign-in button; the host is
+>   sent to their host view; a signed-in viewer joins as Agora audience (low-latency level, no local
+>   tracks, no permission prompt). When Agora reports the host left, or a token renewal is refused, the page
+>   asks `getBroadcastWatchable` once and shows "This broadcast has ended" if it is over. No polling.
+> - **Viewer count: Supabase Realtime Presence** on `broadcast-viewers:{id}`, not Agora, because an Agora
+>   `live` mode audience member produces no join event. Viewers track `{ role: 'viewer' }` keyed by their
+>   Agora uid, so two tabs count once. The host tracks nothing and reports each new high to
+>   `reportViewerCount`, which raises `peak_viewers` (host only, live only, capped). Display-only: the
+>   Presence channel is public, so the number can be inflated, and nothing is decided on it.
+> - **Q5 in code:** a broadcasting tutor is refused by `createSessionRequest`, by the accept transaction
+>   (`tutor_broadcasting`, nothing charged) and by the instant toggle (§7.5). Their profile shows "Watch
+>   the broadcast" instead of "Request now".
+> - **Tutor cards:** the LIVE badge links to `/live/[id]`. No video preview on cards, which would bill an
+>   Agora audience minute per browse visitor (DECISIONS, Phase 9 Part 3).
 
 ### 7.9 Messaging
 
@@ -1326,6 +1367,7 @@ One Supabase Realtime client, subscriptions declared in hooks and cleaned up on 
 | Unread messages | Topbar `UnreadMessagesLink`, student and tutor shells (Phase 9 Part 1) | `conversations` UPDATE, no filter (RLS scopes it to my threads); plus the same-tab `nowtutors:messages-read` window event |
 | Open thread | `Thread`, `/dashboard/messages/[id]` and `/tutor/messages/[id]` (Phase 9 Part 1) | `messages` INSERT where `conversation_id = current`; row read back through `getMessage` |
 | Live tutors strip | Landing page (optional) | `tutor_profiles` UPDATE where `is_live` changed |
+| Broadcast viewers | `HostStage` on `/broadcast/[id]`, `ViewerStage` on `/live/[id]` (Phase 9 Part 3) | **Presence**, not `postgres_changes`: channel `broadcast-viewers:{id}`; viewers `track({ role: 'viewer' })` under their Agora uid after every (re)subscribe; count = distinct viewer keys on each `sync`. No table, no RLS, display-only |
 
 The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.ts`). The unread and open-thread rows are built in Phase 9 Part 1 (`src/hooks/use-unread-count.ts`, `src/hooks/use-conversation-messages.ts`); every subscription now goes through `src/hooks/use-retrying-channel.ts`, moved out of `use-session-requests.ts` unchanged, and re-reads after each (re)subscribe. Both subscribe through the browser Supabase client, and the `session_requests` RLS SELECT policy (participants only, `drizzle/0005`) decides what can reach them — the `filter` is a narrowing convenience, **not** the authorization. Payloads are treated as notifications: anything displayed to a person is read back through a guarded Server Action.
 
@@ -1353,7 +1395,7 @@ Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy o
 
 1. `requireApiUser()` — the API-route guard (§5 Layer 2), not the redirect-based page guard.
 2. For a session: load the booking by id, confirm the caller is its `student_id` or `tutor_id`, and confirm `status = 'in_progress'`. Role → `publisher`, for **both** participants. The channel comes from `bookings.agora_channel`, never from the request.
-3. For `broadcast`: parse the broadcast id. If caller is the host → `publisher`; otherwise, if the broadcast is `live` → `subscriber`.
+3. For `broadcast`: load the broadcast by id. The host of a `live` broadcast → `publisher`; any other signed-in user → `subscriber`, only while the broadcast is `live` **and** the host is fresh in `live_tutors` with `live_mode = 'broadcast'` (amended in Phase 9 Part 3; this step previously required only `live`). Missing, ended and stale-host broadcasts are the same 404. The channel comes from `broadcasts.agora_channel` and must equal `broadcast_{id}`, or nobody gets a token.
 4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity. The token itself is minted at the service's wildcard `uid/0`, which authorizes the *channel* for any uid; the client then joins under its own derived uid.
 5. Fetch from the Render service, return `{ token, uid, appId, channel, expiresAt }` with a TTL shorter than the token's.
 6. Client renews via a `setTimeout` scheduled off the route's reported `expiresAt` (not Agora's `token-privilege-will-expire` event — see the Part 3B remainder amendment below).
@@ -1472,6 +1514,15 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > renewal."
 >
 > Still not here: screen share, chat, `network-quality`.
+
+> **Phase 9 Part 3 (the broadcast branch).** The body is parsed by `lib/agora/token-body.ts`: strictly one
+> of `{ bookingId }` or `{ broadcastId }`, so a body with both ids, or any other field, gets the route's
+> existing 404. The session branch is otherwise unchanged. The broadcast branch decides access in
+> `lib/broadcasts/access.ts` (step 3), stamps a signed-in viewer's join in `broadcast_viewers`
+> best-effort (one open row per viewer), and returns `{ token, uid, appId, channel, expiresAt, isHost }`.
+> `lib/agora/live-client.ts` wraps `live` mode: the host calls `setClientRole('host')` and publishes camera
+> and microphone; everyone else calls `setClientRole('audience', { level: 1 })` (low latency, billed below
+> ultra-low) and only subscribes. Renewal reuses `useTokenRenewal` with the broadcast body.
 
 ---
 
@@ -1602,7 +1653,7 @@ route is `cronHandler("<job>")` (`lib/cron/handler.ts`) over one job body per jo
 and "run now" calls that same function server-side behind `requireRole('admin')`, never the URL and
 never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or the failure.
 
-- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); stale broadcasts and the Agora warm-ping remain `TODO(Phase 6 Part 3)` in the handler.
+- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); the Agora warm-ping landed in Phase 6 Part 3A, and **Phase 9 Part 3 added the stale-broadcast half** (`endStaleBroadcasts`, returned as `broadcastsEnded` and `broadcastsEndedIds`): a `live` broadcast whose host isn't a fresh broadcast-mode row in `live_tutors` is ended, derived from the view like the tutor half.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`. Built in Phase 8
   Part 3 (`db/queries/expire-unpaid.ts`); returns `{ ok, job, expired, expiredIds, durationMs }`.
@@ -1885,6 +1936,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 
 **Phase 9 — Messaging and broadcasts.** Conversations, threads, Realtime, unread badges; broadcast create/host/view, `/live`.
 *Accept:* two browsers exchange messages in real time; a broadcast is watchable by two viewers.
+*Status:* Parts 1 (messaging) and 2 (attachments) merged, with `0018` and `0019` on production. Part 3 (live broadcasts, `0020`) built on `phase-9-part3-broadcasts`. Part 4 is the acceptance run: E2E tests 6 and 7.
 
 **Phase 10 — Email, polish, launch prep.** All templates, reminder cron, empty/loading/error states everywhere, accessibility pass, Lighthouse pass, `RUNBOOK.md` complete, production env configured, LessonSpace waiting room set, PayPal live credentials, one supervised real-card test.
 *Accept:* the runbook checklist is fully ticked.
