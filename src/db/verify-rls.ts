@@ -119,6 +119,21 @@ async function main() {
       .select("id");
     assert(!error && (data ?? []).length === 0, "student cannot UPDATE another user's profile");
   }
+  // profiles_guard (0003, widened for the trusted server in 0016): a signed-in
+  // user still can't escalate their own role or touch their own suspension.
+  {
+    const { error } = await student.from("profiles").update({ role: "admin" }).eq("id", uid);
+    assert(!!error, "student cannot promote themselves to admin (profiles_guard)");
+  }
+  {
+    const { error } = await student.from("profiles").update({ is_suspended: true }).eq("id", uid);
+    assert(!!error, "student cannot change their own is_suspended (profiles_guard)");
+  }
+  {
+    const { data } = await rows(student.from("profiles").select("role, is_suspended").eq("id", uid));
+    const me = data[0] as { role: string; is_suspended: boolean } | undefined;
+    assert(me?.role === "student" && me.is_suspended === false, "student1 is still an unsuspended student");
+  }
   {
     // WITH CHECK (user_id = auth.uid()) must reject a spoofed owner id.
     const { error } = await student
