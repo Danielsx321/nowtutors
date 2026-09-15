@@ -492,6 +492,40 @@ async function main() {
             `student cannot INSERT broadcast_viewers directly (got ${(error as { code?: string } | null)?.code ?? "no error"})`,
           );
         }
+        // message-attachments (drizzle/0019): private, no client policies. Even a
+        // participant can't read an object directly; only a server-signed link can.
+        {
+          const { data: bucket } = await service.storage.getBucket("message-attachments");
+          assert(
+            bucket?.public === false && Number(bucket?.file_size_limit) === 10 * 1024 * 1024,
+            "message-attachments bucket is private with a 10 MB limit",
+          );
+          const objectPath = `${conversationId}/${crypto.randomUUID()}/rls-fixture.png`;
+          const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+          const uploaded = await service.storage
+            .from("message-attachments")
+            .upload(objectPath, png, { contentType: "image/png" });
+          assert(!uploaded.error, "service role can upload a fixture attachment");
+          try {
+            const asParticipant = await s1Client.storage.from("message-attachments").download(objectPath);
+            assert(!!asParticipant.error, "participant cannot download an attachment directly (signed links only)");
+            const asOutsider = await s2Client.storage.from("message-attachments").download(objectPath);
+            assert(!!asOutsider.error, "non-participant cannot download another thread's attachment");
+            const asAnon = await anon.storage.from("message-attachments").download(objectPath);
+            assert(!!asAnon.error, "anon cannot download an attachment");
+            const listed = await s2Client.storage.from("message-attachments").list(conversationId);
+            assert(
+              !!listed.error || (listed.data ?? []).length === 0,
+              "non-participant cannot list a thread's attachments",
+            );
+            const direct = await s1Client.storage
+              .from("message-attachments")
+              .upload(`${conversationId}/${crypto.randomUUID()}/direct.png`, png, { contentType: "image/png" });
+            assert(!!direct.error, "signed-in user cannot upload into message-attachments directly");
+          } finally {
+            await service.storage.from("message-attachments").remove([objectPath]);
+          }
+        }
       } finally {
         await Promise.all([
           s1Client.auth.signOut(),

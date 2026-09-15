@@ -4,6 +4,17 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**Phase 9 Part 2 — message attachments — is BUILT on `phase-9-part2-attachments`, not merged.** jpg, png
+and PDF up to 10 MB, one per message (Q2). **Migration `drizzle/0019`** adds the `messages_body_or_attachment`
+CHECK and the private `message-attachments` bucket with no client storage policies; **applied to the test
+project only.** Uploads are server-signed after a participant check, sends confirm the object exists in
+Storage with an allowed stored size and type, and downloads are 5-minute signed links. The service role is
+used in app code for the first time (`lib/supabase/admin.ts`). Proven against real Storage on the test
+project (DECISIONS "Phase 9 Part 2" §6); `db:verify-rls` gained six bucket checks, all passing. **Q5 is
+settled** (a broadcasting tutor can't take instant requests), so Part 3 is unblocked. **Post-merge
+production step:** `pnpm db:migrate` then `pnpm db:verify-rls` (RUNBOOK); until then attaching fails on
+production and text messages are unaffected.
+
 **Phase 9 Part 1 — messaging core and the comms/broadcast write paths — is MERGED via PR #67 (`c3d307e`),
 deployed, and `0018` is APPLIED to `mipnoxlhurdbaahmvhhx`** (Daniels ran `pnpm db:migrate`, then
 `pnpm db:verify-rls` PASSED with all 11 "messaging + broadcasts" checks ticked, 2026-09-15). The client

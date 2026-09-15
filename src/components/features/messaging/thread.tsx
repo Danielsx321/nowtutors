@@ -172,7 +172,14 @@ export function Thread({
                   {dayFmt.format(at)}
                 </p>
               )}
-              <MessageBubble body={m.body} mine={m.senderId === viewerId} time={timeFmt.format(at)} />
+              <MessageBubble
+                messageId={m.id}
+                conversationId={conversationId}
+                body={m.body}
+                attachment={m.attachment}
+                mine={m.senderId === viewerId}
+                time={timeFmt.format(at)}
+              />
             </React.Fragment>
           );
         })}

@@ -1,3 +1,4 @@
+import { isAttachmentPathFor } from "@/lib/messaging/attachments";
 import {
   canStartConversation,
   RATE_LIMIT,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/messaging/rules";
 
 /**
- * The messaging write path (SPEC §7.9; Phase 9 Part 1).
+ * The messaging write path (SPEC §7.9; Phase 9 Parts 1 and 2).
  *
  * **Every write is a server action on the trusted connection.** drizzle/0018
  * removed every client INSERT and UPDATE on `conversations` and `messages`, so
@@ -26,6 +27,13 @@ import {
  * `clientKey` per message; the partial unique index on
  * `(conversation_id, client_key)` refuses the second insert and this returns the
  * first row as success, so the composer's retry path needs no special case.
+ *
+ * **Attachments (Part 2).** A message may carry one attachment path, and then its
+ * text may be empty. The path must parse as an attachment path under THIS
+ * conversation, so a participant can't attach an object from another thread.
+ * That the object really exists, and its stored size and type, are checked by
+ * the action against Storage before this runs; the database's
+ * `messages_body_or_attachment` constraint backs up "never neither".
  *
  * **A missing conversation and someone else's conversation are the same
  * `not_found`**, so no action can be used to discover conversation ids.
@@ -55,7 +63,9 @@ export interface MessageRow {
 export interface NewMessage {
   conversationId: string;
   senderId: string;
-  body: string;
+  body: string | null;
+  /** The object path in the private bucket, never a URL. */
+  attachmentUrl: string | null;
   clientKey: string;
 }
 
@@ -122,6 +132,30 @@ export async function startConversation(
   });
 }
 
+/**
+ * The text and attachment a send will store, or why not. With an attachment the
+ * text is optional; without one it's required. Pure, so the composer's rule and
+ * the server's rule can't drift.
+ */
+export function prepareContent(input: {
+  conversationId: string;
+  body: string;
+  attachmentPath?: string | null;
+}):
+  | { ok: true; body: string | null; attachmentUrl: string | null }
+  | { ok: false; reason: SendRefusal } {
+  const path = input.attachmentPath ?? null;
+  if (path !== null && !isAttachmentPathFor(input.conversationId, path)) {
+    return { ok: false, reason: "attachment_invalid" };
+  }
+  const body = validateBody(input.body);
+  if (body.ok) return { ok: true, body: body.body, attachmentUrl: path };
+  if (body.reason === "empty" && path !== null) {
+    return { ok: true, body: null, attachmentUrl: path };
+  }
+  return body;
+}
+
 export async function sendMessage(
   run: MessagingRunner,
   input: {
@@ -129,10 +163,11 @@ export async function sendMessage(
     conversationId: string;
     body: string;
     clientKey: string;
+    attachmentPath?: string | null;
   },
 ): Promise<{ ok: true; message: MessageRow } | { ok: false; reason: SendRefusal }> {
-  const body = validateBody(input.body);
-  if (!body.ok) return body;
+  const content = prepareContent(input);
+  if (!content.ok) return content;
 
   return run(async (store) => {
     const conversation = await store.lockConversation(input.conversationId);
@@ -167,7 +202,8 @@ export async function sendMessage(
     const message = await store.insertMessage({
       conversationId: input.conversationId,
       senderId: input.senderId,
-      body: body.body,
+      body: content.body,
+      attachmentUrl: content.attachmentUrl,
       clientKey: input.clientKey,
     });
     await store.touchConversation(input.conversationId, message.id);
