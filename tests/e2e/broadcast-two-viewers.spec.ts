@@ -106,10 +106,20 @@ test("E2E 7: two signed-in viewers watch one broadcast, and both see it end", as
   await endLeftovers();
 
   // Wake the token service (Render free tier) before anyone waits on a join.
-  const ping = await request.get(`${TEST_ENV.AGORA_TOKEN_SERVICE_URL!.replace(/\/+$/, "")}/ping`, {
-    timeout: 60_000,
-  });
-  expect(ping.ok(), `token service /ping answered ${ping.status()}`).toBe(true);
+  // Through the app's own sweep, which pings it server-side: the app server runs
+  // with this machine's CA bundle (`with-ca-certs.mjs`) and the Playwright runner
+  // does not, so a direct HTTPS call from here fails certificate verification.
+  // The sweep's ping gives up after 15 s and a cold start can take longer, so it
+  // gets three tries; if the service is still waking, the join budget covers it.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const res = await request.get("/api/cron/sweep-presence", {
+      headers: { Authorization: `Bearer ${TEST_ENV.CRON_SECRET}` },
+      timeout: 60_000,
+    });
+    expect(res.status(), `sweep-presence answered ${res.status()}`).toBe(200);
+    const summary = (await res.json()) as { agoraWarmPing?: { ok?: boolean } };
+    if (summary.agoraWarmPing?.ok) break;
+  }
 
   // 1. The tutor goes live.
   const host = await signedInPage(browser, TUTOR_EMAIL, /\/tutor(\/|$)/, {
