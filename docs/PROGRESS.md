@@ -4,6 +4,23 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**DESIGN OVERHAUL Part 2 (shell) is BUILT on `design-part2-shell`, PR open, not merged.** The ink shell is gone:
+public header, app shell, sidebar and topbar are on the light canvas, and the footer is a `.theme-dark` island. Built:
+one `Wordmark` everywhere (header, footer, drawer, auth, suspended), a mobile bottom bar below `md` (four
+destinations plus More, which opens the drawer with the full list), an icon rail between `md` and `lg`, nav
+reordered per role (tutor Messages up from ninth), `UnreadCountProvider` so the topbar and bottom bar share one
+Realtime channel, and the go-live switch in the topbar (new `compact` variant, same action) so a tutor can go live
+from any page. **Four fixes the shell owned:** the bottom bar covered the message composer (`Thread` was sized to
+the old shell; now `dvh` plus the bar's height, measured clear at 360×780), Log out was a dead menu item (the only
+sign-out was on the pending-approval and suspended pages), the student credit pill was hard-coded to 0 while the
+wallet page showed the real balance, and the avatar said "Guest" to signed-in people. **Five nav links pointed at
+routes that do not exist** (`/how-it-works`, `/pricing`, `/faq`, the legal pages, `/dashboard/settings`) and were
+dropped until Phase 10 builds those pages; SPEC §10.3 now says navigation may not link to a route that does not
+exist. `/tutor` is thin until Part 5 makes it the Today feed. Gates: typecheck and lint clean, 675 unit, 58 DOM
+(8 new), build passed; checked signed in as student2, tutor3 and admin at 1440, 1024, 768 and 360 on the test
+project. No migration, no prod step. **Next:** Daniels merges; Part 3 (public and student surfaces, led by the
+tutor card) starts from `main`.
+
 **DESIGN OVERHAUL ("Phase 9.5") Part 1, foundation, is MERGED via PR #74 (`be6a209`), deployed. No prod step.**
 The client said the design looked dated; Daniels decided (2026-09-15) the redesign comes before Phase 10, name and
 logo kept. Six PR-sized parts, no migration, no money or booking rule change; the plan is in the workspace at

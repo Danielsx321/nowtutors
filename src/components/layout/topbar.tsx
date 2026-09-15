@@ -1,11 +1,13 @@
 "use client";
 
-import { Bell, Menu } from "lucide-react";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { CreditBalance } from "@/components/ui/credit-balance";
 import { UnreadMessagesLink } from "@/components/features/messaging/unread-messages-link";
+import { GoLiveToggle } from "@/components/features/tutor/go-live-toggle";
+import { signOut } from "@/actions/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,23 +19,27 @@ import {
 
 export interface TopbarProps {
   title?: string;
-  /** Opens the mobile nav drawer. */
+  /** Opens the mobile nav drawer (the More sheet). */
   onOpenMenu?: () => void;
-  /** Presentational sample values — real data wires in later phases. */
   showCredits?: boolean;
   credits?: number;
   userName?: string;
   /** The viewer's inbox. When set, the Messages icon and unread badge render. */
   messagesHref?: string;
+  /**
+   * Tutors only: the go-live switch rides in the topbar so it is reachable from
+   * every tutor page, not only `/tutor` (SPEC §7.5).
+   */
+  goLive?: { initialLive: boolean; broadcastHref: string | null };
+  /** Account-menu links for this role. Only routes that exist are passed in. */
+  accountLinks?: { label: string; href: string }[];
 }
 
-// The topbar is part of the INK shell (sidebar + topbar), not a light surface —
-// superseding the earlier "white topbar" ruling (DECISIONS.md). Its controls take
-// on-ink treatment: white ghost buttons with an ink-800 hover, a gold focus ring,
-// and CreditBalance in its `ink` tone. Content areas below stay a white panel.
-const onInkGhost =
-  "focus-ring-on-ink text-white hover:bg-ink-800 hover:text-white";
-
+/**
+ * The bar above the content panel: light, one hairline, the page title in the
+ * display face, and the controls a signed-in person reaches for. The old ink
+ * topbar went with the ink shell in the design overhaul.
+ */
 export function Topbar({
   title,
   onOpenMenu,
@@ -41,49 +47,61 @@ export function Topbar({
   credits = 0,
   userName = "Guest",
   messagesHref,
+  goLive,
+  accountLinks = [],
 }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-ink-700 bg-ink-900 px-4 md:px-6">
-      <div className="flex items-center gap-2">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-border bg-surface/95 px-4 backdrop-blur md:px-6">
+      <div className="flex min-w-0 items-center gap-2">
         <Button
           variant="ghost"
           size="icon"
-          className={cn("md:hidden", onInkGhost)}
+          className="md:hidden"
           aria-label="Open menu"
           onClick={onOpenMenu}
         >
           <Menu />
         </Button>
-        {title && <h1 className="text-h3 font-bold text-white">{title}</h1>}
+        {title && (
+          <h1 className="truncate font-display text-h3 font-semibold text-text">{title}</h1>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
-        {showCredits && <CreditBalance credits={credits} tone="ink" />}
+        {goLive && (
+          <GoLiveToggle
+            variant="compact"
+            initialLive={goLive.initialLive}
+            broadcastHref={goLive.broadcastHref}
+          />
+        )}
+        {showCredits && <CreditBalance credits={credits} />}
         {messagesHref && <UnreadMessagesLink href={messagesHref} />}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={onInkGhost}
-          aria-label="Notifications"
-        >
-          <Bell />
-        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              className="focus-ring-on-ink rounded-full"
-              aria-label="Account menu"
-            >
+            <button className="focus-ring rounded-full" aria-label="Account menu">
               <Avatar name={userName} size="md" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>{userName}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem destructive>Log out</DropdownMenuItem>
+            {accountLinks.map((link) => (
+              <DropdownMenuItem key={link.href} asChild>
+                <Link href={link.href}>{link.label}</Link>
+              </DropdownMenuItem>
+            ))}
+            {accountLinks.length > 0 && <DropdownMenuSeparator />}
+            {/* Log out was a dead menu item until the design overhaul: the only
+                way out of the app was the pending-approval or suspended page.
+                It runs the same server action those use. */}
+            <form action={signOut}>
+              <DropdownMenuItem asChild destructive>
+                <button type="submit" className="w-full">
+                  Log out
+                </button>
+              </DropdownMenuItem>
+            </form>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

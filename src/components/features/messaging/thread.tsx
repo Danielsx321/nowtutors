@@ -143,8 +143,11 @@ export function Thread({
   });
   const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
+  // Below `md` the mobile bottom bar takes 4rem off the viewport, and `dvh`
+  // keeps the composer above the browser's own chrome on a phone. Part 5
+  // rebuilds this thread; the height stays a shell concern until then.
   return (
-    <div className="flex h-[calc(100vh-14rem)] min-h-96 flex-col">
+    <div className="flex h-[calc(100dvh-18rem)] min-h-96 flex-col md:h-[calc(100dvh-14rem)]">
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto pr-1" aria-live="polite">
         {hasOlder && (
           <div className="flex justify-center py-2">

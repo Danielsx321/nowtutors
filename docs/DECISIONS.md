@@ -4783,3 +4783,32 @@ The client (Noora) said the design looked dated and generic. Daniels decided on 
 **Kitchen sink.** `/dev/kitchen-sink` now toggles light / dark (the dark side wraps the page in `.theme-dark`, the scope the rooms use) instead of light / ink, opens with a Tokens section that lists every sanctioned pair and its computed ratio for the theme on screen, and has a "Live signal, proof, money" section for the new primitives. The old `TutorCard`, header, footer, sidebar and topbar still render through the aliases until their parts land.
 
 **Gates.** Typecheck and lint clean; `pnpm test` 675 passed (74 new); `pnpm test:dom` 50 passed; `pnpm build` passed. No migration, no prod step.
+
+## Design overhaul Part 2: the shell (`design-part2-shell`, 2026-09-15)
+
+Part 1 gave the app a token layer; this part is the first thing anyone actually sees change. Header, footer, sidebar, topbar, the mobile bar, and the nav config behind them.
+
+1. **The ink shell is gone.** Public header, app shell, sidebar and topbar are all on the light canvas. The model SPEC §10.1 described (ink shell → white panel → ink cards, with `ink-800` as an interaction state and two focus rings) was the single biggest thing the client was reacting to, and it is what forced most of the contrast workarounds. The remaining dark surfaces are the footer, the tooltip and (Part 4) the live rooms.
+
+2. **The footer is a dark island, not a dark fill.** `<footer className="theme-dark bg-surface ...">` rather than `bg-surface-inverse` with hand-picked light text. Inside the scope, `text`, `border` and `focus` all re-resolve, so the links and the focus ring are correct without a single on-dark override, and the focus ring clears 3:1 (the light plum on near-black is 1.98:1, which is exactly why Part 1 introduced islands).
+
+3. **The mobile bottom bar replaces the hamburger-only nav**, four destinations plus More. Four, not five: at 360px five 44px targets only fit by shrinking labels below reading size, and the fifth is always the one you forget. More opens the same drawer the topbar's menu button does, holding the full list, so nothing is unreachable. The content panel carries `pb-20` below `md` so the bar never covers anything.
+
+   **It covered the message composer anyway.** `Thread` was sized `h-[calc(100vh-14rem)]`, a number tuned to the old shell, so the composer sat 42px under the bar. Now `h-[calc(100dvh-18rem)] md:h-[calc(100dvh-14rem)]`: the extra 4rem is the bar, and `dvh` also keeps it above a phone browser's own chrome. Measured after: composer bottom 703px against a bar top of 725px at 360×780. Part 5 rebuilds the thread; the height stays a shell concern until then.
+
+4. **One unread count for the whole shell.** The topbar link and the bottom bar both show the badge and both are always mounted (the bar is hidden with CSS, not unmounted), so each calling `useUnreadCount` would open two Realtime channels on the same topic on every signed-in page. `UnreadCountProvider` runs the hook once; `useSharedUnreadCount` reads it, and falls back to its own subscription when there is no provider (which is how the DOM tests render the link on its own). **The bottom bar's badge deliberately does not carry the `unread-badge` test id** — E2E test 6 asserts on exactly one element with it.
+
+5. **A tablet rail between `md` and `lg`.** A 256px sidebar on a 768px screen eats a third of the width. The rail is icons with tooltips, and the label stays in the accessible name (`sr-only`), so `getByRole("link", { name: /^messages/i })` matches at every width.
+
+6. **The go-live switch moved into the topbar** (a new `compact` variant of the same component, same action, same server-side guards; the card variant stays for the tutor's own page). A tutor sitting on their bookings no longer has to navigate home to go live. The state is read in the tutor layout alongside the request TTL, in the same `Promise.all`. `/tutor` is thin until Part 5 turns it into the Today feed.
+
+7. **Nav reordered, and dead links removed.** Student: Home, Bookings, Messages, Wallet, Favourites. Tutor: Today, Bookings, Messages, Availability, Earnings, then a divider, then Withdrawals, Broadcasts, Profile, Settings — Messages came up from ninth, because a tutor who misses a message loses the booking. **Five navigation links pointed at routes that do not exist** and 404'd: `/how-it-works`, `/pricing`, `/faq` (header and footer), the legal pages (footer) and `/dashboard/settings` (student sidebar). They are out until Phase 10 builds the pages. This is recorded in SPEC §10.3 as a rule, not just a fix.
+
+8. **Three things in the shell were lying, and the shell is what this part owns:**
+   - **Log out did nothing.** The account menu's items were placeholders, so the only sign-out in the whole app was on the pending-approval and suspended pages. It now submits the same `signOut` action those use, and the menu shows only links that exist (a student gets Log out alone).
+   - **The credit pill read 0** on every student page while the wallet page beside it showed the real balance: the layout passed `credits={0}`. It reads `getWalletBalance` now.
+   - **The avatar said "Guest"** to signed-in people. A small `getShellIdentity` query (two columns) gives the shell the display name, falling back to the email.
+
+9. **The Bell was removed.** A notifications button with no notifications behind it is a promise the app does not keep; it comes back with the feature.
+
+**Gates.** Typecheck and lint clean; `pnpm test` 675 passed; `pnpm test:dom` 58 passed (8 new in `tests/dom/bottom-nav.test.tsx`); `pnpm build` passed. Checked signed in on the test project as student2, tutor3 and admin at 1440, 1024, 768 and 360: no horizontal overflow at any width, the rail and bar appear at the right breakpoints, the drawer carries the full list, the active item tracks the route, and the composer clears the bar. No migration, no prod step.

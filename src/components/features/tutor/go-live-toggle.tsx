@@ -4,9 +4,16 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { LiveChip } from "@/components/ui/live-chip";
 import { setInstantAvailability } from "@/actions/presence";
 
 export interface GoLiveToggleProps {
+  /**
+   * `card` is the full explainer (the tutor's own page). `compact` is the
+   * topbar: the switch, a short label, and the live state as a chip. Same
+   * component, same action, same guards.
+   */
+  variant?: "card" | "compact";
   /** Live for INSTANT sessions. A broadcast is not this. */
   initialLive: boolean;
   /**
@@ -29,7 +36,11 @@ export interface GoLiveToggleProps {
  * Going live is unrestricted by the tutor's calendar; a scheduled booking is
  * checked at accept (Part 2), not here.
  */
-export function GoLiveToggle({ initialLive, broadcastHref }: GoLiveToggleProps) {
+export function GoLiveToggle({
+  initialLive,
+  broadcastHref,
+  variant = "card",
+}: GoLiveToggleProps) {
   const [live, setLive] = React.useState(initialLive);
   const [pending, startTransition] = React.useTransition();
   const broadcasting = !!broadcastHref;
@@ -58,20 +69,45 @@ export function GoLiveToggle({ initialLive, broadcastHref }: GoLiveToggleProps) 
     });
   };
 
+  if (variant === "compact") {
+    return (
+      <div className="flex items-center gap-2">
+        {live && !broadcasting ? (
+          <LiveChip size="sm" />
+        ) : (
+          <label htmlFor="go-live" className="hidden text-small text-text-muted sm:block">
+            {broadcasting ? "Broadcasting" : "Go live"}
+          </label>
+        )}
+        <Switch
+          id="go-live"
+          checked={broadcasting ? false : live}
+          disabled={pending || broadcasting}
+          onCheckedChange={onChange}
+          aria-label={
+            broadcasting
+              ? "Available for instant sessions, locked while you are broadcasting"
+              : "Available for instant sessions"
+          }
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-start gap-4 rounded-lg border border-gray-200 p-4">
+    <div className="flex items-start gap-4 rounded-xl border border-border p-4">
       <div className="min-w-0 flex-1">
         <label
           htmlFor="go-live"
-          className="block text-body font-medium text-gray-700"
+          className="block text-body font-medium text-text"
         >
           Available for instant sessions
         </label>
-        <p className="mt-1 text-small text-gray-500">
+        <p className="mt-1 text-small text-text-muted">
           {broadcasting ? (
             <>
               You&apos;re broadcasting, so students can&apos;t request you right now.{" "}
-              <Link href={broadcastHref} className="focus-ring rounded-sm text-purple-500 hover:underline">
+              <Link href={broadcastHref} className="focus-ring rounded-sm text-accent hover:underline">
                 Return to your broadcast
               </Link>{" "}
               to end it first.
