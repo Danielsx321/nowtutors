@@ -1,10 +1,4 @@
-import { NextResponse } from "next/server";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import {
-  claimAndCreditEarning,
-  listDueEarningIds,
-} from "@/db/queries/release-earnings";
-import { runReleaseEarningsSweep } from "@/lib/earnings/release-earnings";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET/POST /api/cron/release-earnings` — the earnings-release sweep
@@ -31,58 +25,10 @@ import { runReleaseEarningsSweep } from "@/lib/earnings/release-earnings";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const denied = cronAuthFailure(request, "release-earnings");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const {
-      releasedIds,
-      creditsReleased,
-      notClaimedIds,
-      corruptSplitIds,
-      duplicateLedgerIds,
-      failedIds,
-    } = await runReleaseEarningsSweep({
-      listDueEarningIds,
-      claimAndCreditEarning,
-    });
-
-    const summary = {
-      ok: true as const,
-      job: "release-earnings",
-      // What the database did, not what this run intended: on a second run
-      // inside the same hour these are 0.
-      released: releasedIds.length,
-      creditsReleased,
-      // Claimed by an overlapping run, or no longer due. Not an error.
-      notClaimed: notClaimedIds.length,
-      // net + fee != gross. Left `held`, paid nothing, needs a person.
-      corruptSplit: corruptSplitIds.length,
-      // A `session_earning` already existed for that booking (§4.4's unique
-      // index refused it). Left `held`. Should be 0 in steady state.
-      duplicateLedger: duplicateLedgerIds.length,
-      // Anything else that threw. Should be 0 in steady state.
-      failed: failedIds.length,
-      releasedIds,
-      notClaimedIds,
-      corruptSplitIds,
-      duplicateLedgerIds,
-      failedIds,
-      durationMs: Date.now() - startedAt,
-    };
-    // §12: every cron handler logs a structured summary of what it changed.
-    console.info("[cron/release-earnings]", JSON.stringify(summary));
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/release-earnings] failed", err);
-    return NextResponse.json(
-      { error: "Earnings release failed." },
-      { status: 500 },
-    );
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("release-earnings");
 
 /**
  * Same handler under POST, for the same reason as the other three crons: §12

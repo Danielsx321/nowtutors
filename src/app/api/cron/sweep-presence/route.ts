@@ -1,8 +1,4 @@
-import { NextResponse } from "next/server";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import { sweepStalePresence } from "@/db/queries/presence";
-import { expirePendingRequestsForTutors } from "@/db/queries/session-requests";
-import { pingTokenService } from "@/lib/agora/token-service";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET /api/cron/sweep-presence` — the presence staleness sweep (SPEC §7.5
@@ -34,63 +30,10 @@ import { pingTokenService } from "@/lib/agora/token-service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  // Fail-closed bearer guard, shared with every other cron handler
-  // (`lib/auth/api-guards.ts`): an unset CRON_SECRET is a 503, never "no auth
-  // required". It was inlined here in Part 1 and was lifted out in Part 2 when
-  // expire-requests became the second handler needing exactly it.
-  const denied = cronAuthFailure(request, "sweep-presence");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const { sweptUserIds } = await sweepStalePresence();
-
-    // SPEC §7.4: "If the tutor's presence goes stale while a request is pending,
-    // the request expires immediately." Deliberately NOT gated on `expires_at` —
-    // a tutor who is gone will not answer, so their requests end now rather than
-    // making the student wait out a deadline that cannot be met. Requests that
-    // merely hit their own deadline are the expire-requests cron's job.
-    //
-    // Not in one transaction with the sweep above, and it does not need to be:
-    // if this statement failed, the tutor would be offline with requests still
-    // pending, and every one of them would be expired by expire-requests within
-    // a minute of its own deadline. The two sweeps are independently
-    // self-healing, which is the property that matters — not their atomicity.
-    const { expiredIds } = await expirePendingRequestsForTutors(sweptUserIds);
-
-    // SPEC §9 cold-start note, §12: the token service runs on Render's free
-    // tier, which sleeps, and the first request after idle takes 30-50 seconds.
-    // That cost lands on whoever joins a session first — the worst possible
-    // place for it, since the student and tutor have just agreed to talk *now*.
-    // One cheap GET on the sweep's cadence keeps the instance awake.
-    //
-    // Same independence as the expiry sweep above: this is not in a transaction
-    // with anything, it cannot fail the job, and a miss costs one slow join
-    // rather than a wrong outcome. `pingTokenService` never throws, so there is
-    // no try/catch here to imply otherwise.
-    const agoraPing = await pingTokenService();
-
-    // TODO(Phase 9): end stale broadcasts here — the host going offline should
-    // close the broadcast the same way it expires their pending requests.
-
-    const summary = {
-      ok: true as const,
-      job: "sweep-presence",
-      swept: sweptUserIds.length,
-      sweptUserIds,
-      pendingRequestsExpired: expiredIds.length,
-      agoraWarmPing: agoraPing,
-      durationMs: Date.now() - startedAt,
-    };
-    // §12: every cron handler logs a structured summary of what it changed.
-    console.info("[cron/sweep-presence]", JSON.stringify(summary));
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/sweep-presence] failed", err);
-    return NextResponse.json({ error: "Sweep failed." }, { status: 500 });
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("sweep-presence");
 
 /**
  * Same handler under POST. SPEC §12 and the Vercel-cron convention make this a

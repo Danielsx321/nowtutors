@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import { expirePendingRequests } from "@/db/queries/session-requests";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET/POST /api/cron/expire-requests` — the instant-request expiry sweep
@@ -27,29 +25,10 @@ import { expirePendingRequests } from "@/db/queries/session-requests";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const denied = cronAuthFailure(request, "expire-requests");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const { expiredIds } = await expirePendingRequests();
-
-    const summary = {
-      ok: true as const,
-      job: "expire-requests",
-      expired: expiredIds.length,
-      expiredIds,
-      durationMs: Date.now() - startedAt,
-    };
-    // §12: every cron handler logs a structured summary of what it changed.
-    console.info("[cron/expire-requests]", JSON.stringify(summary));
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/expire-requests] failed", err);
-    return NextResponse.json({ error: "Expiry sweep failed." }, { status: 500 });
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("expire-requests");
 
 /**
  * Same handler under POST, for the same reason as sweep-presence: §12 and the

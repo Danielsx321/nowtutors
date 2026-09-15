@@ -3863,3 +3863,106 @@ reconcile has not yet been run against dev/prod data.
 No automatic repair, no `/admin/settings` "run now" buttons (Part 4), no change to the booking
 transaction's collision sweep, no Sentry configuration.
 
+## Phase 8 Part 4 — admin control room (`phase-8-part4-admin-control`, 2026-09-15)
+
+`/admin`, `/admin/audit` and `/admin/settings`. No migration and no new dependency.
+
+### 1. One job body, two callers
+
+SPEC §12 promised a "run now" button for every job. A second copy of each job for the button would
+drift from the schedule, so the job bodies moved out of the six route files into `lib/cron/jobs.ts`,
+and every route is now `export const GET = cronHandler("<job>")` (`lib/cron/handler.ts`: bearer guard,
+job, JSON, 500 with the same detail-free message as before). Response shapes, log lines and failure
+messages are unchanged; all six routes were exercised over HTTP to confirm. A unit test pins the job
+list to the route directories and each route file to the shared handler.
+
+The reconcile Sentry call moved into the job, so a drift found by "run now" alerts exactly like the
+nightly run. The build's `require-in-the-middle` warning now traces through `lib/cron/jobs.ts`; the
+same `@sentry/nextjs` import chain existed on `main` through the reconcile route.
+
+### 2. "Run now" is server-side, guarded first, audited after
+
+`runCronNow` calls `requireRole('admin')` before reading its input, then the job function directly.
+It never fetches the cron URL and never sees `CRON_SECRET`. The `cron.run_now` audit row is written
+after the run, so it records what happened (summary or failure). If only that insert fails, the admin
+is told the job ran. All six jobs are idempotent, which is what makes an extra run safe, including
+`release-earnings` and `complete-sessions`. The UI still asks for a second click.
+
+### 3. The editor is stricter than the accessors
+
+`lib/settings.ts` coerces and falls back to the seed so a garbage row never reaches a price. For an
+editor that is wrong: a typo would look saved while the platform ran on the seed. So
+`lib/settings-schema.ts` has one schema per key and refuses unknown keys, JSON of the wrong type and
+out-of-range values. The ranges are guard rails, not product decisions, and can widen: fee 0 to 100
+whole percent; hold 0 to 720 hours; instant window 15 to 600 seconds; minimum withdrawal at least $1,
+2 decimals; payout rate above 0, at most $100 and 4 decimals (the same rule as `parsePayoutRate`);
+notice 0 to 10080 minutes; horizon 1 to 90 days; up to 8 unique durations of 15 to 240 minutes; up to
+12 credit packages, strict objects, unique ids, exactly one `is_direct_pay_basis` (zero or two would
+make every direct-pay checkout throw). Editing packages cannot re-price an order already created: the
+order route snapshots `credits_granted` on the payment row.
+
+### 4. `cancellation_enabled` is read-only
+
+Nothing in `src/` reads it and there is no user cancel path (§7.3). An editable switch that does
+nothing would suggest a feature that doesn't exist.
+
+### 5. Stale saves are refused, compared as jsonb
+
+The page sends back the JSON it rendered. `applySettingUpdate` locks the row (`FOR UPDATE`) and
+compares `value = expected::jsonb` in Postgres, so key order and whitespace don't matter. A changed row
+refuses the save. A missing key is created only if the page saw it missing (`on conflict do nothing`,
+loser refused). A save that changes nothing (`is distinct from`) writes no row and no audit entry.
+
+### 6. Overview counts in the admin's calendar
+
+"Today" and "this month" are computed in Postgres from the admin's timezone, half-open bounds, one
+statement. "Sessions today" is bookings not `pending_payment`/`expired` whose
+`coalesce(scheduled_start_at, started_at, created_at)` falls today. Revenue is `payments` with
+status `captured` by `captured_at`, so refunded payments drop out. An unknown timezone falls back to
+UTC rather than erroring.
+
+The wallet card runs the reconcile read live on page load instead of showing the last scheduled
+result: that result sits in `net._http_response`, which keeps about six hours and doesn't exist on the
+test project. The read is one statement and never repairs.
+
+### 7. Audit filter by exact prefix
+
+`split_part(action, '.', 1) = prefix`, not `LIKE`, so `_` in a prefix can't act as a wildcard.
+Query params are validated (prefix `^[a-z_]{1,40}$`, actor uuid) and ignored when malformed. Settings
+and cron runs have no uuid target: `target_id` is null and the key or job is in `payload`.
+
+### 8. Tests
+
+Unit: `settings-schema.test.ts` (32: the key list equals the seed, every seeded value passes, each
+key's bounds, packages rules, and anything accepted parses in full through the checkout parser),
+`cron-jobs.test.ts` (9), `admin-settings-actions.test.ts` (12: guard before input, job or audit;
+actor from the guard; validation before the transaction). DB lane, `admin-control.test.ts` (8): value
+plus audit row, stale refusal, jsonb comparison with reordered keys and no audit on an unchanged save,
+missing-key insert, **a real two-connection race where the second save waits on the row lock and is
+refused**, audit filters, and revenue by Lagos calendar day and month with refunds excluded. The race
+test commits, then restores the setting and deletes its audit rows in `finally`; a read-only check
+afterwards found `min_withdrawal_usd = 30` and no leftover fixture rows.
+
+### 9. Falsification: eleven breaks, all caught
+
+(a) packages basis check allows zero, 1 unit test fails; (b) read-only key editable, 2; (c) registry
+drops a job, 1; (d) run-now runs the job before the guard, 2; (e) run-now audit actor taken from input,
+1; (f) update skips per-key validation, 2; (g) no `FOR UPDATE`, the race test fails; (h) stale check
+compares text, the jsonb test fails; (i) unchanged save still writes, the same test fails; (j) audit
+prefix via `LIKE`, the filter test fails; (k) overview bounds in UTC, the revenue test fails. The first
+pass reported (g) to (k) as caught when the runner had not started (`vitest` was not on the path); they
+were re-run with `pnpm exec` and only counted when a real test failed.
+
+### 10. Verification
+
+`pnpm typecheck`, `pnpm lint` clean; `pnpm test` 430 passed (35 files); `pnpm test:dom` 29 passed;
+`pnpm build` passed (with `NODE_EXTRA_CA_CERTS`); `pnpm test:db:test` on the new file 8 passed against
+`uietkphpfqaicbndunwt`. Dev server against the test project: all six cron routes answer 401 with no
+token and with a wrong token, and 200 with the secret (reconcile `drift:false`, 11 wallets). `/admin`,
+`/admin/audit` and `/admin/settings` redirect a signed-out visitor to `/login`. **Not done:** viewing
+the pages signed in, which needs a password typed; it is on the batched live-test list.
+
+### What is NOT here
+
+No users, credit adjustment or subjects (Part 5); no admin bookings (Part 6); no settings history view
+beyond the audit log; no display of scheduled cron responses; no emails.

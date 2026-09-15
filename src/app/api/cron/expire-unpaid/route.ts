@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-import { cronAuthFailure } from "@/lib/auth/api-guards";
-import { expireUnpaidBookings } from "@/db/queries/expire-unpaid";
+import { cronHandler } from "@/lib/cron/handler";
 
 /**
  * `GET/POST /api/cron/expire-unpaid` — abandoned direct-pay checkouts become
@@ -18,28 +16,10 @@ import { expireUnpaidBookings } from "@/db/queries/expire-unpaid";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const denied = cronAuthFailure(request, "expire-unpaid");
-  if (denied) return denied;
-
-  const startedAt = Date.now();
-  try {
-    const { expiredIds } = await expireUnpaidBookings();
-    const summary = {
-      ok: true as const,
-      job: "expire-unpaid",
-      expired: expiredIds.length,
-      expiredIds,
-      durationMs: Date.now() - startedAt,
-    };
-    // §12: every cron handler logs a structured summary of what it changed.
-    console.info("[cron/expire-unpaid]", JSON.stringify(summary));
-    return NextResponse.json(summary);
-  } catch (err) {
-    console.error("[cron/expire-unpaid] failed", err);
-    return NextResponse.json({ error: "Unpaid-booking expiry failed." }, { status: 500 });
-  }
-}
+// The job body lives in `lib/cron/jobs.ts`, shared with the admin "run now"
+// button on `/admin/settings` (SPEC §12; Phase 8 Part 4). This file keeps the
+// schedule notes, the route config and the HTTP mapping only.
+export const GET = cronHandler("expire-unpaid");
 
 /** Same handler under POST: `pg_net`'s documented call is `net.http_post`. */
 export const POST = GET;
