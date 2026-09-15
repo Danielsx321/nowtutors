@@ -4352,10 +4352,9 @@ FAIL lines for:
   the second run showed `23503` failing them as it should.
 - The participant-rewrite check (`participant_b` swapped to a stranger) passed only because the
   earlier INSERT hole had already created that pair's thread, so the UPDATE hit the pair index
-  (`23505`). The check now deletes that pair first. It was not re-run without `0018` after that change, so the
-  rewrite hole rests on the policy text in `drizzle/0005` (`WITH CHECK (participant_a = auth.uid() OR
-  participant_b = auth.uid())`, which permits it) plus the falsification pass below, which re-adds the
-  policy on the test project and expects the check to fail.
+  (`23505`). The check now deletes that pair first. The falsification pass then re-added `conversations_update`
+  and its UPDATE grant on the test project, and the corrected check failed
+  ("participant cannot rewrite a conversation's participants"), so the rewrite hole is proven directly.
 
 After `0018` on the test project every check passes, and each refused write returns `42501`.
 
@@ -4414,3 +4413,26 @@ stop the production migration for no benefit. Left out.
 - **Email for unread messages is `TODO(Phase 10)`**; `notifications` is not written in Phase 9.
 - **Seed:** one thread student2 opened with tutor3, the last message unread, so dev and the test
   project have an inbox and a badge to look at.
+
+### 5. Falsification pass (13/13 caught)
+
+Each break was applied to committed code, or as a policy re-grant on the test project, then the lane that
+should catch it was run and the break restored. A break counted only on a real "N failed" line.
+
+| Break | Caught by |
+|---|---|
+| `getMessageFor` without the participant check | DB lane, 1 failed |
+| a tutor may start a conversation | unit, 3 failed |
+| no rate limit | unit, 1 failed |
+| no client-key lookup | unit, 2 failed |
+| mark-read includes the reader's own messages | DB lane, 1 failed |
+| `last_message_at` never set | DB lane, 1 failed |
+| thread merge without dedupe | DOM, 3 failed |
+| badge ignores `nowtutors:messages-read` | DOM, 1 failed |
+| composer makes a new client key per attempt | DOM, 1 failed |
+| retrying channel subscribes without `setAuth` | DOM, 5 failed |
+| `messages_update` + grant re-added (test project) | verify-rls, 1 failed |
+| `broadcasts_write` + grant re-added (test project) | verify-rls, 2 failed |
+| `conversations_update` + grant re-added (test project) | verify-rls, 1 failed |
+
+The working tree was clean after the restores, and `db:verify-rls:test` passed again afterwards.
