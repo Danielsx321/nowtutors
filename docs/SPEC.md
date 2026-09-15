@@ -469,7 +469,15 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 
 **`conversations`** — `participant_a uuid, participant_b uuid, last_message_at timestamptz`. Unique index on `(least(participant_a, participant_b), greatest(participant_a, participant_b))` so a pair can only have one thread.
 
-**`messages`** — `conversation_id FK, sender_id FK, body text, attachment_url text, read_at timestamptz`. Index `(conversation_id, created_at desc)`. Realtime enabled.
+**`messages`** — `conversation_id FK, sender_id FK, body text, attachment_url text, read_at timestamptz, client_key uuid`. Index `(conversation_id, created_at desc)`. Realtime enabled.
+
+> **Phase 9 Part 1 (`drizzle/0018`).** `client_key` is one uuid per composer send, with a partial
+> unique index `messages_conv_client_key_unique` on `(conversation_id, client_key) where client_key is not null`,
+> so a double-submitted send lands once. `messages_unread_idx` on `(conversation_id) where read_at is null`
+> serves the unread counts. **No client writes on `conversations` or `messages`** (§5): every insert and
+> update is a server action on the trusted connection, and `last_message_at` is set in SQL to the new
+> message's `created_at` in the same transaction as the insert. The pair index is what makes two
+> concurrent "Message" presses produce one thread (proven in `tests/integration/messaging.test.ts`).
 
 **`notifications`** — `user_id FK, type text, title text, body text, link text, read_at timestamptz`. Realtime enabled.
 
@@ -479,7 +487,11 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 
 **`broadcasts`** — `tutor_id FK, title, description, subject_id FK, agora_channel text unique, status enum('live','ended'), started_at, ended_at, peak_viewers integer default 0`
 
-**`broadcast_viewers`** — `broadcast_id FK, user_id FK nullable (anonymous allowed?**[verify]**), joined_at, left_at`
+**`broadcast_viewers`** — `broadcast_id FK, user_id FK nullable, joined_at, left_at`
+
+> **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"):** watching a broadcast requires sign-in, so the
+> column stays nullable but is only ever written for a signed-in viewer, by the server. `drizzle/0018`
+> removed every client write on `broadcasts` and `broadcast_viewers`, including the `anon` insert.
 
 ### 4.7 Platform
 
@@ -565,8 +577,10 @@ Policy summary:
 | payments | owner only | service role only |
 | tutor_earnings | owning tutor | service role only |
 | withdrawal_requests | owning tutor; all for admin | **server actions only** (`drizzle/0015`): no `authenticated` write at all; see §4.4 |
-| messages | conversation participants | sender inserts own |
-| broadcasts | anyone reads live/ended | owning tutor |
+| conversations | participants only | **server actions only** (`drizzle/0018`): no `anon`/`authenticated` write |
+| messages | conversation participants | **server actions only** (`drizzle/0018`): no `anon`/`authenticated` write |
+| broadcasts | anyone reads live/ended | **server actions only** (`drizzle/0018`); the channel name is never client-chosen |
+| broadcast_viewers | own rows; the host reads their broadcast's | **server only** (`drizzle/0018`) |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
 | audit_log | admin only | service role only |
 | favourites | owning student only | owning student inserts/deletes own (no update) |
@@ -1185,11 +1199,45 @@ Tutor: `/tutor/broadcasts` → title, description, subject → creates `broadcas
 
 Viewer: `/live` lists live broadcasts; `/live/[id]` joins as `subscriber`. Live chat via `messages`-style broadcast chat table or Agora RTM — **[open question: does the current build have broadcast chat?]** Viewer count from Agora's presence, `peak_viewers` updated periodically.
 
+> **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"):** broadcasts are **video only at launch, with no
+> chat** (chat can follow launch). `/live` is public, but **watching requires sign-in** (any role), and
+> **watching is free**. Still open: whether a broadcasting tutor can receive instant requests (Phase 9
+> Part 3 waits on it). The viewer-count mechanism is decided in Part 3.
+
 End broadcast: status `ended`, `ended_at`, `is_live = false`. Cron sweep also ends broadcasts whose host has gone stale.
 
 ### 7.9 Messaging
 
 Conversation list + thread view, shared component for both roles. Send text and optional attachment. Realtime subscription on `messages` filtered by `conversation_id` for the open thread, plus a lighter subscription on `conversations` for unread badges. Mark read when the thread is visible. Unread count in the header. Email notification only if the recipient has been offline for more than 5 minutes.
+
+> **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"), all as recommended:**
+> - **Only a student starts a conversation, and only with an approved tutor who isn't suspended.** A
+>   tutor replies inside a thread a student opened but can't open one. No student-to-student,
+>   tutor-to-tutor or admin threads. Once a thread exists, either participant may keep writing while
+>   they themselves aren't suspended. Every reason a target can't be messaged returns the same
+>   "This tutor isn't available to message.", so the action can't be used to probe accounts.
+> - **Attachments:** jpg, png and PDF up to 10 MB, one per message. Built in Part 2; Part 1 is text only.
+> - **No automatic filtering** of emails or phone numbers and **no report button** in v1. Misuse is
+>   handled by an admin suspending the account (§5, Phase 8 Part 5). Admins can't read messages.
+>
+> **Built in Phase 9 Part 1:**
+> - **Routes:** `/dashboard/messages[/[conversationId]]`, `/tutor/messages[/[conversationId]]`. A
+>   malformed, missing or foreign conversation id 404s identically.
+> - **Entry points:** "Message" on `/tutors/[slug]` (students; signed-out visitors get a sign-in link)
+>   and on the student's booking detail. The tutor's booking detail links to an existing thread only.
+> - **Send:** body trimmed, 1 to 4,000 characters; at most 20 messages per sender per rolling minute;
+>   one transaction locks the conversation row, re-checks participation and suspension, inserts,
+>   and sets `last_message_at`. A repeated `client_key` returns the first message as success.
+> - **Realtime (§8):** the open thread subscribes to `messages` INSERT for its conversation and reads
+>   each row back through `getMessage`; the topbar badge subscribes to `conversations` UPDATE (every
+>   send bumps it) and re-reads `getUnreadCount`. Marking read writes only `messages.read_at`, which
+>   fires nothing, so the thread dispatches a same-tab `nowtutors:messages-read` event and the badge
+>   re-reads on it. Both subscriptions use the shared retrying channel (`hooks/use-retrying-channel.ts`)
+>   and re-read after every (re)subscribe.
+> - **Read state:** marked on open, when a message from the other party arrives while the tab is
+>   visible, and when the tab becomes visible. No read receipts are shown to the sender in v1.
+> - **Email** for an unread message is a `TODO(Phase 10)` hook in the send action. `notifications` is
+>   not written in Phase 9.
 
 ### 7.10 Wallet and credits
 
@@ -1252,12 +1300,12 @@ One Supabase Realtime client, subscriptions declared in hooks and cleaned up on 
 |---|---|---|
 | Incoming session requests | Tutor authenticated layout | `session_requests` INSERT/UPDATE where `tutor_id = me` |
 | Outgoing request status | Student waiting modal | `session_requests` UPDATE where `id = requestId` |
-| Notifications | All authenticated layouts | `notifications` INSERT where `user_id = me` |
-| Unread messages | All authenticated layouts | `conversations` UPDATE where I'm a participant |
-| Open thread | Messages page | `messages` INSERT where `conversation_id = current` |
+| Notifications | All authenticated layouts | `notifications` INSERT where `user_id = me` (**not built**: nothing writes `notifications` before Phase 10) |
+| Unread messages | Topbar `UnreadMessagesLink`, student and tutor shells (Phase 9 Part 1) | `conversations` UPDATE, no filter (RLS scopes it to my threads); plus the same-tab `nowtutors:messages-read` window event |
+| Open thread | `Thread`, `/dashboard/messages/[id]` and `/tutor/messages/[id]` (Phase 9 Part 1) | `messages` INSERT where `conversation_id = current`; row read back through `getMessage` |
 | Live tutors strip | Landing page (optional) | `tutor_profiles` UPDATE where `is_live` changed |
 
-The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.ts`). Both subscribe through the browser Supabase client, and the `session_requests` RLS SELECT policy (participants only, `drizzle/0005`) decides what can reach them — the `filter` is a narrowing convenience, **not** the authorization. Payloads are treated as notifications: anything displayed to a person is read back through a guarded Server Action.
+The first two rows are built in Phase 6 Part 2 (`src/hooks/use-session-requests.ts`). The unread and open-thread rows are built in Phase 9 Part 1 (`src/hooks/use-unread-count.ts`, `src/hooks/use-conversation-messages.ts`); every subscription now goes through `src/hooks/use-retrying-channel.ts`, moved out of `use-session-requests.ts` unchanged, and re-reads after each (re)subscribe. Both subscribe through the browser Supabase client, and the `session_requests` RLS SELECT policy (participants only, `drizzle/0005`) decides what can reach them — the `filter` is a narrowing convenience, **not** the authorization. Payloads are treated as notifications: anything displayed to a person is read back through a guarded Server Action.
 
 **The viewer's JWT is attached to the socket before every subscribe — it is not implied by using the browser client.** supabase-js applies the session to Realtime only from its async `INITIAL_SESSION` auth event, so a subscribe issued on mount joins before the token lands, is authorised as `anon`, still reports `SUBSCRIBED`, and receives nothing through the participants-only policy; a token pushed after the join does not re-authorise the channel. Every connect attempt (first and retried) therefore awaits `auth.getSession()` and `realtime.setAuth(access_token)` before `.subscribe()`, under the same connect watchdog. Found and proven on the test project, 2026-09-14 (DECISIONS, "instant-request fault: the JWT joined after the channel").
 

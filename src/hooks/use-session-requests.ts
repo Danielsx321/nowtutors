@@ -1,8 +1,13 @@
 "use client";
 
 import * as React from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
+import {
+  useRetryingChannel,
+  type BrowserClient,
+  type RealtimeStatus,
+} from "@/hooks/use-retrying-channel";
+
+export type { RealtimeStatus };
 
 /**
  * The two `session_requests` Realtime subscriptions (SPEC §8), one per side of
@@ -24,79 +29,6 @@ import { createClient } from "@/lib/supabase/client";
 
 const TABLE = "session_requests";
 
-/**
- * What a subscription is doing, as the UI needs to see it.
- *
- * `connecting` is the FIRST attempt only and is deliberately indistinguishable
- * from health to the tutor — a shell that flashes a warning on every page load
- * teaches people to ignore it. `unavailable` means at least one attempt has
- * already failed and a retry is scheduled; that is the state worth showing,
- * because it is the state in which a tutor reads as live and receives nothing.
- */
-export type RealtimeStatus = "connecting" | "subscribed" | "unavailable";
-
-/**
- * Backoff for re-subscribing. Bounded at both ends: it starts a second after
- * the first failure so a transient blip recovers quickly, and it never gets
- * slower than 30s, so a tutor who leaves the tab open through a long outage is
- * still connected within half a minute of the service coming back.
- *
- * The cap is on the DELAY, not on the number of attempts. A tutor sitting on
- * `/tutor` marked live has no other way to receive a request, so giving up
- * would only restore the silent failure this exists to remove — and at one
- * attempt per 30s this is two orders of magnitude off polling.
- */
-const RETRY_BASE_MS = 1_000;
-const RETRY_MAX_MS = 30_000;
-
-/**
- * How long to wait for `.subscribe()`'s callback before treating the connect as
- * failed even though nothing reported a failure.
- *
- * This is the case the deployed instrumentation actually caught: on some page
- * loads the callback resolved `TIMED_OUT`, and on others **it never fired at
- * all**. A retry hung off the status callback alone cannot see the second one,
- * so the retry cannot depend solely on that callback. 15s sits past the
- * realtime client's own 10s connect timeout, so a real `TIMED_OUT` is still
- * what gets reported when the client manages to report anything.
- */
-const CONNECT_WATCHDOG_MS = 15_000;
-
-/** Watchdog-fired: no status of any kind, which is not a status the client has. */
-const NO_STATUS_CALLBACK = "NO_STATUS_CALLBACK";
-
-/**
- * Report what the socket did with a subscription.
- *
- * `.subscribe()` took no callback until the countdown fix, which meant
- * `CHANNEL_ERROR`, `TIMED_OUT` and a binding the `session_requests` RLS SELECT
- * policy refuses were all indistinguishable — from here — from a channel that
- * simply had nothing to deliver.
- *
- * **`SUBSCRIBED` is logged too, and that is a change.** It used to return early
- * alongside `CLOSED`, on the reasoning that success is not news. It is: during
- * the instant-request investigation a console with no `[realtime/…]` line in it
- * meant either "the subscription is healthy" or "the subscribe callback never
- * ran", and those are the two opposite answers to the question being asked.
- * Health that says nothing cannot be told apart from silence. `CLOSED` stays
- * quiet because it is what unmounting produces on every navigation.
- */
-function reportSubscriptionStatus(
-  scope: string,
-  status: string,
-  err?: Error,
-): void {
-  if (status === "CLOSED") return;
-  if (status === "SUBSCRIBED") {
-    console.info(`[realtime/${scope}] subscription SUBSCRIBED`);
-    return;
-  }
-  console.error(`[realtime/${scope}] subscription ${status}`, {
-    status,
-    error: err?.message ?? null,
-  });
-}
-
 /** The row shape Realtime delivers (REPLICA IDENTITY FULL, drizzle/0006). */
 interface SessionRequestPayloadRow {
   id?: string;
@@ -104,179 +36,6 @@ interface SessionRequestPayloadRow {
   booking_id?: string | null;
   tutor_id?: string;
   student_id?: string;
-}
-
-type BrowserClient = ReturnType<typeof createClient>;
-
-/**
- * Subscribe a channel and KEEP it subscribed (SPEC §8).
- *
- * **Why this exists, replacing "visibility only".** The previous fix logged a
- * failed subscribe and deliberately did nothing about it, on the reasoning that
- * Realtime reconnects on its own and a client-side retry would be the polling
- * CLAUDE.md forbids wearing a different hat. The deployed instrumentation run
- * falsified the first half of that: when the subscription establishes the whole
- * chain works, and when it does not, **nothing ever retries** — the failure is
- * permanent for that page's lifetime and invisible, because the tutor still
- * reads as live. Supabase's Realtime tenant sleeps on the free tier ("Stop
- * tenant because of no connected users") and cold-starting it does real work
- * that outlasts the client's connect timeout, so the first tutor to arrive
- * after a quiet period is the one who loses.
- *
- * This is not polling and the distinction is not a technicality: it retries
- * only while it is NOT connected, it stops the moment it is, and it makes no
- * request for data at any point — it is establishing the push channel that
- * exists so nothing has to poll.
- *
- * Three things it has to get right, all of them the reason it is one helper
- * rather than repeated per hook:
- *  - **The previous channel is removed before every retry**, so a page that
- *    fails ten times holds one socket, not ten.
- *  - **The callback never firing is itself a failure.** A watchdog treats a
- *    hung connect as a failed one; without it the retry would only cover the
- *    statuses the client manages to report.
- *  - **`CLOSED` is not retried.** It is what unmounting produces, and the
- *    `disposed` flag means a teardown mid-backoff cancels the pending retry
- *    instead of resurrecting a channel for a component that is gone.
- */
-function useRetryingChannel(
-  /** Channel topic, and the log scope. `null` disables the subscription. */
-  scope: string | null,
-  build: (client: BrowserClient) => RealtimeChannel,
-  onSubscribed?: () => void,
-): RealtimeStatus {
-  // Both callbacks live in refs: a re-render with new closures must not tear
-  // down and re-establish the socket.
-  const buildRef = React.useRef(build);
-  buildRef.current = build;
-  const subscribedRef = React.useRef(onSubscribed);
-  subscribedRef.current = onSubscribed;
-
-  const [status, setStatus] = React.useState<RealtimeStatus>("connecting");
-
-  React.useEffect(() => {
-    setStatus("connecting");
-    if (!scope) return;
-    // Narrowed once, so the closures below carry a `string` rather than each
-    // re-asserting the guard above.
-    const topic = scope;
-
-    const supabase = createClient();
-    let disposed = false;
-    let channel: RealtimeChannel | null = null;
-    let watchdog: ReturnType<typeof setTimeout> | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-
-    function clearTimers() {
-      if (watchdog !== null) {
-        clearTimeout(watchdog);
-        watchdog = null;
-      }
-      if (retry !== null) {
-        clearTimeout(retry);
-        retry = null;
-      }
-    }
-
-    function dropChannel() {
-      if (channel === null) return;
-      const dead = channel;
-      channel = null;
-      void supabase.removeChannel(dead);
-    }
-
-    function fail(failedWith: string, err?: Error) {
-      if (disposed) return;
-      reportSubscriptionStatus(topic, failedWith, err);
-      clearTimers();
-      // Before the backoff, not after it — a channel we have given up on must
-      // not hold its socket for the length of the wait.
-      dropChannel();
-      setStatus("unavailable");
-      const delay = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
-      attempt += 1;
-      retry = setTimeout(() => {
-        retry = null;
-        void connect();
-      }, delay);
-    }
-
-    // Bumped by every connect. An auth prelude still awaiting when a newer
-    // attempt (or the unmount) has started must not go on to open a channel.
-    let generation = 0;
-
-    async function connect() {
-      if (disposed) return;
-      dropChannel();
-      const mine = ++generation;
-      // Armed BEFORE the auth prelude as well as before `.subscribe()`. Before
-      // `.subscribe()` because it may invoke its callback synchronously — a
-      // watchdog set afterwards would be set after the `SUBSCRIBED` that was
-      // supposed to clear it. Before the prelude because a `getSession` or
-      // `setAuth` that hangs is a connect that hangs, and must retry the same way.
-      watchdog = setTimeout(() => {
-        watchdog = null;
-        fail(NO_STATUS_CALLBACK);
-      }, CONNECT_WATCHDOG_MS);
-
-      // **Attach the signed-in user's JWT to the socket BEFORE subscribing.**
-      // supabase-js only calls `realtime.setAuth` from its async
-      // `INITIAL_SESSION` event, and a mount-time `.subscribe()` joins before
-      // that lands — so on a cold load the channel was authorised as `anon`,
-      // reported `SUBSCRIBED`, and the `session_requests` RLS SELECT policy
-      // (participants only) then withheld every row from it. A token pushed
-      // after the join did not re-authorise it. Proven on the test project with
-      // the three-lane diagnostic (DECISIONS, "instant-request fault: the JWT
-      // joined after the channel"): the lanes that awaited `setAuth` received
-      // the INSERT, filtered and unfiltered alike; the lane that subscribed
-      // immediately, and the production channel beside it, did not.
-      try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        if (token) await supabase.realtime.setAuth(token);
-      } catch (err) {
-        if (disposed || mine !== generation) return;
-        fail("AUTH_PRELUDE_FAILED", err instanceof Error ? err : undefined);
-        return;
-      }
-      if (disposed || mine !== generation) return;
-
-      // Assigned BEFORE `.subscribe()`, because `.subscribe()` can invoke its
-      // callback synchronously — and a `fail()` that ran before the assignment
-      // would leave the channel it is failing on unremovable.
-      const opened = buildRef.current(supabase);
-      channel = opened;
-      opened.subscribe((next, err) => {
-        if (disposed) return;
-        if (next === "SUBSCRIBED") {
-          reportSubscriptionStatus(topic, next);
-          clearTimers();
-          attempt = 0;
-          setStatus("subscribed");
-          subscribedRef.current?.();
-          return;
-        }
-        // CLOSED is teardown, ours or the client's. Retrying it would fight
-        // the unmount that caused it.
-        if (next === "CLOSED") {
-          reportSubscriptionStatus(topic, next);
-          return;
-        }
-        fail(next, err);
-      });
-    }
-
-    void connect();
-
-    return () => {
-      disposed = true;
-      clearTimers();
-      dropChannel();
-    };
-  }, [scope]);
-
-  return status;
 }
 
 export interface IncomingRequestHandlers {

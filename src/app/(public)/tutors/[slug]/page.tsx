@@ -21,6 +21,7 @@ import { LivePill } from "@/components/ui/live-pill";
 import { SubjectChip } from "@/components/ui/subject-chip";
 import { Alert } from "@/components/ui/alert";
 import { FavouriteHeart, type FavouriteMode } from "@/components/features/favourite-heart";
+import { MessageTutorButton } from "@/components/features/messaging/message-tutor-button";
 
 export const dynamic = "force-dynamic"; // viewer-dependent + live-derived
 
@@ -235,6 +236,24 @@ export default async function TutorProfilePage({
               />
             </CardContent>
           </Card>
+
+          {/* Messaging (Phase 9 Part 1). Only a student starts a conversation,
+              so tutors, admins and the tutor viewing their own profile see
+              nothing; signed-out visitors get a sign-in link. The action
+              re-checks every rule server-side. */}
+          {(bookingMode === "anon" || bookingMode === "student") && (
+            <Card>
+              <CardContent className="space-y-3 p-6">
+                <h2 className="text-h3 font-bold text-gray-700">Have a question?</h2>
+                <MessageTutorButton
+                  tutorId={tutor.userId}
+                  signedIn={bookingMode === "student"}
+                  loginHref={`/login?next=/tutors/${slug}`}
+                  className="w-full"
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Instant session (SPEC §7.4). Shown only when the tutor is in the
               live_tutors view AND accepts instant — the action re-checks both

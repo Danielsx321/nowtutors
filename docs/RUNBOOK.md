@@ -424,6 +424,15 @@ already-running script.
   `~/nowtutors` on `main`: `pnpm db:migrate`. Confirm with
   `select enum_range(null::earning_status), enum_range(null::credit_transaction_type);` (both lists end
   with the new values).
+- [ ] **Apply `drizzle/0018_comms_broadcast_write_paths.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 1.
+  Run after the Part 1 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
+  `pnpm db:verify-rls`. It removes every `anon`/`authenticated` write on `conversations`, `messages`,
+  `broadcasts` and `broadcast_viewers`, and adds `messages.client_key` plus two indexes. **Until it runs,
+  sending works (the app writes on the trusted connection) but the client write holes stay open on
+  production**, including a broadcast insert with a chosen `agora_channel`. `db:verify-rls` must print
+  PASSED, with every line under "messaging + broadcasts — client writes must be DENIED (0018)" ticked. It
+  signs in the seeded `student1`, `student2` and `tutor1` and writes one fixture message with the service
+  role, which it removes again.
 - [x] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance. PASSED 2026-09-15** (56.9s; reconcile 0 mismatches across 11 wallets). Re-run it the same way after any change to the withdrawal or release path. Test project only;
   it drives real sign-ins with the seeded password, so a person runs it:
   `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts`. Needs `pnpm db:seed:test` done at some point

@@ -307,6 +307,52 @@ async function main() {
     "favourites insert",
   );
 
+  // Messaging (§4.5, Phase 9 Part 1): one thread student2 opened with tutor3,
+  // with a reply the student hasn't read, so the inbox and the unread badge
+  // have something to show in dev and on the test project. Written with the
+  // service role; drizzle/0018 allows no client writes on these tables.
+  const conversation = check(
+    await admin
+      .from("conversations")
+      .insert({ participant_a: id.student2, participant_b: id.tutor3 })
+      .select("id")
+      .single(),
+    "conversation insert",
+  ) as { id: string };
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  check(
+    await admin.from("messages").insert([
+      {
+        conversation_id: conversation.id,
+        sender_id: id.student2,
+        body: "Hi Theo, could you help me prepare for a chemistry exam next week?",
+        created_at: minutesAgo(30),
+        read_at: minutesAgo(25),
+      },
+      {
+        conversation_id: conversation.id,
+        sender_id: id.tutor3,
+        body: "Happy to. Which topics does the exam cover?",
+        created_at: minutesAgo(20),
+        read_at: minutesAgo(15),
+      },
+      {
+        conversation_id: conversation.id,
+        sender_id: id.student2,
+        body: "Mostly organic reactions and stoichiometry.",
+        created_at: minutesAgo(10),
+      },
+    ]),
+    "messages insert",
+  );
+  check(
+    await admin
+      .from("conversations")
+      .update({ last_message_at: minutesAgo(10) })
+      .eq("id", conversation.id),
+    "conversation last_message_at",
+  );
+
   // Student subjects of interest (§7.1) — a couple of fixtures so the table
   // isn't empty in dev. References subject IDs (FK), never slugs.
   check(

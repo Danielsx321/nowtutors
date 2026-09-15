@@ -13,6 +13,13 @@ import {
 import { navByRole, roleHome, type Role } from "@/components/layout/nav-config";
 import { usePresence } from "@/hooks/use-presence";
 
+/** Where the topbar's Messages icon goes. Admins have no inbox (Phase 9 Part 1). */
+const messagesHrefByRole: Record<Role, string | undefined> = {
+  student: "/dashboard/messages",
+  tutor: "/tutor/messages",
+  admin: undefined,
+};
+
 export interface AppShellProps {
   role: Role;
   title?: string;
@@ -71,6 +78,7 @@ export function AppShell({
           showCredits={showCredits}
           credits={credits}
           userName={userName}
+          messagesHref={messagesHrefByRole[role]}
         />
         {/* White content panel inset into the ink frame (§ Bubble parity). */}
         <main className="flex-1 bg-white p-4 md:rounded-tl-lg md:p-5">

@@ -5,6 +5,7 @@ import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth/guards";
 import { getBookingDetailForParticipant } from "@/db/queries/bookings";
 import { BookingDetailView } from "@/components/features/booking/booking-detail-view";
+import { MessageTutorButton } from "@/components/features/messaging/message-tutor-button";
 
 export const metadata = { title: "Booking · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -30,6 +31,14 @@ export default async function StudentBookingDetailPage({
       viewerId={user.id}
       viewerTimeZone={me?.timezone ?? "UTC"}
       backHref="/dashboard/bookings"
+      messageAction={
+        <MessageTutorButton
+          tutorId={booking.tutorId}
+          signedIn
+          loginHref={`/login?next=/dashboard/bookings/${booking.id}`}
+          className="w-full sm:w-auto"
+        />
+      }
     />
   );
 }

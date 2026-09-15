@@ -20,6 +20,12 @@ function assert(cond: boolean, label: string) {
   if (!cond) failures++;
 }
 
+/** A service-role fixture write that must succeed, or the checks mean nothing. */
+function check<T>(res: { error: unknown; data?: T | null }, label: string): T {
+  if (res.error) throw new Error(`${label}: ${JSON.stringify(res.error)}`);
+  return res.data as T;
+}
+
 async function rows(query: PromiseLike<{ data: unknown; error: unknown }>) {
   const { data, error } = await query;
   return { data: (data ?? []) as unknown[], error };
@@ -312,6 +318,210 @@ async function main() {
     assert(data.length === 0, "student cannot DELETE another student's favourites");
   }
   await student2.auth.signOut();
+
+  // ── Messaging and broadcasts: server actions only (drizzle/0018) ──────────
+  // drizzle/0005 let a participant rewrite a conversation's participants, edit
+  // the other party's messages, insert messages past every server rule, and let
+  // ANY signed-in user create a broadcast with a channel of their choosing
+  // (which the §9 broadcast token branch reads). Every client write on these
+  // four tables is removed; participant and public reads stay (Realtime needs
+  // them). A fixture thread is written with the service role and removed after.
+  console.log("messaging + broadcasts — client writes must be DENIED (0018):");
+  {
+    const service = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const idsByEmail = check(
+      await service
+        .from("profiles")
+        .select("id, email")
+        .in("email", ["student1@nowtutors.dev", "student2@nowtutors.dev", "tutor1@nowtutors.dev"]),
+      "fixture profiles",
+    ) as { id: string; email: string }[];
+    const idOf = (email: string) => idsByEmail.find((p) => p.email === email)?.id;
+    const s1 = idOf("student1@nowtutors.dev");
+    const s2 = idOf("student2@nowtutors.dev");
+    const t1 = idOf("tutor1@nowtutors.dev");
+    if (!s1 || !s2 || !t1) {
+      assert(false, "seeded student1, student2 and tutor1 exist for the messaging checks");
+    } else {
+      // Reuse the pair's thread if one exists (the pair index allows one).
+      const existing = check(
+        await service
+          .from("conversations")
+          .select("id")
+          .or(`and(participant_a.eq.${s1},participant_b.eq.${t1}),and(participant_a.eq.${t1},participant_b.eq.${s1})`),
+        "fixture conversation lookup",
+      ) as { id: string }[];
+      let conversationId = existing[0]?.id;
+      const createdConversation = !conversationId;
+      if (!conversationId) {
+        const created = check(
+          await service
+            .from("conversations")
+            .insert({ participant_a: s1, participant_b: t1 })
+            .select("id")
+            .single(),
+          "fixture conversation insert",
+        ) as { id: string };
+        conversationId = created.id;
+      }
+      const fixtureBody = `rls fixture ${Date.now()}`;
+      const message = check(
+        await service
+          .from("messages")
+          .insert({ conversation_id: conversationId, sender_id: t1, body: fixtureBody })
+          .select("id")
+          .single(),
+        "fixture message insert",
+      ) as { id: string };
+
+      const signedIn = async (email: string) => {
+        const client = createClient(url, anonKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        await client.auth.signInWithPassword({ email, password: "Password123!" });
+        return client;
+      };
+      const s1Client = await signedIn("student1@nowtutors.dev");
+      const s2Client = await signedIn("student2@nowtutors.dev");
+      const t1Client = await signedIn("tutor1@nowtutors.dev");
+
+      try {
+        {
+          const { data, error } = await rows(
+            s1Client.from("messages").select("id").eq("conversation_id", conversationId),
+          );
+          assert(!error && data.length >= 1, "participant reads their own thread's messages");
+        }
+        {
+          const { data, error } = await rows(
+            s2Client.from("messages").select("id").eq("conversation_id", conversationId),
+          );
+          assert(!error && data.length === 0, "non-participant reads 0 messages from another thread");
+        }
+        {
+          const { data, error } = await rows(
+            s2Client.from("conversations").select("id").eq("id", conversationId),
+          );
+          assert(!error && data.length === 0, "non-participant reads 0 rows of another conversation");
+        }
+        {
+          const { error } = await s1Client
+            .from("conversations")
+            .insert({ participant_a: s1, participant_b: s2 });
+          assert(!!error, "student cannot INSERT a conversation directly");
+        }
+        {
+          // Without this, a thread the INSERT check above let through would make
+          // the rewrite fail on the pair index (23505) and pass for the wrong
+          // reason, which is exactly what happened on the first proof run.
+          await service
+            .from("conversations")
+            .delete()
+            .or(`and(participant_a.eq.${s1},participant_b.eq.${s2}),and(participant_a.eq.${s2},participant_b.eq.${s1})`);
+          const { error: rewriteError } = await s1Client
+            .from("conversations")
+            .update({ participant_b: s2 })
+            .eq("id", conversationId);
+          console.log(
+            `      (participant rewrite attempt: ${(rewriteError as { code?: string } | null)?.code ?? "no error"})`,
+          );
+          const after = check(
+            await service
+              .from("conversations")
+              .select("participant_a, participant_b")
+              .eq("id", conversationId)
+              .single(),
+            "conversation re-read",
+          ) as { participant_a: string; participant_b: string };
+          const pair = [after.participant_a, after.participant_b];
+          assert(
+            pair.includes(t1) && !pair.includes(s2),
+            "participant cannot rewrite a conversation's participants",
+          );
+        }
+        {
+          await s1Client.from("messages").update({ body: "tampered" }).eq("id", message.id);
+          const after = check(
+            await service.from("messages").select("body").eq("id", message.id).single(),
+            "message re-read",
+          ) as { body: string };
+          assert(after.body === fixtureBody, "participant cannot edit the other party's message");
+        }
+        {
+          const { error } = await s1Client
+            .from("messages")
+            .insert({ conversation_id: conversationId, sender_id: s1, body: "direct insert" });
+          assert(!!error, "participant cannot INSERT a message directly (server actions only)");
+        }
+        {
+          const { error } = await s1Client.from("broadcasts").insert({
+            tutor_id: s1,
+            title: "rls student broadcast",
+            agora_channel: `session_${crypto.randomUUID()}`,
+          });
+          assert(!!error, "student cannot INSERT a broadcast (no chosen agora_channel)");
+        }
+        {
+          const { error } = await t1Client.from("broadcasts").insert({
+            tutor_id: t1,
+            title: "rls direct broadcast",
+            agora_channel: `broadcast_${crypto.randomUUID()}`,
+          });
+          assert(!!error, "tutor cannot INSERT a broadcast directly (server actions only)");
+        }
+        // The broadcast id is random, so a foreign-key error (23503) would also
+        // come back. Only a privilege or policy refusal (42501) proves the write
+        // path is closed; anything else means the insert got past RLS.
+        {
+          const { error } = await anon
+            .from("broadcast_viewers")
+            .insert({ broadcast_id: crypto.randomUUID(), user_id: null });
+          assert(
+            (error as { code?: string } | null)?.code === "42501",
+            `anon cannot INSERT broadcast_viewers (got ${(error as { code?: string } | null)?.code ?? "no error"})`,
+          );
+        }
+        {
+          const { error } = await s1Client
+            .from("broadcast_viewers")
+            .insert({ broadcast_id: crypto.randomUUID(), user_id: s1 });
+          assert(
+            (error as { code?: string } | null)?.code === "42501",
+            `student cannot INSERT broadcast_viewers directly (got ${(error as { code?: string } | null)?.code ?? "no error"})`,
+          );
+        }
+      } finally {
+        await Promise.all([
+          s1Client.auth.signOut(),
+          s2Client.auth.signOut(),
+          t1Client.auth.signOut(),
+        ]);
+        // Anything a still-open hole let through, then the fixture itself.
+        await service
+          .from("broadcasts")
+          .delete()
+          .in("title", ["rls student broadcast", "rls direct broadcast"]);
+        await service
+          .from("messages")
+          .delete()
+          .eq("conversation_id", conversationId)
+          .in("body", ["direct insert", fixtureBody, "tampered"]);
+        await service
+          .from("conversations")
+          .update({ participant_a: s1, participant_b: t1 })
+          .eq("id", conversationId);
+        await service
+          .from("conversations")
+          .delete()
+          .or(`and(participant_a.eq.${s1},participant_b.eq.${s2}),and(participant_a.eq.${s2},participant_b.eq.${s1})`);
+        if (createdConversation) {
+          await service.from("conversations").delete().eq("id", conversationId);
+        }
+      }
+    }
+  }
 
   // ── Same-email identity linking (SPEC §7.1) ────────────────────────────────
   // The no-duplicate-accounts guarantee for "Google sign-in on an existing

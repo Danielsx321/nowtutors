@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { CreditBalance } from "@/components/ui/credit-balance";
+import { UnreadMessagesLink } from "@/components/features/messaging/unread-messages-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,8 @@ export interface TopbarProps {
   showCredits?: boolean;
   credits?: number;
   userName?: string;
+  /** The viewer's inbox. When set, the Messages icon and unread badge render. */
+  messagesHref?: string;
 }
 
 // The topbar is part of the INK shell (sidebar + topbar), not a light surface —
@@ -37,6 +40,7 @@ export function Topbar({
   showCredits,
   credits = 0,
   userName = "Guest",
+  messagesHref,
 }: TopbarProps) {
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-ink-700 bg-ink-900 px-4 md:px-6">
@@ -55,6 +59,7 @@ export function Topbar({
 
       <div className="flex items-center gap-2">
         {showCredits && <CreditBalance credits={credits} tone="ink" />}
+        {messagesHref && <UnreadMessagesLink href={messagesHref} />}
         <Button
           variant="ghost"
           size="icon"
