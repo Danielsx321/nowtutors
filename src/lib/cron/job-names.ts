@@ -24,7 +24,7 @@ export function isCronJobName(value: unknown): value is CronJobName {
 export const CRON_JOB_INFO: Record<CronJobName, { schedule: string; what: string }> = {
   "sweep-presence": {
     schedule: "Every 5 minutes",
-    what: "Takes stale tutors offline, expires their pending requests and wakes the Agora token service.",
+    what: "Takes stale tutors offline, ends broadcasts whose host has gone, expires their pending requests and wakes the Agora token service.",
   },
   "expire-requests": {
     schedule: "Every minute",

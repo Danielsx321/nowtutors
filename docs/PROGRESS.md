@@ -4,6 +4,24 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**Phase 9 Part 3 (live broadcasts) is BUILT on `phase-9-part3-broadcasts`, not merged.** Migration
+`drizzle/0020` (partial unique index `broadcasts_one_live_per_tutor`) is **applied to the test project
+only**. Built: `/tutor/broadcasts` (start form and past broadcasts), `/broadcast/[id]` (host view: camera,
+mic and camera toggles, live viewer count, End broadcast), `/live` and `/live/[id]` (signed-out visitors
+get a sign-in button; signed-in viewers join as Agora audience), the `{ broadcastId }` branch of
+`/api/agora/token`, a Supabase Realtime Presence viewer count with `peak_viewers`, and Q5: a broadcasting
+tutor can't be requested, can't accept and can't flip the instant toggle. `sweep-presence` now ends
+broadcasts whose host went stale. Tutor cards and profiles link a live tutor to their broadcast. Gates:
+typecheck and lint clean; `pnpm test` 601 passed (45 new); `pnpm test:dom` 50 passed (6 new);
+`pnpm build` passed; DB lane `broadcasts.test.ts` 9 passed, including a genuine two-connection double
+start; `db:verify-rls:test` PASSED after `0020`. Falsification 16/16 breaks caught (10 unit/DOM, 5 DB-lane code breaks, the index dropped on the test project). Signed out, over HTTP on the
+`nowtutors-test` preview: `/tutor/broadcasts` and `/broadcast/<id>` redirect to `/login`, `/live` renders
+its empty state, an unknown or malformed `/live/<id>` is 404, and the token route answers 401. Two
+unrelated DB-lane failures on this machine are explained in DECISIONS "Phase 9 Part 3" §10 (a network
+flake, and the Mac's clock running about 2.65 s slow). **Post-merge production step:** `pnpm db:migrate`,
+then `pnpm db:verify-rls`, then the Agora `live` mode check (RUNBOOK). The signed-in check is batched
+(live-test item 12). Part 4 (E2E tests 6 and 7) is next.
+
 **Phase 9 Part 2 — message attachments — is MERGED via PR #69 (`f1c37e4`), deployed, and `0019` is APPLIED to
 `mipnoxlhurdbaahmvhhx`** (Daniels ran `pnpm db:migrate`, then `pnpm db:verify-rls` PASSED including all six
 `message-attachments` checks, 2026-09-15). Attachments are live on production. The build record below is kept as written. jpg, png
@@ -1356,7 +1374,7 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   overlap. Either the constraint postdates those two rows or some write path bypasses
   it. Needs investigation **before cutover** — Bubble bookings get migrated in at that
   point and the same question applies to every row it brings.
-- **Phase 8 Part 2 builds `/tutor/withdrawals`, `/tutor/earnings` and `/tutor/settings` (payout email only), so only `/tutor/broadcasts` and `/tutor/messages` remain once it merges.** Original note: **The tutor sidebar links to five routes that don't exist:** `/tutor/withdrawals`,
+- **CLOSED by Phase 9 Part 3 (once it merges): every tutor sidebar route now exists.** Part 1 built `/tutor/messages` and Part 3 builds `/tutor/broadcasts` and the public `/live`. Kept for history: **Phase 8 Part 2 builds `/tutor/withdrawals`, `/tutor/earnings` and `/tutor/settings` (payout email only), so only `/tutor/broadcasts` and `/tutor/messages` remain once it merges.** Original note: **The tutor sidebar links to five routes that don't exist:** `/tutor/withdrawals`,
   `/tutor/earnings`, `/tutor/broadcasts`, `/tutor/messages`, `/tutor/settings`. All are
   Phase 8/9 work; today they 404 on prefetch/click. Cosmetic, not a blocker, but leave
   this note rather than rediscovering it per route as each phase lands.

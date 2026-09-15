@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth/guards";
 import { getTutorLiveState } from "@/db/queries/presence";
+import { getOwnLiveBroadcastId } from "@/db/queries/broadcasts";
 import { GoLiveToggle } from "@/components/features/tutor/go-live-toggle";
 
 export const metadata = { title: "Overview · NowTutors" };
@@ -17,10 +18,17 @@ export const dynamic = "force-dynamic";
  *
  * requireRole('tutor') re-checks role + approval (§5 Layer 2) independently of
  * the layout, and the toggle's action guards again on every call.
+ *
+ * Phase 9 Part 3: while the tutor is in broadcast mode the toggle is locked and
+ * links back to the broadcast (Q5).
  */
 export default async function TutorOverviewPage() {
   const { user } = await requireRole("tutor");
-  const live = await getTutorLiveState(user.id);
+  const [live, liveBroadcastId] = await Promise.all([
+    getTutorLiveState(user.id),
+    getOwnLiveBroadcastId(user.id),
+  ]);
+  const broadcasting = live?.liveMode === "broadcast";
 
   return (
     <div className="mx-auto max-w-2xl py-8">
@@ -32,7 +40,12 @@ export default async function TutorOverviewPage() {
         </p>
       </div>
 
-      <GoLiveToggle initialLive={live?.isLive ?? false} />
+      <GoLiveToggle
+        initialLive={(live?.isLive ?? false) && live?.liveMode === "instant"}
+        broadcastHref={
+          broadcasting ? (liveBroadcastId ? `/broadcast/${liveBroadcastId}` : "/tutor/broadcasts") : null
+        }
+      />
 
       <p className="mt-4 text-small text-gray-500">
         Your availability turns itself off if this tab closes or your connection

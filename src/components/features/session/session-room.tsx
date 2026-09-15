@@ -245,7 +245,7 @@ export function SessionRoom({
     void refreshState();
   }, [refreshState]);
 
-  useTokenRenewal(bookingId, tokenExpiresAt, handleRenewed, handleRenewalRefused);
+  useTokenRenewal({ bookingId }, tokenExpiresAt, handleRenewed, handleRenewalRefused);
 
   const toggleMic = React.useCallback(async () => {
     const next = await clientRef.current?.toggleMic();

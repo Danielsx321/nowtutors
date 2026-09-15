@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { profiles, tutorProfiles } from "@/db/schema";
 import { favourites } from "@/db/schema/favourites";
 import { publicProfiles, liveTutors } from "@/db/schema/views";
-import type { TutorCardData } from "@/db/queries/tutors";
+import { liveBroadcastIdSql, type TutorCardData } from "@/db/queries/tutors";
 
 /**
  * A student's favourited tutors, newest first, as TutorCards (SPEC §6
@@ -32,6 +32,7 @@ export async function getFavouriteTutors(
       country: publicProfiles.country,
       liveMemberUserId: liveTutors.userId,
       liveMode: liveTutors.liveMode,
+      liveBroadcastId: liveBroadcastIdSql,
       favouritedAt: favourites.createdAt,
       subjects: subjectsAgg,
     })
@@ -65,6 +66,7 @@ export async function getFavouriteTutors(
       : r.liveMode === "broadcast"
         ? "live"
         : "online",
+    liveBroadcastId: r.liveMemberUserId && r.liveMode === "broadcast" ? r.liveBroadcastId : null,
     isFavourited: true, // by construction — this is the favourites list
   }));
 }

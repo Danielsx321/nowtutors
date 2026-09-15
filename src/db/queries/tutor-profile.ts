@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { profiles, tutorProfiles, tutorSubjects, subjects } from "@/db/schema";
 import { favourites } from "@/db/schema/favourites";
 import { publicProfiles, liveTutors } from "@/db/schema/views";
-import type { LiveStatus } from "@/db/queries/tutors";
+import { liveBroadcastIdSql, type LiveStatus } from "@/db/queries/tutors";
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
@@ -31,6 +31,8 @@ export interface TutorProfileData {
   completedSessions: number;
   acceptsInstant: boolean;
   liveStatus: LiveStatus;
+  /** Set only when `liveStatus` is `live`: the broadcast to watch (Phase 9 Part 3). */
+  liveBroadcastId: string | null;
   isFavourited: boolean;
 }
 
@@ -81,6 +83,7 @@ export async function getTutorBySlug(
       bio: publicProfiles.bio,
       liveMemberUserId: liveTutors.userId,
       liveMode: liveTutors.liveMode,
+      liveBroadcastId: liveBroadcastIdSql,
       isFavourited: sql<boolean>`${favourites.id} is not null`,
     })
     .from(tutorProfiles)
@@ -126,6 +129,8 @@ export async function getTutorBySlug(
       : row.liveMode === "broadcast"
         ? "live"
         : "online",
+    liveBroadcastId:
+      row.liveMemberUserId && row.liveMode === "broadcast" ? row.liveBroadcastId : null,
     isFavourited: row.isFavourited,
   };
 }

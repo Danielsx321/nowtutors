@@ -72,6 +72,12 @@ export interface InstantBookingInsert {
 export interface AcceptTx {
   /** The wallet writer, bound to this transaction. */
   ledger: LedgerExecutor;
+  /**
+   * The tutor's `tutor_profiles.live_mode` under `SELECT … FOR UPDATE`. Called
+   * first, before the request lock, because starting a broadcast locks the same
+   * row and then touches the tutor's requests: one lock order, no deadlock.
+   */
+  lockTutorLiveMode(tutorId: string): Promise<"instant" | "broadcast" | null>;
   /** `SELECT … FOR UPDATE` the request, so two accepts serialize. */
   lockRequest(requestId: string): Promise<SessionRequestRecord | null>;
   /**
@@ -126,6 +132,8 @@ export type AcceptResult =
   /** Past `expires_at`. The row is moved to `expired` as a side effect. */
   | { status: "expired" }
   | { status: "scheduled_collision" }
+  /** Q5 (Phase 9 Part 3): the tutor is live-broadcasting. Nothing charged, request left pending. */
+  | { status: "tutor_broadcasting" }
   /**
    * The pinned-price debit failed. The accept rolled back in full and the
    * request is terminal as `failed_payment` (§4.3) — NOT expired, NOT declined.
@@ -146,6 +154,9 @@ export interface AcceptParams {
  *
  * Order inside the transaction, and why:
  *
+ *  0. **Lock the tutor's profile row** (Phase 9 Part 3). Starting a broadcast
+ *     takes the same lock, so an accept and a start serialize, and both take it
+ *     before any request row.
  *  1. **Lock the request.** Two tutors' clicks (or a click racing the expiry
  *     cron) serialize here rather than both proceeding on a stale read.
  *  2. **Expiry, then pending.** Expiry is enforced *server-side*; the client's
@@ -172,6 +183,7 @@ export async function acceptSessionRequest(
 
   try {
     return await store.transaction(async (tx) => {
+      const liveMode = await tx.lockTutorLiveMode(p.tutorId);
       const request = await tx.lockRequest(p.requestId);
       // A request that isn't this tutor's is reported exactly as one that does
       // not exist: a tutor must not be able to probe for other tutors' requests.
@@ -186,6 +198,12 @@ export async function acceptSessionRequest(
       if (at.getTime() >= request.expiresAt.getTime()) {
         await tx.markExpired(request.id, at);
         return { status: "expired" } as const;
+      }
+
+      // Q5: a broadcasting tutor can't take an instant session. After the
+      // ownership, pending and expiry checks, so those answers are unchanged.
+      if (liveMode === "broadcast") {
+        return { status: "tutor_broadcasting" } as const;
       }
 
       // The instant session would occupy [now, now + duration). A scheduled

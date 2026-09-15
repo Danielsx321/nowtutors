@@ -443,6 +443,20 @@ already-running script.
   `db:verify-rls` must print PASSED including the six `message-attachments` lines. The deployed app needs
   `SUPABASE_SERVICE_ROLE_KEY` on Vercel Production (already set, marked Sensitive 2026-09-15): the
   attachment actions are the first app code to use the service role.
+- [ ] **Apply `drizzle/0020_one_live_broadcast.sql` to `mipnoxlhurdbaahmvhhx`**: Phase 9 Part 3.
+  Run after the Part 3 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
+  `pnpm db:verify-rls` (must still print PASSED). It adds the partial unique index
+  `broadcasts_one_live_per_tutor` on `broadcasts (tutor_id) where status = 'live'`. **Until it runs**,
+  broadcasts work (the start transaction's tutor row lock already refuses a second start), but a second
+  live row for one tutor isn't impossible at the database. Confirm with
+  `select indexdef from pg_indexes where indexname = 'broadcasts_one_live_per_tutor';` (one row). No new env
+  var and no new cron: the deploy gives `sweep-presence` its stale-broadcast half, and its response gains
+  `broadcastsEnded`.
+- [ ] **Agora `live` mode check**: Phase 9 Part 3. Broadcasts use the same App ID and token service as
+  instant sessions, in `live` mode (host plus audience at the low-latency level). After the deploy, a tutor
+  starts a broadcast on production and a signed-in student in another browser opens it from `/live`: the
+  student must see and hear the tutor. If the viewer gets a token but no video, check the Agora console
+  project settings for the App ID. Audience minutes are billed per viewer, which is worth telling Noora.
 - [x] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance. PASSED 2026-09-15** (56.9s; reconcile 0 mismatches across 11 wallets). Re-run it the same way after any change to the withdrawal or release path. Test project only;
   it drives real sign-ins with the seeded password, so a person runs it:
   `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts`. Needs `pnpm db:seed:test` done at some point

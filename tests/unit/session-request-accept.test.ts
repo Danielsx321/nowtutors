@@ -83,11 +83,22 @@ class InMemoryAccept implements AcceptStore {
     for (const r of rows) this.requests.set(r.id, { ...r });
   }
 
+  /** `tutor_profiles.live_mode` per tutor; absent means null. */
+  liveModes = new Map<string, "instant" | "broadcast">();
+  /** Order of lock calls, to assert the tutor row is locked before the request. */
+  lockOrder: string[] = [];
+
   private tx(): AcceptTx {
     return {
       ledger: this.ledger,
 
+      lockTutorLiveMode: async (tutorId) => {
+        this.lockOrder.push("tutor");
+        return this.liveModes.get(tutorId) ?? null;
+      },
+
       lockRequest: async (requestId) => {
+        this.lockOrder.push("request");
         const row = this.requests.get(requestId);
         return row ? { ...row } : null;
       },
@@ -454,5 +465,45 @@ describe("price pinning — a rate change cannot move what is charged", () => {
       durationMinutes: 90,
       priceCredits: 45,
     });
+  });
+});
+
+describe("Q5 — a broadcasting tutor can't accept (Phase 9 Part 3)", () => {
+  it("refuses without charging or booking, and leaves the request pending", async () => {
+    const store = new InMemoryAccept([request()], { [STUDENT]: 200 });
+    store.liveModes.set(TUTOR, "broadcast");
+
+    const result = await accept(store);
+
+    expect(result).toEqual({ status: "tutor_broadcasting" });
+    expect(store.ledger.rows).toHaveLength(0);
+    expect(store.ledger.balances.get(STUDENT)).toBe(200);
+    expect(store.bookings).toHaveLength(0);
+    expect(store.requests.get(REQUEST_ID)!.status).toBe("pending");
+  });
+
+  it("locks the tutor row before the request, the same order as starting a broadcast", async () => {
+    const store = new InMemoryAccept([request()], { [STUDENT]: 200 });
+    await accept(store);
+    expect(store.lockOrder).toEqual(["tutor", "request"]);
+  });
+
+  it("still accepts for a tutor who is live for instant sessions", async () => {
+    const store = new InMemoryAccept([request()], { [STUDENT]: 200 });
+    store.liveModes.set(TUTOR, "instant");
+    expect(await accept(store)).toMatchObject({ status: "accepted" });
+  });
+
+  it("answers a foreign request as not_found even while broadcasting", async () => {
+    const store = new InMemoryAccept([request({ tutorId: "someone-else" })], { [STUDENT]: 200 });
+    store.liveModes.set(TUTOR, "broadcast");
+    expect(await accept(store)).toEqual({ status: "not_found" });
+  });
+
+  it("still expires a request past its deadline while broadcasting", async () => {
+    const store = new InMemoryAccept([request({ expiresAt: at(-1) })], { [STUDENT]: 200 });
+    store.liveModes.set(TUTOR, "broadcast");
+    expect(await accept(store)).toEqual({ status: "expired" });
+    expect(store.requests.get(REQUEST_ID)!.status).toBe("expired");
   });
 });

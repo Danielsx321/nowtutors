@@ -20,6 +20,7 @@ import { PriceTag } from "@/components/ui/price-tag";
 import { LivePill } from "@/components/ui/live-pill";
 import { SubjectChip } from "@/components/ui/subject-chip";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { FavouriteHeart, type FavouriteMode } from "@/components/features/favourite-heart";
 import { MessageTutorButton } from "@/components/features/messaging/message-tutor-button";
 
@@ -110,8 +111,10 @@ export default async function TutorProfilePage({
       ? "student"
       : "hidden";
 
-  const isLiveNow = tutor.liveStatus !== "offline";
-  const canRequestNow = isLiveNow && tutor.acceptsInstant;
+  // Q5 (Phase 9 Part 3): a tutor who is live-broadcasting ("live") can't be
+  // sent an instant request; only "online" (live for instant sessions) can.
+  // createSessionRequest refuses it server-side either way.
+  const canRequestNow = tutor.liveStatus === "online" && tutor.acceptsInstant;
 
   return (
     <div className="w-full px-4 py-8 md:px-6">
@@ -236,6 +239,25 @@ export default async function TutorProfilePage({
               />
             </CardContent>
           </Card>
+
+          {/* Live broadcast (Phase 9 Part 3). Watching needs sign-in; the
+              viewer page and the token route enforce it, not this link. */}
+          {tutor.liveStatus === "live" && tutor.liveBroadcastId && (
+            <Card>
+              <CardContent className="space-y-3 p-6">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-h3 font-bold text-gray-700">Live now</h2>
+                  <LivePill />
+                </div>
+                <p className="text-small text-gray-500">
+                  {tutor.displayName ?? "This tutor"} is broadcasting a lesson. Watching is free.
+                </p>
+                <Button asChild className="w-full">
+                  <Link href={`/live/${tutor.liveBroadcastId}`}>Watch the broadcast</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Messaging (Phase 9 Part 1). Only a student starts a conversation,
               so tutors, admins and the tutor viewing their own profile see

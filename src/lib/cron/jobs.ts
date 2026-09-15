@@ -1,5 +1,6 @@
 import "server-only";
 import * as Sentry from "@sentry/nextjs";
+import { endStaleBroadcasts } from "@/db/queries/broadcasts";
 import { sweepStalePresence } from "@/db/queries/presence";
 import {
   expirePendingRequests,
@@ -55,8 +56,11 @@ async function sweepPresence(): Promise<CronSummary> {
   // cheap GET on this cadence keeps it awake. `pingTokenService` never throws.
   const agoraPing = await pingTokenService();
 
-  // TODO(Phase 9): end stale broadcasts here — the host going offline should
-  // close the broadcast the same way it expires their pending requests.
+  // SPEC §7.8 (Phase 9 Part 3): a live broadcast whose host is no longer a fresh
+  // broadcast-mode row in `live_tutors` is ended. Viewers already stopped
+  // getting tokens at read time; this tidies the row. Derived from the view,
+  // like the tutor half above, so it has no threshold of its own.
+  const { endedIds: broadcastsEndedIds } = await endStaleBroadcasts();
 
   const summary = {
     ok: true as const,
@@ -64,6 +68,8 @@ async function sweepPresence(): Promise<CronSummary> {
     swept: sweptUserIds.length,
     sweptUserIds,
     pendingRequestsExpired: expiredIds.length,
+    broadcastsEnded: broadcastsEndedIds.length,
+    broadcastsEndedIds,
     agoraWarmPing: agoraPing,
     durationMs: Date.now() - startedAt,
   };
