@@ -458,6 +458,13 @@ already-running script.
   starts a broadcast on production and a signed-in student in another browser opens it from `/live`: the
   student must see and hear the tutor. If the viewer gets a token but no video, check the Agora console
   project settings for the App ID. Audience minutes are billed per viewer, which is worth telling Noora.
+- [ ] **E2E tests 6 and 7 (`tests/e2e/messaging-realtime.spec.ts`, `tests/e2e/broadcast-two-viewers.spec.ts`)**: Phase 9
+  acceptance. Test project only; they sign in with the seeded password, so a person runs them, from `~/nowtutors`:
+  `pnpm test:e2e tests/e2e/messaging-realtime.spec.ts tests/e2e/broadcast-two-viewers.spec.ts`. One run builds the app
+  first (about 5 minutes) and needs nothing listening on port 3000. Test 7 uses the real Agora App ID and token service
+  from `.env.test` (it held placeholders, `localhost:9999`, until 2026-09-15; they now match `.env.local`), with a fake camera, and pings the token service before joining. If test 7 fails on a viewer's video
+  but the host's own preview played, check the Agora project's `live` mode (RUNBOOK "Agora `live` mode check"). Paste
+  the runner output into PROGRESS; SPEC §16 marks Phase 9 COMPLETE only when both pass.
 - [x] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance. PASSED 2026-09-15** (56.9s; reconcile 0 mismatches across 11 wallets). Re-run it the same way after any change to the withdrawal or release path. Test project only;
   it drives real sign-ins with the seeded password, so a person runs it:
   `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts`. Needs `pnpm db:seed:test` done at some point
