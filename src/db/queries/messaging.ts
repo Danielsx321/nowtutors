@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
 import { conversations, messages, profiles, tutorProfiles } from "@/db/schema";
 import { pgErrorCode } from "@/lib/credits/ledger";
+import { parseAttachmentPath, type AttachmentKind } from "@/lib/messaging/attachments";
 import type { StarterProfile, TargetProfile } from "@/lib/messaging/rules";
 import {
   DuplicateClientKeyError,
@@ -123,6 +124,7 @@ function messagingStore(tx: DbTransaction): MessagingStore {
             conversationId: values.conversationId,
             senderId: values.senderId,
             body: values.body,
+            attachmentUrl: values.attachmentUrl,
             clientKey: values.clientKey,
           })
           .returning(messageColumns);
@@ -204,6 +206,7 @@ export async function listConversationsFor(userId: string): Promise<Conversation
     other_avatar_url: string | null;
     last_body: string | null;
     last_sender_id: string | null;
+    last_attachment_url: string | null;
     last_message_at: string | null;
     unread_count: number;
   }>(sql`
@@ -214,6 +217,7 @@ export async function listConversationsFor(userId: string): Promise<Conversation
            o.avatar_url as other_avatar_url,
            last.body as last_body,
            last.sender_id as last_sender_id,
+           last.attachment_url as last_attachment_url,
            c.last_message_at::text as last_message_at,
            (select count(*)::int
               from messages u
@@ -224,7 +228,7 @@ export async function listConversationsFor(userId: string): Promise<Conversation
       join profiles o
         on o.id = case when c.participant_a = ${userId} then c.participant_b else c.participant_a end
       left join lateral (
-        select m.body, m.sender_id
+        select m.body, m.sender_id, m.attachment_url
           from messages m
          where m.conversation_id = c.id
          order by m.created_at desc, m.id desc
@@ -241,7 +245,9 @@ export async function listConversationsFor(userId: string): Promise<Conversation
     otherPartyAvatarUrl: r.other_avatar_url,
     lastMessagePreview:
       r.last_body == null
-        ? null
+        ? r.last_attachment_url
+          ? "Sent an attachment"
+          : null
         : r.last_body.length > PREVIEW_CHARS
           ? `${r.last_body.slice(0, PREVIEW_CHARS).trimEnd()}…`
           : r.last_body,
@@ -302,10 +308,18 @@ export async function getConversationHeaderFor(
   };
 }
 
+export interface ThreadAttachment {
+  /** The safe file name shown in the thread. */
+  name: string;
+  kind: AttachmentKind;
+}
+
 export interface ThreadMessage {
   id: string;
   senderId: string;
   body: string | null;
+  /** Null for a text-only message. Downloads go through `getAttachmentUrl`. */
+  attachment: ThreadAttachment | null;
   createdAt: string;
   readAt: string | null;
 }
@@ -316,6 +330,13 @@ export interface ThreadCursor {
 }
 
 export const THREAD_PAGE_SIZE = 50;
+
+/** What the thread may show of a stored path: the safe name and the kind, never the path. */
+function toAttachment(path: string | null): ThreadAttachment | null {
+  if (!path) return null;
+  const parsed = parseAttachmentPath(path);
+  return parsed ? { name: parsed.name, kind: parsed.kind } : null;
+}
 
 /**
  * One page of a thread, oldest first for display. `before` pages backwards.
@@ -331,10 +352,11 @@ export async function getThreadPageFor(
     id: string;
     sender_id: string;
     body: string | null;
+    attachment_url: string | null;
     created_at: string;
     read_at: string | null;
   }>(sql`
-    select m.id, m.sender_id, m.body,
+    select m.id, m.sender_id, m.body, m.attachment_url,
            to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
            case when m.read_at is null then null
                 else to_char(m.read_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as read_at
@@ -354,6 +376,7 @@ export async function getThreadPageFor(
       id: r.id,
       senderId: r.sender_id,
       body: r.body,
+      attachment: toAttachment(r.attachment_url),
       createdAt: r.created_at,
       readAt: r.read_at,
     })),
@@ -364,16 +387,17 @@ export async function getThreadPageFor(
 export async function getMessageFor(
   messageId: string,
   userId: string,
-): Promise<(ThreadMessage & { conversationId: string }) | null> {
+): Promise<(ThreadMessage & { conversationId: string; attachmentPath: string | null }) | null> {
   const rows = await db.execute<{
     id: string;
     conversation_id: string;
     sender_id: string;
     body: string | null;
+    attachment_url: string | null;
     created_at: string;
     read_at: string | null;
   }>(sql`
-    select m.id, m.conversation_id, m.sender_id, m.body,
+    select m.id, m.conversation_id, m.sender_id, m.body, m.attachment_url,
            to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
            case when m.read_at is null then null
                 else to_char(m.read_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as read_at
@@ -390,6 +414,8 @@ export async function getMessageFor(
     conversationId: r.conversation_id,
     senderId: r.sender_id,
     body: r.body,
+    attachment: toAttachment(r.attachment_url),
+    attachmentPath: r.attachment_url,
     createdAt: r.created_at,
     readAt: r.read_at,
   };

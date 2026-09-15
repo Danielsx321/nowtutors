@@ -89,7 +89,9 @@ export type SendRefusal =
   | BodyRefusal
   | "not_found"
   | "sender_suspended"
-  | "rate_limited";
+  | "rate_limited"
+  /** The attachment path isn't a valid attachment under this conversation. */
+  | "attachment_invalid";
 
 export type MarkReadRefusal = "not_found";
 
@@ -115,5 +117,7 @@ export function messagingRefusalMessage(
       return "Conversation not found.";
     case "rate_limited":
       return "You're sending messages too quickly. Wait a moment and try again.";
+    case "attachment_invalid":
+      return "The attachment didn't upload. Try attaching it again.";
   }
 }

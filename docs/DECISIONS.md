@@ -4436,3 +4436,78 @@ should catch it was run and the break restored. A break counted only on a real "
 | `conversations_update` + grant re-added (test project) | verify-rls, 1 failed |
 
 The working tree was clean after the restores, and `db:verify-rls:test` passed again afterwards.
+
+## Phase 9 Part 2 — message attachments
+
+Branch `phase-9-part2-attachments`. Plan: `plans/2026-09-15-nowtutors-phase-9-messaging-and-broadcasts.md`
+(Dada Daniels workspace), Step 6.
+
+### 1. Q5 settled (2026-09-15, as recommended)
+
+**A tutor who is broadcasting can't receive or accept instant requests.** Broadcasting takes them out of
+instant request eligibility and locks the instant toggle until the broadcast ends. Recorded here and in
+SPEC §7.8 in the same commit, although the code lands in Part 3. With this, every Phase 9 product
+question is answered.
+
+### 2. Q2 as built: jpg, png and PDF, up to 10 MB, one per message
+
+The plan's draft also listed webp. SPEC §7.9 and the confirmed answer name jpg, png and PDF only, so
+webp is refused. MIME type and extension must agree (`photo.html` sent as `image/png` is refused, and so
+is `invoice.pdf` sent as `text/html`).
+
+### 3. `drizzle/0019_message_attachments_bucket.sql`
+
+- **Generated:** CHECK `messages_body_or_attachment` (`body is not null or attachment_url is not null`).
+  Since a message may now be an attachment with no text, "never neither" moves into the database.
+- **Hand-written:** the private `message-attachments` bucket (`public = false`, `file_size_limit`
+  10485760, `allowed_mime_types` jpg/png/pdf), with **no `storage.objects` policies**. Unlike `avatars`
+  (`0007`, public read, owner-folder writes), a thread's files must be readable by exactly two people,
+  and the only place that knows who they are is `conversations`. So every read and write goes through a
+  server action on the service role, after a participant check.
+
+### 4. The service role enters app code for the first time
+
+`lib/supabase/admin.ts` (`server-only`) builds a service-role client from `SUPABASE_SERVICE_ROLE_KEY`, which
+SPEC §2.1 already lists as server-only. Until now only `seed.ts` and `verify-rls.ts` used it. It's
+used for three calls only: `createSignedUploadUrl`, `info`, `createSignedUrl`. Each caller authorizes first.
+The alternative, storage policies that join `conversations` on the path prefix, was rejected: it would
+put a second copy of the participant rule in SQL, and a download would still need a signed or public
+URL to render an `<img>`.
+
+### 5. How an attachment moves
+
+- **Upload.** `createAttachmentUpload` checks the viewer is a participant (the header query), validates
+  name/type/size, makes the path itself (`{conversation_id}/{uuid}/{safe name}`), and returns
+  `{ path, token }`. The browser uploads with `uploadToSignedUrl`. The client never names a path.
+- **Send.** `sendMessage` re-checks participation first (so a stranger learns nothing about paths), then
+  that the path parses under this conversation, then that Storage holds the object with an allowed
+  stored size and type (`storage.info`). Only then does the pure service run; it checks the prefix again
+  (`prepareContent`) so the rule also holds for any future caller.
+- **Show.** Thread reads return `attachment: { name, kind } | null`, never the path. `getAttachmentUrl`
+  re-reads the message through the participant-scoped query and signs a 5-minute download. Images render
+  as a plain `<img>` (a signed URL must not go through the image optimizer or `remotePatterns`, which
+  admit only the public avatars path); a PDF fetches a fresh link when opened, with the tab opened
+  before the await so a popup blocker treats it as a click.
+- **Retry.** The composer keeps the uploaded path with the client key, so a retry after a failed send
+  reuses both and doesn't upload again. Changing the text or the file makes it a new message.
+
+### 6. Proven against real Storage on the test project (probe, 2026-09-15)
+
+`createSignedUploadUrl` returned `{ signedUrl, path, token }`; an **anon** client uploaded through the
+token; reusing the token on the same path was refused ("The resource already exists"); `info` returned
+`size` and `contentType` at the top level (12, `image/png`; `metadata` was `{}`), and "Object not found"
+for a missing path; `createSignedUrl` served the bytes (200); the bucket refused `text/html` ("mime type
+text/html is not supported") and 10 MB + 1 byte ("The object exceeded the maximum allowed size"). The
+probe removed its object. `db:verify-rls` gained six checks (private + 10 MB, and participant, outsider
+and anon can't download, outsider can't list, a signed-in user can't upload directly), all passing.
+
+### 7. Known gaps, deliberately not in v1
+
+- **Orphaned objects.** A file uploaded but never sent stays in the bucket. So would a thread's files if a
+  conversation were deleted, but conversations have no delete path. A cleanup sweep can come later; the
+  objects are private and unreachable without a server-signed link.
+- **The stored type is what the uploader declared.** Storage enforces the allowed list and the size, but
+  a client that bypasses the composer could declare `image/png` for bytes that aren't a PNG. The file is
+  only ever served from the Supabase Storage origin through a short-lived link, never from the app's
+  origin, and as the declared image or PDF type, so it can't run script in NowTutors. Content sniffing
+  was not added.

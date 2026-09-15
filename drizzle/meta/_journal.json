@@ -134,6 +134,13 @@
       "when": 1789452510325,
       "tag": "0018_comms_broadcast_write_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789455811442,
+      "tag": "0019_message_attachments_bucket",
+      "breakpoints": true
     }
   ]
 }

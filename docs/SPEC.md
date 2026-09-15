@@ -478,6 +478,13 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 > update is a server action on the trusted connection, and `last_message_at` is set in SQL to the new
 > message's `created_at` in the same transaction as the insert. The pair index is what makes two
 > concurrent "Message" presses produce one thread (proven in `tests/integration/messaging.test.ts`).
+>
+> **Phase 9 Part 2 (`drizzle/0019`).** `attachment_url` holds the object **path** in the private
+> `message-attachments` Storage bucket (`{conversation_id}/{uuid}/{safe name}`), never a URL. CHECK
+> `messages_body_or_attachment`: `body is not null or attachment_url is not null`. The bucket is private,
+> 10 MB, `image/jpeg`, `image/png`, `application/pdf`, with **no `storage.objects` policies**, so no client
+> can list, read, upload or delete in it; uploads are server-signed upload URLs and downloads are 5-minute
+> server-signed URLs, both issued only after a participant check (`db:verify-rls` asserts it).
 
 **`notifications`** — `user_id FK, type text, title text, body text, link text, read_at timestamptz`. Realtime enabled.
 
@@ -1201,8 +1208,9 @@ Viewer: `/live` lists live broadcasts; `/live/[id]` joins as `subscriber`. Live 
 
 > **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"):** broadcasts are **video only at launch, with no
 > chat** (chat can follow launch). `/live` is public, but **watching requires sign-in** (any role), and
-> **watching is free**. Still open: whether a broadcasting tutor can receive instant requests (Phase 9
-> Part 3 waits on it). The viewer-count mechanism is decided in Part 3.
+> **watching is free**. **Also settled 2026-09-15 (Q5): a tutor who is broadcasting can't receive or accept
+> instant requests**; broadcasting takes them out of instant request eligibility and the instant toggle is
+> locked until the broadcast ends (built in Part 3). The viewer-count mechanism is decided in Part 3.
 
 End broadcast: status `ended`, `ended_at`, `is_live = false`. Cron sweep also ends broadcasts whose host has gone stale.
 
@@ -1216,7 +1224,7 @@ Conversation list + thread view, shared component for both roles. Send text and 
 >   tutor-to-tutor or admin threads. Once a thread exists, either participant may keep writing while
 >   they themselves aren't suspended. Every reason a target can't be messaged returns the same
 >   "This tutor isn't available to message.", so the action can't be used to probe accounts.
-> - **Attachments:** jpg, png and PDF up to 10 MB, one per message. Built in Part 2; Part 1 is text only.
+> - **Attachments:** jpg, png and PDF up to 10 MB, one per message. **Built in Part 2** (below).
 > - **No automatic filtering** of emails or phone numbers and **no report button** in v1. Misuse is
 >   handled by an admin suspending the account (§5, Phase 8 Part 5). Admins can't read messages.
 >
@@ -1238,6 +1246,20 @@ Conversation list + thread view, shared component for both roles. Send text and 
 >   visible, and when the tab becomes visible. No read receipts are shown to the sender in v1.
 > - **Email** for an unread message is a `TODO(Phase 10)` hook in the send action. `notifications` is
 >   not written in Phase 9.
+>
+> **Built in Phase 9 Part 2 (attachments):**
+> - **Upload:** the composer checks type (MIME and extension must agree) and size, then
+>   `createAttachmentUpload` checks the viewer is a participant, makes the path itself, and returns a
+>   signed upload the browser uses with `uploadToSignedUrl`. The client never chooses the path.
+> - **Send:** a message may be an attachment with no text. Before attaching, `sendMessage` re-checks
+>   participation, that the path parses under THIS conversation, and that Storage really holds the object
+>   with an allowed stored size and type (`storage.info`), so a send can't point at nothing or at another
+>   thread's object. The uploaded path is kept with the client key, so a retry doesn't upload again.
+> - **Show:** the thread receives only `{ name, kind }`, never the path. Images load through
+>   `getAttachmentUrl` (5-minute signed URL, participant check) as a plain `<img>`; PDFs fetch a fresh
+>   link when opened. The inbox preview for an attachment-only message is "Sent an attachment".
+> - **Not in v1:** cleanup of objects uploaded but never sent, or left behind when a conversation is
+>   deleted (conversations have no delete path today).
 
 ### 7.10 Wallet and credits
 

@@ -264,6 +264,56 @@ describe("participant-scoped reads", () => {
   });
 });
 
+describe("attachments (Part 2)", () => {
+  it("refuses a message with neither text nor attachment at the database", async () => {
+    const conversationId = await openThread();
+    let code: string | undefined;
+    try {
+      await watcher.db.execute(sql`
+        insert into messages (conversation_id, sender_id, body, attachment_url)
+        values (${conversationId}, ${studentId}, null, null)
+      `);
+    } catch (err) {
+      const e = err as { code?: string; cause?: { code?: string } };
+      code = e.code ?? e.cause?.code;
+    }
+    expect(code).toBe("23514");
+  });
+
+  it("stores an attachment path with no text and shows it in the thread as name and kind only", async () => {
+    const conversationId = await openThread();
+    const path = `${conversationId}/${crypto.randomUUID()}/worksheet.pdf`;
+    const held = await beginTransaction(alpha);
+    const sent = await withExecutor(held.tx, () =>
+      sendMessage(messagingRunner, {
+        senderId: studentId,
+        conversationId,
+        body: "",
+        clientKey: crypto.randomUUID(),
+        attachmentPath: path,
+      }),
+    );
+    await held.commit();
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+
+    const reads = await beginTransaction(alpha);
+    const { page, message, inbox } = await withExecutor(reads.tx, async () => ({
+      page: await getThreadPageFor(conversationId, tutorId),
+      message: await getMessageFor(sent.message.id, tutorId),
+      inbox: await listConversationsFor(tutorId),
+    }));
+    await reads.rollback();
+
+    expect(page.messages).toHaveLength(1);
+    expect(page.messages[0].body).toBeNull();
+    expect(page.messages[0].attachment).toEqual({ name: "worksheet.pdf", kind: "pdf" });
+    expect(JSON.stringify(page.messages[0])).not.toContain(conversationId + "/");
+    expect(message?.attachmentPath).toBe(path);
+    expect(inbox.find((c) => c.id === conversationId)?.lastMessagePreview).toBe("Sent an attachment");
+  });
+});
+
 describe("markConversationRead", () => {
   it("marks only the other party's unread messages", async () => {
     const conversationId = await openThread();

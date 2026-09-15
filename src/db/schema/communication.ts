@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   pgTable,
   text,
@@ -51,6 +52,9 @@ export const messages = pgTable(
       .where(sql`${t.clientKey} is not null`),
     // Unread counts only ever look at unread rows.
     index("messages_unread_idx").on(t.conversationId).where(sql`${t.readAt} is null`),
+    // Phase 9 Part 2: a message is text, an attachment, or both, never neither.
+    // `attachment_url` holds the object PATH in the private bucket, never a URL.
+    check("messages_body_or_attachment", sql`${t.body} is not null or ${t.attachmentUrl} is not null`),
   ],
 );
 

@@ -29,6 +29,7 @@ vi.mock("@/lib/supabase/client", () => ({
       }),
     },
     realtime: { setAuth: async () => {} },
+    storage: { from: () => ({ uploadToSignedUrl: (...args: unknown[]) => uploadToSignedUrl(...args) }) },
     channel: () => {
       const channel = {
         on(_type: string, opts: { event: string }, cb: (payload: Payload) => void) {
@@ -51,7 +52,12 @@ const getMessage = vi.fn();
 const getThreadPage = vi.fn();
 const markConversationRead = vi.fn();
 const sendMessage = vi.fn();
+const createAttachmentUpload = vi.fn();
+const getAttachmentUrl = vi.fn();
+const uploadToSignedUrl = vi.fn();
 vi.mock("@/actions/messaging", () => ({
+  createAttachmentUpload: (input: unknown) => createAttachmentUpload(input),
+  getAttachmentUrl: (input: unknown) => getAttachmentUrl(input),
   getMessage: (input: unknown) => getMessage(input),
   getThreadPage: (input: unknown) => getThreadPage(input),
   markConversationRead: (input: unknown) => markConversationRead(input),
@@ -65,8 +71,15 @@ const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const ME = "11111111-1111-4111-8111-111111111111";
 const THEM = "22222222-2222-4222-8222-222222222222";
 
-function msg(id: string, senderId: string, body: string, createdAt: string) {
-  return { id, senderId, body, createdAt, readAt: null };
+function msg(id: string, senderId: string, body: string | null, createdAt: string) {
+  return { id, senderId, body, attachment: null, createdAt, readAt: null } as {
+    id: string;
+    senderId: string;
+    body: string | null;
+    attachment: { name: string; kind: "image" | "pdf" } | null;
+    createdAt: string;
+    readAt: string | null;
+  };
 }
 
 async function handlerFor(event: string) {
@@ -83,6 +96,9 @@ beforeEach(() => {
   getThreadPage.mockReset().mockResolvedValue({ messages: [], hasOlder: false });
   markConversationRead.mockReset().mockResolvedValue({ ok: true, marked: 0 });
   sendMessage.mockReset();
+  createAttachmentUpload.mockReset();
+  getAttachmentUrl.mockReset();
+  uploadToSignedUrl.mockReset().mockResolvedValue({ data: { path: "p" }, error: null });
   Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
   // jsdom has no layout, so there's nothing to scroll; the thread only reads these.
   Object.defineProperty(HTMLElement.prototype, "scrollHeight", { value: 0, configurable: true });
@@ -206,6 +222,67 @@ describe("Thread", () => {
     await act(async () => {});
     expect(getThreadPage).toHaveBeenCalledWith({ conversationId: CONVERSATION });
     expect(screen.getByText("Sent while you were offline")).toBeTruthy();
+  });
+});
+
+describe("Composer attachments (Part 2)", () => {
+  const PATH = `${CONVERSATION}/55555555-5555-4555-8555-555555555555/scan.png`;
+
+  it("uploads once and keeps the path and client key across a failed send", async () => {
+    createAttachmentUpload.mockResolvedValue({ ok: true, path: PATH, token: "signed-token" });
+    const sent = msg("m9", ME, null, "2026-09-15T10:09:00.000000Z");
+    sent.attachment = { name: "scan.png", kind: "image" };
+    sendMessage.mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce({ ok: true, message: sent });
+    getAttachmentUrl.mockResolvedValue("https://signed.example/scan.png");
+    renderThread([]);
+    await act(async () => {});
+
+    const file = new File(["png"], "scan.png", { type: "image/png" });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Attach a file"), { target: { files: [file] } });
+    });
+    expect(screen.getByText("scan.png")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+    expect(screen.getByText(/didn't send/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    expect(createAttachmentUpload).toHaveBeenCalledTimes(1);
+    expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
+    expect(uploadToSignedUrl.mock.calls[0][0]).toBe(PATH);
+    expect(uploadToSignedUrl.mock.calls[0][1]).toBe("signed-token");
+    const calls = sendMessage.mock.calls.map((c) => c[0] as { attachmentPath: string; clientKey: string });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].attachmentPath).toBe(PATH);
+    expect(calls[1].clientKey).toBe(calls[0].clientKey);
+  });
+
+  it("refuses a file type that isn't allowed before anything is uploaded", async () => {
+    renderThread([]);
+    await act(async () => {});
+    const file = new File(["<script>"], "page.html", { type: "text/html" });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Attach a file"), { target: { files: [file] } });
+    });
+    expect(screen.getByText("You can attach jpg, png or PDF files.")).toBeTruthy();
+    expect(createAttachmentUpload).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows an image attachment through a signed link from the action", async () => {
+    const withImage = msg("m10", THEM, null, "2026-09-15T10:10:00.000000Z");
+    withImage.attachment = { name: "diagram.png", kind: "image" };
+    getAttachmentUrl.mockResolvedValue("https://signed.example/diagram.png");
+    renderThread([withImage]);
+    await act(async () => {});
+    await act(async () => {});
+    expect(getAttachmentUrl).toHaveBeenCalledWith({ messageId: "m10", conversationId: CONVERSATION });
+    const img = screen.getByAltText("diagram.png") as HTMLImageElement;
+    expect(img.src).toBe("https://signed.example/diagram.png");
   });
 });
 

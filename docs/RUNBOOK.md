@@ -434,6 +434,14 @@ already-running script.
   PASSED, with every line under "messaging + broadcasts — client writes must be DENIED (0018)" ticked. It
   signs in the seeded `student1`, `student2` and `tutor1` and writes one fixture message with the service
   role, which it removes again.
+- [ ] **Apply `drizzle/0019_message_attachments_bucket.sql` to `mipnoxlhurdbaahmvhhx`** — Phase 9 Part 2.
+  Run after the Part 2 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then
+  `pnpm db:verify-rls`. It adds the `messages_body_or_attachment` CHECK and creates the private
+  `message-attachments` bucket (10 MB; jpg, png, PDF; no client policies). **Until it runs, attaching a file
+  fails on production** (there is no bucket to sign an upload into); text messages are unaffected.
+  `db:verify-rls` must print PASSED including the six `message-attachments` lines. The deployed app needs
+  `SUPABASE_SERVICE_ROLE_KEY` on Vercel Production (already set, marked Sensitive 2026-09-15): the
+  attachment actions are the first app code to use the service role.
 - [x] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance. PASSED 2026-09-15** (56.9s; reconcile 0 mismatches across 11 wallets). Re-run it the same way after any change to the withdrawal or release path. Test project only;
   it drives real sign-ins with the seeded password, so a person runs it:
   `pnpm test:e2e tests/e2e/withdrawal-reconcile.spec.ts`. Needs `pnpm db:seed:test` done at some point

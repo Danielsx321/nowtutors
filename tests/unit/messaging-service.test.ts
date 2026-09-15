@@ -3,6 +3,7 @@ import { RATE_LIMIT, type StarterProfile, type TargetProfile } from "@/lib/messa
 import {
   DuplicateClientKeyError,
   markConversationRead,
+  prepareContent,
   sendMessage,
   startConversation,
   type ConversationRow,
@@ -49,7 +50,8 @@ class FakeMessaging implements MessagingStore {
         (c.participantA === b && c.participantB === a),
     );
     if (found) return found;
-    const row = { id: `c-${++this.seq}`, participantA: a, participantB: b };
+    // Real uuids, because an attachment path must name its conversation by uuid.
+    const row = { id: crypto.randomUUID(), participantA: a, participantB: b };
     this.conversations.push(row);
     return row;
   }
@@ -73,7 +75,7 @@ class FakeMessaging implements MessagingStore {
       conversationId: row.conversationId,
       senderId: row.senderId,
       body: row.body,
-      attachmentUrl: null,
+      attachmentUrl: row.attachmentUrl,
       readAt: null,
       createdAt: new Date((this.clock += 1000)),
       clientKey: row.clientKey,
@@ -261,5 +263,73 @@ describe("markConversationRead", () => {
     const conversationId = await openThread();
     const res = await markConversationRead(run, { readerId: OTHER_STUDENT, conversationId });
     expect(res).toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
+describe("prepareContent (Part 2 attachments)", () => {
+  const CONV = "33333333-3333-4333-8333-333333333333";
+  const OTHER = "44444444-4444-4444-8444-444444444444";
+  const OBJ = "55555555-5555-4555-8555-555555555555";
+
+  it("allows an attachment with no text, storing the text as null", () => {
+    expect(
+      prepareContent({ conversationId: CONV, body: "   ", attachmentPath: `${CONV}/${OBJ}/scan.png` }),
+    ).toEqual({ ok: true, body: null, attachmentUrl: `${CONV}/${OBJ}/scan.png` });
+  });
+
+  it("keeps the text alongside an attachment", () => {
+    expect(
+      prepareContent({ conversationId: CONV, body: " See page 2 ", attachmentPath: `${CONV}/${OBJ}/hw.pdf` }),
+    ).toEqual({ ok: true, body: "See page 2", attachmentUrl: `${CONV}/${OBJ}/hw.pdf` });
+  });
+
+  it("refuses an attachment path from another conversation", () => {
+    expect(
+      prepareContent({ conversationId: CONV, body: "hi", attachmentPath: `${OTHER}/${OBJ}/scan.png` }),
+    ).toEqual({ ok: false, reason: "attachment_invalid" });
+  });
+
+  it("refuses a malformed or disallowed attachment path", () => {
+    for (const path of [`${CONV}/${OBJ}/../x.png`, `${CONV}/${OBJ}/page.html`, "scan.png"]) {
+      expect(prepareContent({ conversationId: CONV, body: "hi", attachmentPath: path })).toEqual({
+        ok: false,
+        reason: "attachment_invalid",
+      });
+    }
+  });
+
+  it("still refuses an empty message with no attachment", () => {
+    expect(prepareContent({ conversationId: CONV, body: "", attachmentPath: null })).toEqual({
+      ok: false,
+      reason: "empty",
+    });
+  });
+});
+
+describe("sendMessage with an attachment", () => {
+  it("stores the path and a null body, and refuses another thread's path without writing", async () => {
+    const conversationId = await openThread();
+    const path = `${conversationId}/55555555-5555-4555-8555-555555555555/worksheet.pdf`;
+    const res = await sendMessage(run, {
+      senderId: STUDENT,
+      conversationId,
+      body: "",
+      clientKey: "att-1",
+      attachmentPath: path,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.message.body).toBeNull();
+    expect(res.message.attachmentUrl).toBe(path);
+
+    const foreign = await sendMessage(run, {
+      senderId: STUDENT,
+      conversationId,
+      body: "",
+      clientKey: "att-2",
+      attachmentPath: "44444444-4444-4444-8444-444444444444/55555555-5555-4555-8555-555555555555/x.png",
+    });
+    expect(foreign).toEqual({ ok: false, reason: "attachment_invalid" });
+    expect(fake.messages).toHaveLength(1);
   });
 });
