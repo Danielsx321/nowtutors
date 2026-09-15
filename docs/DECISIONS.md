@@ -4535,3 +4535,164 @@ Working tree clean after the restores, and `db:verify-rls:test` passed again aft
 any lane:** the action-level checks (participant check before signing an upload or download, and the
 `storage.info` verification in `sendMessage`), because the actions depend on `next/headers`. The probe in
 §6 exercised the storage calls they make; the signed-in check is batched for Daniels.
+
+## Phase 9 Part 3: live broadcasts
+
+Branch `phase-9-part3-broadcasts`. Plan: `plans/2026-09-15-nowtutors-phase-9-messaging-and-broadcasts.md`
+(Dada Daniels workspace), Steps 7 and 8. Every product question (Q3, Q4, Q5) was settled before code.
+
+### 1. What was built
+
+`/tutor/broadcasts` (start form, past broadcasts), `/broadcast/[id]` (host view), `/live` (list) and
+`/live/[id]` (viewer), the `{ broadcastId }` branch of `/api/agora/token`, `lib/agora/live-client.ts` (Agora
+`live` mode), a Presence viewer count with `peak_viewers`, Q5 in code, and the stale-broadcast half of
+`sweep-presence`. One migration, `drizzle/0020`. Tutor cards and the profile page link a live tutor to
+their broadcast.
+
+### 2. `drizzle/0020_one_live_broadcast.sql`
+
+Generated: `CREATE UNIQUE INDEX broadcasts_one_live_per_tutor ON broadcasts (tutor_id) WHERE status = 'live'`.
+The start transaction already refuses a second live broadcast under a row lock (§3), so the index isn't
+what normally stops a double start. It's what makes two live rows impossible for any writer, including a
+future one that forgets the lock. The adapter maps its 23505 to "already live". Safe on production: no
+server path created broadcasts before this part, and `0018` removed every client write.
+
+### 3. One lock order for starting a broadcast and accepting an instant request
+
+`startBroadcast` locks the tutor's `tutor_profiles` row `FOR UPDATE`, then checks and writes. Q5 says a
+broadcasting tutor can't take an instant session, so the accept transaction has to see a start, and a
+start has to see an accept's new `in_progress` booking. The accept now locks **the same tutor row first**
+(`lockTutorLiveMode`), before the request row, and refuses with `tutor_broadcasting` when
+`live_mode = 'broadcast'`. Whichever transaction commits second sees the other and is refused.
+
+The order matters because a start also expires the tutor's pending requests (§4), which touches request
+rows. With accept taking request-then-tutor and start taking tutor-then-request, the two could deadlock.
+Both now go tutor-then-request. The refusal comes after the ownership, pending and expiry checks, so
+those answers didn't change, and a late request is still moved to `expired`.
+
+A unique violation aborts the Postgres transaction, so `AlreadyLiveError` is caught **outside** the
+runner, after the rollback, not inside it.
+
+### 4. Q5 in code, in four places
+
+- **Request:** `getInstantTutorInfo` returns `isBroadcasting`, and `createSessionRequest` refuses with
+  "This tutor is broadcasting right now…".
+- **Accept:** `tutor_broadcasting` (§3). Nothing charged, the request left pending.
+- **Toggle:** `setTutorLive` carries `live_mode is distinct from 'broadcast'` in the WHERE clause both ways,
+  so a toggle racing a start re-evaluates against the new row and matches nothing. Before this, turning
+  instant off while broadcasting would have cleared `is_live` under a live broadcast. `/tutor` shows the
+  toggle locked with a link back.
+- **Start expires waiting requests.** Not in the plan. A student who sent a request a few seconds before
+  the tutor went live would otherwise watch a countdown for a request nobody can accept. Same idea as the
+  sweep expiring a stale tutor's requests immediately.
+
+The profile page shows "Watch the broadcast" instead of "Request now" for a `live` tutor.
+
+### 5. The token branch
+
+- **Strict body.** `{ bookingId }` or `{ broadcastId }`, each `.strict()`. A body with both, or with a
+  channel or role, is refused. This also applies to the session body, which used to ignore extra fields:
+  the only client sends `{ bookingId }` alone, so nothing real changes.
+- **Access** (`lib/broadcasts/access.ts`): the host of a live broadcast gets `publisher`, even while their
+  presence is catching up (a refresh must not lock the host out). Anyone else gets `subscriber` only while
+  the host is fresh in broadcast mode. Missing, ended and stale-host are one 404.
+- **The channel must be `broadcast_{id}`.** Unreachable today, since only the start transaction writes
+  the row and it writes the channel in SQL. It's there so that if a row ever carried a `session_{booking}`
+  channel, the route would refuse rather than recreate Gap 3.
+- **Viewer record.** One open `broadcast_viewers` row per signed-in viewer per broadcast, best-effort: a
+  failed insert is logged and the viewer still watches.
+- **`mintToken` extracted** so both branches map token-service failures identically. The session
+  branch's responses are unchanged.
+
+### 6. The viewer count is Supabase Realtime Presence (plan Decision 10)
+
+Agora `live` mode audience members produce no join event for anyone, and a viewer heartbeat would be
+polling. Viewers track `{ role: 'viewer' }` on `broadcast-viewers:{id}`, keyed by their Agora uid, so two
+tabs count once. The host tracks nothing, so they aren't counted. The host's client reports only a new
+high to `reportViewerCount`, which stores `greatest(peak_viewers, n)` for the host's live broadcast,
+capped at 10,000. The channel is public, so anyone with the anon key could inflate the number. That's
+accepted: it's display-only and nothing is decided or paid on it.
+
+### 7. Liveness is derived; closing the tab doesn't end a broadcast
+
+As for tutors (§3.1): watchable means `status = 'live'` AND the host is in `live_tutors` with
+`live_mode = 'broadcast'`. `/live`, `/live/[id]` and the viewer token all use one SQL fragment. The host
+view is in the `(session)` group so the AppShell heartbeat keeps the host fresh. A host who closes the tab
+drops off `/live` within two minutes, and `sweep-presence` marks the row ended. `pagehide` isn't used, for
+the reason §7.5 records.
+
+**Known gap, accepted for v1:** a host who leaves the host view for another page in the app keeps sending
+heartbeats, so the broadcast stays watchable with no video until they end it. Viewers see "Waiting to
+join…", and the host sees "Return to your broadcast" on `/tutor` and `/tutor/broadcasts`.
+
+### 8. No video preview on tutor cards (plan Decision 9)
+
+A preview would join an Agora channel for every card on every browse page, billing an audience minute per
+visitor. The LIVE badge links to `/live/[id]` instead. `TutorCardData.liveBroadcastId` comes from a
+subquery, set only when the tutor is live in broadcast mode. Can be revisited after launch.
+
+### 9. Agora `live` mode
+
+- The host sets role `host` and publishes camera and microphone. The audience sets role `audience` at
+  level 1 (low latency, billed below the SDK's default ultra-low latency) and creates no local tracks, so
+  there's no permission prompt. The host subscribes to nothing.
+- **Ended without polling.** When Agora reports the host left, or a renewal is refused, the viewer asks
+  `getBroadcastWatchable` once. If the broadcast is over, it says so and leaves the channel. If not (a
+  host reconnecting), it keeps waiting. A 404 at join means ended.
+- `useTokenRenewal` now takes the request body, so both rooms renew through one hook.
+
+### 10. Tests
+
+- Unit: `broadcast-access` (9), `broadcast-service` (18), `agora-token-body` (7), `broadcast-presence` (8),
+  and 5 new Q5 cases in `session-request-accept`.
+- DOM: `broadcast-viewer` (4: ended on host leave when the server agrees, keeps waiting when it doesn't, a
+  404 at join, Presence tracking) and `broadcast-presence` (2: the count follows sync and reports only new
+  highs, the host isn't tracked).
+- DB lane: `broadcasts.test.ts` (9), including a genuine two-connection double start
+  (`pg_blocking_pids` confirms the block), the index refusing a direct second row, start refused during an
+  `in_progress` booking, start expiring waiting requests and accept refusing a broadcasting tutor, the
+  toggle unable to flip a broadcasting tutor, the sweep ending a stale host's broadcast (and not a fresh
+  one), and one viewer row per viewer.
+- **Two unrelated DB-lane failures on this run, both environmental.** `scheduled-join-concurrency` failed
+  once on `EADDRNOTAVAIL` network errors and passed on rerun. `session-end-concurrency` "agrees AT the
+  deadline" fails on this Mac because its clock is about 2.65 s slow: `sntp time.apple.com` reported
+  +2.648 s, and the test project's `clock_timestamp()` read +2.67 s ahead of local. That test seeds a row
+  at exactly the deadline by the database clock and checks `hasElapsed` with the local clock. Nothing in
+  Part 3 touches it. The Mac's automatic time setting should fix it.
+
+### 11. Falsification pass
+
+Same method as Parts 1 and 2: each break applied to committed code (or the test project's index), the
+lane that should catch it run, the break restored. A break counted only on a real "N failed" line.
+
+| Break | Caught by |
+|---|---|
+| a viewer gets a publisher token | unit, 2 failed |
+| viewer access ignores host freshness | unit, 2 failed |
+| the channel needn't be `broadcast_{id}` | unit, 2 failed |
+| the token body isn't strict | unit, 2 failed |
+| accept allowed while broadcasting | unit, 1 failed |
+| accept locks the request before the tutor | unit, 1 failed |
+| start doesn't expire waiting requests | unit, 1 failed |
+| the host reports a drop in viewers | DOM, 1 failed |
+| the host is tracked as a viewer | DOM, 1 failed |
+| the viewer never re-reads when the host leaves | DOM, 1 failed |
+| start takes no tutor row lock | DB lane, 1 failed |
+| the instant toggle can flip a broadcasting tutor | DB lane, 1 failed |
+| the sweep ends broadcasts with a fresh host | DB lane, 1 failed |
+| the viewer record isn't deduplicated | DB lane, 1 failed |
+| request eligibility doesn't see broadcast mode | DB lane, 1 failed |
+| `broadcasts_one_live_per_tutor` dropped (test project) | DB lane, 1 failed |
+
+Working tree clean after the restores; the index was recreated and `db:verify-rls:test` passed again
+afterwards. **16/16 caught.**
+
+### 12. Not covered, or not in v1
+
+- **No automated lane for the actions or the token route**, which depend on `next/headers`: the guards in
+  `startBroadcast` / `endBroadcast` / `reportViewerCount`, the `isBroadcasting` refusal in
+  `createSessionRequest`, and the route's wiring of access, viewer stamp and token. The pure decisions and
+  the queries under them are covered above. The signed-in check is batched for Daniels (live-test item 12),
+  and E2E test 7 (Part 4) drives the route for real.
+- `broadcast_viewers.left_at` isn't written. No broadcast chat (Q3). No "going live" notification
+  (Phase 10).
