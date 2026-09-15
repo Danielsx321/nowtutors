@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**DESIGN OVERHAUL ("Phase 9.5") Part 1, foundation, is BUILT on `design-part1-foundation`, PR open, not merged.**
+**DESIGN OVERHAUL ("Phase 9.5") Part 1, foundation, is MERGED via PR #74 (`be6a209`), deployed. No prod step.**
 The client said the design looked dated; Daniels decided (2026-09-15) the redesign comes before Phase 10, name and
 logo kept. Six PR-sized parts, no migration, no money or booking rule change; the plan is in the workspace at
 `plans/2026-09-15-nowtutors-design-overhaul.md`, the research under
@@ -24,8 +24,7 @@ the old `surface="ink"` props still render (on the inverse tokens) rather than b
 would have painted white text onto white cards on the profile, tutor card and topbar until Part 3 (DECISIONS §5).
 Gates: typecheck and lint clean, 675 unit (74 new), 50 DOM, build passed. **Assumptions for Noora to confirm before
 Part 3:** Direction A, yellow kept (rationed to the live signal and wordmark), the wordmark block treatment, photos
-required at approval, reviews deferred, guarantee wording. **Next:** Daniels merges PR; Part 2 (shell) starts from
-`main`.
+required at approval, reviews deferred, guarantee wording. **Next:** Part 2 (shell) starts from `main`.
 
 **PHASE 9 COMPLETE (2026-09-15).** Both acceptance specs PASSED against the test project, run by Daniels on
 `phase-9-acceptance`: E2E test 6 `✓ … exchange messages without reloading (57.1s)`, E2E test 7 `✓ … two signed-in viewers
