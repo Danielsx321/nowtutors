@@ -44,7 +44,13 @@ vi.mock("@/db", async () => {
   };
 });
 
-const { messagingRunner } = await import("@/db/queries/messaging");
+const {
+  getConversationHeaderFor,
+  getMessageFor,
+  getThreadPageFor,
+  listConversationsFor,
+  messagingRunner,
+} = await import("@/db/queries/messaging");
 const { markConversationRead, sendMessage, startConversation } = await import(
   "@/lib/messaging/service"
 );
@@ -54,6 +60,7 @@ let beta: TestConnection;
 let watcher: TestConnection;
 let studentId: string;
 let tutorId: string;
+let outsiderId: string;
 let createdConversationIds: string[];
 
 beforeAll(async () => {
@@ -85,6 +92,15 @@ beforeAll(async () => {
   }
   studentId = row.student_id;
   tutorId = row.tutor_id;
+  const [outsider] = await watcher.db.execute<{ id: string }>(sql`
+    select id from profiles
+     where role = 'student' and id <> ${studentId}
+     order by created_at limit 1
+  `);
+  if (!outsider?.id) {
+    throw new Error("The test project needs a second seeded student. Run `pnpm db:seed:test` first.");
+  }
+  outsiderId = outsider.id;
 });
 
 afterAll(async () => {
@@ -202,6 +218,49 @@ describe("sendMessage", () => {
        where c.id = ${conversationId} and m.id = ${res.message.id}
     `);
     expect(row.same).toBe(true);
+  });
+});
+
+describe("participant-scoped reads", () => {
+  it("shows a thread to its participants and nothing of it to anyone else", async () => {
+    // The trusted connection bypasses RLS, so these reads' own participant
+    // check is the only thing keeping one person's messages from another.
+    const conversationId = await openThread();
+    const held = await beginTransaction(alpha);
+    const sent = await withExecutor(held.tx, () =>
+      sendMessage(messagingRunner, {
+        senderId: tutorId,
+        conversationId,
+        body: "Private to this thread",
+        clientKey: crypto.randomUUID(),
+      }),
+    );
+    await held.commit();
+    if (!sent.ok) throw new Error(`send failed: ${sent.reason}`);
+
+    const reads = await beginTransaction(alpha);
+    const result = await withExecutor(reads.tx, async () => ({
+      outsiderHeader: await getConversationHeaderFor(conversationId, outsiderId),
+      outsiderPage: await getThreadPageFor(conversationId, outsiderId),
+      outsiderMessage: await getMessageFor(sent.message.id, outsiderId),
+      outsiderInbox: await listConversationsFor(outsiderId),
+      studentHeader: await getConversationHeaderFor(conversationId, studentId),
+      studentPage: await getThreadPageFor(conversationId, studentId),
+      studentMessage: await getMessageFor(sent.message.id, studentId),
+      studentInbox: await listConversationsFor(studentId),
+    }));
+    await reads.rollback();
+
+    expect(result.outsiderHeader).toBeNull();
+    expect(result.outsiderPage.messages).toEqual([]);
+    expect(result.outsiderMessage).toBeNull();
+    expect(result.outsiderInbox.some((c) => c.id === conversationId)).toBe(false);
+
+    expect(result.studentHeader?.otherPartyId).toBe(tutorId);
+    expect(result.studentPage.messages.map((m) => m.body)).toEqual(["Private to this thread"]);
+    expect(result.studentMessage?.body).toBe("Private to this thread");
+    const inboxRow = result.studentInbox.find((c) => c.id === conversationId);
+    expect(inboxRow?.unreadCount).toBe(1);
   });
 });
 
