@@ -4,6 +4,22 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**Phase 9 Part 1 — messaging core and the comms/broadcast write paths — is BUILT on
+`phase-9-part1-messaging`, not merged.** Messaging is needed for launch (Daniels, 2026-09-15), so Phase 9
+runs before Phase 10. Product answers Q1, Q2, Q3, Q4 and Q6 are settled as recommended (SPEC §4.6, §7.8,
+§7.9; DECISIONS "Phase 9 Part 1"); **Q5 (can a broadcasting tutor take instant requests) is still open and
+blocks Part 3 only.**
+**Migration `drizzle/0018`** removes every client write on `conversations`, `messages`, `broadcasts` and
+`broadcast_viewers` and adds `messages.client_key` plus the unread index. Before it, new `db:verify-rls`
+checks proved on the test project that a signed-in user could insert conversations and messages, edit the
+other party's messages, and **insert a broadcast with a chosen `agora_channel`** (a publisher token into a
+private session once Part 3's token branch shipped). **Applied to the test project only**; every check
+passes there with `42501`. Built: `/dashboard/messages[/[id]]`, `/tutor/messages[/[id]]`, "Message" on tutor
+profiles and the student's booking detail (the tutor's links to an existing thread), Realtime thread and
+topbar unread badge on the shared retrying channel (moved to `hooks/use-retrying-channel.ts`), and a seeded
+student2/tutor3 thread. **Post-merge production step:** `pnpm db:migrate` then `pnpm db:verify-rls` (RUNBOOK).
+Part 2 (attachments) is next; Part 3 (broadcasts) waits on Q5.
+
 **PHASE 8 COMPLETE (2026-09-15).** E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) PASSED against the
 test project, run by Daniels on `phase-8-acceptance`: `✓ 1 … → paid → reconcile finds no drift (56.9s)`,
 `1 passed (3.1m)`. In that run `release-earnings` released 1 row (45 credits), the tutor requested and the

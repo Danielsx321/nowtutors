@@ -4308,3 +4308,109 @@ whole 5-minute test budget to fail. The fix matches `/^withdraw [\d,]+ credits/i
 heading first, and gives every click and fill a 20-second timeout, so a wrong selector now fails in
 seconds with the locator named. The rerun created a second 45-credit earning for `tutor3`; the spec
 withdraws the whole balance, so both paid out and the wallet ended at 0.
+
+## Phase 9 Part 1 — messaging core and the comms/broadcast write paths
+
+Plan: `plans/2026-09-15-nowtutors-phase-9-messaging-and-broadcasts.md` in the Dada Daniels workspace.
+Branch `phase-9-part1-messaging`. Daniels confirmed on 2026-09-15 that messaging is needed for launch,
+so Phase 9 runs before Phase 10.
+
+### 1. Product answers (settled 2026-09-15, all as recommended)
+
+Recorded in SPEC §4.6, §7.8 and §7.9 in the same commit.
+
+- **Q1, who starts a conversation:** only a student, only with an approved tutor who isn't
+  suspended. Tutors reply but never open a thread. No student-to-student, tutor-to-tutor or admin
+  threads.
+- **Q2, attachments:** jpg, png and PDF up to 10 MB, one per message. Part 2.
+- **Q3, broadcast chat:** none at launch. Video only; chat can follow launch. This closes the §18 Q3
+  item deferred in Phase 2.
+- **Q4, watching a broadcast:** `/live` is public, watching requires sign-in, and it's free.
+- **Q6, abuse:** no automatic filtering of emails or phone numbers and no report button in v1. An
+  admin suspends the account. Admins can't read messages.
+- **Q5 is still open:** can a broadcasting tutor receive instant requests? It blocks Part 3 only.
+
+### 2. Four write-path holes, proven before the fix
+
+`drizzle/0005` gave `authenticated` INSERT/UPDATE on `conversations`, `messages`, `broadcasts` and
+`broadcast_viewers` with ownership-only checks. New `db:verify-rls` checks were written first and run
+against the test project with no migration in place (`pnpm db:verify-rls:test`, 2026-09-15). Real
+FAIL lines for:
+
+- a student inserting a conversation with another student;
+- a participant editing the other party's message body;
+- a participant inserting a message directly, past every server rule;
+- **a student inserting a broadcast with `agora_channel = 'session_<uuid>'`**, and a tutor inserting
+  a broadcast directly. The §9 broadcast token branch reads the channel off that row, so once Part 3
+  shipped this would have been a publisher token into someone's private 1:1 session channel;
+- anon and a signed-in student inserting `broadcast_viewers` rows.
+
+**Two checks passed for the wrong reason on the first run, and were corrected before being trusted:**
+
+- The `broadcast_viewers` inserts used a random broadcast id, so they failed on the foreign key
+  (`23503`), not on RLS. The checks now require `42501` (privilege or policy), and
+  the second run showed `23503` failing them as it should.
+- The participant-rewrite check (`participant_b` swapped to a stranger) passed only because the
+  earlier INSERT hole had already created that pair's thread, so the UPDATE hit the pair index
+  (`23505`). The check now deletes that pair first. It was not re-run without `0018` after that change, so the
+  rewrite hole rests on the policy text in `drizzle/0005` (`WITH CHECK (participant_a = auth.uid() OR
+  participant_b = auth.uid())`, which permits it) plus the falsification pass below, which re-adds the
+  policy on the test project and expects the check to fail.
+
+After `0018` on the test project every check passes, and each refused write returns `42501`.
+
+### 3. `drizzle/0018_comms_broadcast_write_paths.sql`
+
+Generated part: `messages.client_key uuid`, `messages_conv_client_key_unique` (partial, not null) and
+`messages_unread_idx` (partial, `read_at is null`). Hand-written part: drop `conversations_insert`,
+`conversations_update`, `messages_insert`, `messages_update`, `broadcasts_write`,
+`broadcast_viewers_insert`, `broadcast_viewers_update`, and `REVOKE INSERT, UPDATE, DELETE` from
+`anon, authenticated` on all four tables. SELECT policies and grants are untouched, because Realtime
+delivers through them. Same shape as `0015`.
+
+**Deviation from the plan: no pre-flight `DO` block.** The plan proposed aborting if `messages` or
+`broadcasts` already held rows. The lockdown is correct with or without rows, so the block could only
+stop the production migration for no benefit. Left out.
+
+### 4. Messaging design
+
+- **Every write is a server action** (`actions/messaging.ts`) over a pure service
+  (`lib/messaging/service.ts`) and a store port, the same seam as withdrawals. Rules in
+  `lib/messaging/rules.ts`.
+- **Starting a thread:** `INSERT … ON CONFLICT DO NOTHING`, then a SELECT on the pair. DO NOTHING
+  rather than a no-op DO UPDATE, because an update would fire a `conversations` UPDATE event at both
+  participants for a thread that didn't change. A losing concurrent start waits on the pair index and
+  its SELECT sees the winner. Every refusal about the target returns the same wording.
+- **Replying isn't re-gated by the target's approval.** Only starting is. A tutor whose approval is
+  revoked can still answer a student who already wrote.
+- **A send is one transaction:** `SELECT … FOR UPDATE` on the conversation, participant check, lookup
+  by `client_key` (a repeat returns the first message as success, and isn't counted against the rate
+  limit), suspension check, rate check (20 per sender per rolling minute, by database clock), insert,
+  then `last_message_at = m.created_at` in SQL. The conversation lock makes a same-key double submit
+  wait and then find the first row; the unique index is the backstop, and the action retries once on
+  `DuplicateClientKeyError`.
+- **A repeated key from the other participant is `not_found`**, so a guessed key can't return someone
+  else's message.
+- **Reads for hooks don't redirect.** `getMessage`, `getThreadPage`, `markConversationRead` and
+  `getUnreadCount` read the session profile and return empty results when signed out, so a
+  fire-and-forget call can't raise an unhandled `NEXT_REDIRECT` (SPEC §5).
+- **No `revalidatePath`.** Both message routes are `force-dynamic` and the thread and badge update over
+  Realtime.
+- **Unread badge:** `conversations` UPDATE (every send bumps it) triggers a re-read. Marking read only
+  writes `messages.read_at`, which fires nothing, so the thread dispatches `nowtutors:messages-read` on
+  `window` and the badge re-reads. Same tab, which is the tab showing the badge.
+- **`useRetryingChannel` moved to `hooks/use-retrying-channel.ts`, unchanged**, so the messaging
+  subscriptions get the JWT-before-subscribe prelude, watchdog and backoff instead of a second copy.
+  All 29 existing DOM tests passed untouched after the move.
+- **Tutor booking detail links only to an existing thread.** A tutor can't start one.
+- **No optimistic bubble.** The composer disables while sending and appends the action's returned row;
+  the INSERT event for the same row is deduplicated by id. Simpler than reconciling a temporary row.
+- **The composer uses a boolean, not `useTransition`.** The async transition re-rendering the composer
+  mid-send failed React's hook-order check in the DOM lane ("Rendered more hooks than during the
+  previous render", at the composer's `useTransition`). A send needs nothing a transition offers.
+- **The composer keeps its client key across a failed send** and only replaces it after a success or
+  when the text changes, so pressing Send again after a timeout can't post twice.
+- **Message bodies render as plain text** (`whitespace-pre-wrap`, no HTML, no auto-linking).
+- **Email for unread messages is `TODO(Phase 10)`**; `notifications` is not written in Phase 9.
+- **Seed:** one thread student2 opened with tutor3, the last message unread, so dev and the test
+  project have an inbox and a badge to look at.

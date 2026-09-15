@@ -20,6 +20,12 @@ interface BookingDetailViewProps {
   viewerId: string;
   viewerTimeZone: string;
   backHref: string;
+  /**
+   * The page's messaging control for the other participant (Phase 9 Part 1):
+   * a Message button for a student, a link to an existing thread for a tutor.
+   * The page decides, because only a student may start a conversation.
+   */
+  messageAction?: React.ReactNode;
 }
 
 /**
@@ -42,6 +48,7 @@ export function BookingDetailView({
   viewerId,
   viewerTimeZone,
   backHref,
+  messageAction,
 }: BookingDetailViewProps) {
   const meta = bookingStatusMeta(booking.status);
   const dateFmt = new Intl.DateTimeFormat("en-US", {
@@ -92,6 +99,8 @@ export function BookingDetailView({
             </div>
             <Badge variant={meta.variant}>{meta.label}</Badge>
           </div>
+
+          {messageAction && <div>{messageAction}</div>}
 
           <dl className="grid gap-4 sm:grid-cols-2">
             <Detail icon={<CalendarDays className="size-4" />} term="Date">
