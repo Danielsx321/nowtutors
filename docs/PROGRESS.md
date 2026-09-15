@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
-**Phase 8 Part 4 — admin control room — is BUILT on `phase-8-part4-admin-control`; PR open, not merged.**
+**Phase 8 Part 4 — admin control room — is MERGED via PR #60 (`d83cc3d`) and deployed.**
 `/admin` (counts only, in the admin's timezone, plus a live wallet-drift read), `/admin/audit`
 (filter by action prefix and admin, 25 per page) and `/admin/settings` (per-key validated editor with
 stale-save refusal and audit, plus "run now" for all six §12 jobs). The six cron routes now share one
@@ -16,6 +16,11 @@ against the test project (401 without or with a wrong token, 200 with the secret
 across 11 wallets); the three pages redirect a signed-out visitor to `/login`. **Not verified:** the
 pages signed in, at 360px and 1440px (batched live test; Claude doesn't type passwords). See
 DECISIONS, "Phase 8 Part 4".
+
+**Post-merge, DONE 2026-09-15.** Nothing to run on production: no migration, no new setting, no new
+cron. Vercel production reports `success` on `d83cc3d`, and on the live site `/admin`, `/admin/audit`
+and `/admin/settings` each answer a signed-out request with 307 to `/login`. The signed-in check stays
+in the batched live test.
 
 **Phase 8 Part 3 — `reconcile-wallets` and `expire-unpaid` — is MERGED via PR #58 (`d417ee4`), deployed, and SCHEDULED on `mipnoxlhurdbaahmvhhx`.**
 Both §12 jobs Phase 8 still owed. Both routes were exercised over HTTP against the test project
