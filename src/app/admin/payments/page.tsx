@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PaymentReconciliation } from "@/components/features/admin/payment-reconciliation";
+import { RefundReversal } from "@/components/features/admin/refund-reversal";
 
 export const metadata = { title: "Payments · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -22,8 +23,10 @@ export const dynamic = "force-dynamic";
  * specifically to debug the one live transaction that cannot be run from Port
  * Harcourt, so it shows everything rather than a summary.
  *
- * **Read-only in this pass.** Reversing credits on a refund is an admin action
- * with its own design pass (§18 item 4) and is deliberately not built here.
+ * **One write, since Phase 8 Part 6:** after a full refund made in PayPal, a
+ * `refunded` payment shows "Reverse this refund", which takes back the credits it
+ * minted or cancels the booking a direct payment paid for (§7.6, §18 item 4).
+ * Everything else here is read-only.
  *
  * `requireRole('admin')` is the first statement, independently of the layout
  * guard (SPEC §5 Layer 2).
@@ -54,7 +57,7 @@ export default async function AdminPaymentsPage({
       <div>
         <h1 className="text-h1 font-bold text-gray-700">Payments</h1>
         <p className="mt-1 text-body text-gray-500">
-          Reconcile a PayPal transaction. Read-only.
+          Reconcile a PayPal transaction, and reverse credits after a refund made in PayPal.
         </p>
       </div>
 
@@ -96,6 +99,8 @@ export default async function AdminPaymentsPage({
       )}
 
       {payment && <PaymentReconciliation payment={payment} timeZone={timeZone} />}
+
+      {payment?.status === "refunded" && <RefundReversal paymentId={payment.id} buyerId={payment.userId} />}
 
       {!reference && (
         <Alert variant="info">

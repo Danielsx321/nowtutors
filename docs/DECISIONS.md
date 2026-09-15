@@ -4107,3 +4107,186 @@ No demote; no delete of users or subjects; no subject reordering or icon editing
 effect of a suspension on existing bookings, requests, earnings or withdrawals; no admin bookings,
 force-complete or force-cancel (Part 6); no emails. `0016` is **not** applied to production yet (post-merge
 step in RUNBOOK).
+
+## Phase 8 Part 6 — admin bookings, refunds and Phase 8 acceptance (`phase-8-part6-admin-bookings-acceptance`, 2026-09-15)
+
+`/admin/bookings`, `/admin/bookings/[id]`, "Reverse this refund" on `/admin/payments`, and E2E test 4.
+One migration (`0017`, three enum values) and no new dependency.
+
+### 1. The money rules were settled before code
+
+Plan Step 10 required a design pass. The proposals and four yes/no questions went to Noora, and
+Daniels reported all four accepted on 2026-09-15:
+
+1. Force-cancel always refunds the student in full, as credits, whoever asked.
+2. A tutor who was already paid out keeps it; the platform absorbs the cost.
+3. An admin can force-complete a tutor no-show on proof, which pays the tutor.
+4. PayPal refunds are made in PayPal; NowTutors then takes back the minted credits or cancels the
+   booking a direct payment paid for. Partial refunds are a manual credit adjustment.
+
+SPEC §4.4, §7.3, §7.6, §7.11 and §18 item 4 carry them in this commit.
+
+### 2. Force-cancel refunds what was taken, not the listed price
+
+The `booking_refund` amount is the booking's own `booking_debit`, not `price_credits`. It's what the
+student actually paid, and it's the same row for a credits booking and a direct payment. It's written
+once (`(type, reference_id)` on the booking) inside a savepoint, and the booking row is locked first, so
+a double click or two admins get one refund: the second waits on the lock and finds the booking
+already cancelled (DB-lane race test).
+
+### 3. The tutor side is decided by the earnings row, under locks
+
+`tutorReversalFor` (pure, unit-tested): no row or already `reversed` → nothing; `held` → `reversed`;
+`available` and the tutor's wallet covers `net_credits` with no open withdrawal → an
+`earning_reversal` debit, then `reversed`; `available` but held by a withdrawal or no longer covered →
+absorbed; `withdrawn` → absorbed. The earnings row and the tutor's wallet are locked before the
+decision. "Covered" means the balance is at least `net_credits`. Tutors can only spend through a
+withdrawal, which takes the whole balance, so an uncovered balance means the credits have already
+left. Absorbed cases leave the row `available` or `withdrawn`, because that's what happened to the
+money, and the audit payload records the decision.
+
+### 4. New ledger types instead of `admin_adjustment`
+
+`earning_reversal` and `purchase_reversal` (`0017`) rather than reusing `admin_adjustment`. They carry a
+real reference (the booking, the payment), so the unique index makes each land once. `reconcile-wallets`
+needs no change, and wallet history can say what happened ("Earnings reversed", "Refunded purchase
+removed"). `earning_status` gains `reversed`. `release-earnings` only claims `held`, so it can never pay
+a reversed row. The two readers typed as held/available/withdrawn (`withdrawals.ts`, `admin-users.ts`)
+and the tutor earnings badge map gained the value.
+
+### 5. Force-complete reuses the completion path
+
+It's allowed from `confirmed`, `in_progress`, `no_show_tutor` and `no_show_student`. It's refused for a
+scheduled session that hasn't started and for a booking with no price (the cron's null-price rule,
+stated as a refusal because an admin is watching).
+`insertHeldEarnings` gained an optional executor so the status change and the earnings row commit
+together; the cron still passes nothing and uses `db`. The split is `splitEarnings` with the current
+`platform_fee_percent`, and the hold is `earnings_hold_hours` from `ended_at`.
+
+`ended_at` is set **in SQL**: an existing stamp if there is one, else the scheduled end once it has
+passed, else `now()`. The first version computed it in JavaScript, and the DB lane caught the stored
+value differing from `scheduled_end_at` by microseconds (a `Date` keeps milliseconds). §7.11 says
+`ended_at` records occurrence, so it has to be copied exactly. `available_at` is still computed from the
+returned value in JavaScript, the same as the cron.
+
+### 6. Refund reversal: once per payment, driven by the ledger
+
+The payment row is locked and must be `refunded`. A `payment.reverse_refund` audit row already
+present for it refuses a second press. The ledger alone can't record a reversal that took zero credits,
+because `delta <> 0`. Then `refundReversalPlan` (pure): no `purchase` mint → nothing to do; a direct
+payment whose `booking_debit` stands without a `booking_refund` → force-cancel that booking with
+`refund: "paypal"` (no credits refund, status `cancelled_by_student`); otherwise a `purchase_reversal`
+debit of the minted credits capped at the balance, with the shortfall recorded. NowTutors calls no
+PayPal refund API. Live PayPal can't be tested from Nigeria, and a refund made in PayPal's own screen
+is the one PayPal guarantees.
+
+### 7. The "overlapping confirmed bookings" carry-forward
+
+Investigated on the test project: `bookings_no_overlap` is present and validated, and no overlapping
+rows exist there. The constraint is `WHERE type = 'scheduled'`. The instant accept transaction refuses
+an instant session that would overlap a scheduled booking (`hasCollidingScheduledBooking`), but
+nothing stops a scheduled booking landing while an instant session is running. The rows in the note
+(10:58–11:58 and 11:00–11:30) start off the 30-minute scheduled grid at 10:58, so **the likely
+explanation is that one was an instant session**. That's an inference: those rows are on production,
+which this seat can't read. To confirm, run this read-only query in the Supabase SQL editor:
+
+```sql
+select a.id, a.type, a.status, a.scheduled_start_at, a.created_at,
+       b.id, b.type, b.status, b.scheduled_start_at, b.created_at
+  from bookings a join bookings b on a.tutor_id = b.tutor_id and a.id < b.id
+ where tstzrange(coalesce(a.scheduled_start_at, a.started_at, a.created_at),
+                 coalesce(a.scheduled_end_at, a.ended_at, a.created_at + make_interval(mins => a.duration_minutes)))
+    && tstzrange(coalesce(b.scheduled_start_at, b.started_at, b.created_at),
+                 coalesce(b.scheduled_end_at, b.ended_at, b.created_at + make_interval(mins => b.duration_minutes)))
+   and coalesce(a.scheduled_start_at, a.created_at)::date = '2026-08-25';
+```
+
+If one row is `instant`, whether a scheduled booking may be made during a live instant session is a
+product question, not a bug, and it stays out of this PR. If both are `scheduled`, it's a real bypass
+and gets its own fix. Nothing was changed here.
+
+### 8. Tests
+
+Unit: `admin-bookings-rules.test.ts` (13 tests):
+- which statuses allow force-cancel and force-complete
+- the not-started check
+- every `tutorReversalFor` branch, including a balance exactly equal to `net_credits`
+- every `refundReversalPlan` branch
+- the schemas
+
+`admin-bookings-actions.test.ts` (11 tests):
+- all three actions refuse a non-admin before anything else, even with bad input
+- validation comes before the transaction, and settings are read only after the guard
+- the actor comes from the guard
+- force-cancel always passes `refund: "credits"`
+- every result is mapped to its message
+
+DB lane, `admin-bookings.test.ts` (14 tests, test project):
+- **Force-cancel:**
+  - a future booking is refunded exactly its debit, once, the slot is bookable again, and a repeat is refused
+  - held earnings are reversed and the tutor's wallet isn't touched
+  - released earnings are taken back and the tutor's ledger still sums to the balance
+  - earnings held by an open withdrawal, and withdrawn earnings, are absorbed
+  - a tutor no-show is refunded with nothing to reverse
+  - **two admins cancelling the same booking:** the second waits on the row lock and is refused, with one refund
+- **Force-complete:**
+  - a tutor no-show becomes completed with a held row split 60/15/45, and `available_at = ended_at + 48h` to the millisecond
+  - a stuck session gets `ended_at = scheduled_end_at` exactly
+  - a student no-show keeps its one earnings row
+  - a future booking, a booking with no price and a cancelled booking are refused with nothing changed
+- **Refund reversal:**
+  - a credit package is taken back once, a captured payment is refused, and a payment with no mint is refused
+  - spent credits are taken up to the balance with the shortfall recorded
+  - a direct payment for a confirmed booking cancels it with no second refund
+  - a direct payment already refunded in credits takes the credits back instead
+- **Reads:** list filters by status, participant, date and literal `%`, and the detail read
+
+The race test commits, then deletes its own ledger rows and restores student2's balance in one
+transaction (the `resetEarningsFixture` precedent), and removes its booking and audit rows. Afterwards a
+read-only reconcile of the test project found **0 mismatches across 11 wallets**, and no committed
+fixture bookings were left.
+
+### 9. Falsification: fourteen breaks, all caught
+
+A script applied each break, ran the narrowest test (`pnpm exec vitest` or `pnpm test:db:test -t`), and
+restored the file. A break only counted when a real "N failed" line appeared.
+
+| | Break | Caught by |
+|---|---|---|
+| (a) | force-cancel parses input before the guard | 2 unit tests |
+| (b) | released earnings debited even when the wallet can't cover them | 1 unit and 1 DB test |
+| (c) | no status guard on force-cancel | the repeat-refused DB test |
+| (e) | taken-back earnings not marked `reversed` | 1 DB test |
+| (f) | the PayPal path still refunds credits | the direct-pay DB test |
+| (g) | `ended_at` written from JavaScript | the stuck-session DB test |
+| (h) | force-complete skips the not-started check | 1 DB test |
+| (i) | refund reversal has no once-only check | 1 DB test |
+| (j) | a booking refunded in credits still counts as a standing debit | 1 DB test |
+| (k) | **the booking row not locked** | **the race test** (the second admin's refund hit the unique index, but it reported success instead of refusing) |
+| (l) | the action refunds via PayPal instead of credits | 1 unit test |
+| (n) | refund reversal not capped at the balance | 1 unit and 1 DB test |
+
+Break (k) committed through the race test's own cleanup, and a reconcile afterwards still found 0
+mismatches.
+
+### 10. Verification
+
+- `pnpm typecheck` and `pnpm lint` clean.
+- `pnpm test`: 488 passed (39 files, 24 new). `pnpm test:dom`: 29 passed.
+- `pnpm build` passed with `NODE_EXTRA_CA_CERTS`; `/admin/bookings` and `/admin/bookings/[id]` are listed, and the only warning is the known Sentry one.
+- `pnpm test:db:test` on the new file: 14 passed against `uietkphpfqaicbndunwt`, where `0017` is applied.
+- Dev server against the test project: `/admin/bookings` (with filters), `/admin/bookings/<uuid>`, `/admin/bookings/not-a-uuid` and `/admin/payments` all redirect a signed-out visitor to `/login`.
+
+**Not done:**
+- **E2E test 4.** `tests/e2e/withdrawal-reconcile.spec.ts` is written but hasn't been run, because it signs in with the seeded password and a person runs it (RUNBOOK). SPEC §16 doesn't mark Phase 8 complete until its output is recorded.
+- **The signed-in pages.** They aren't viewed yet; they're on the batched live-test list.
+
+### What is NOT here
+
+- No PayPal refund API call.
+- No partial-refund automation.
+- No clawback of paid-out tutor earnings, and no tutor debt.
+- No reschedule.
+- No emails.
+- No change to the overlap constraint (§7).
+- `0017` is **not** applied to production yet (post-merge RUNBOOK step).

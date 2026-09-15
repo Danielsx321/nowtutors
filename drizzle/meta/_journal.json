@@ -120,6 +120,13 @@
       "when": 1789433565642,
       "tag": "0016_profiles_guard_trusted_server",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789441048395,
+      "tag": "0017_admin_booking_reversals",
+      "breakpoints": true
     }
   ]
 }

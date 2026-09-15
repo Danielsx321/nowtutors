@@ -405,7 +405,7 @@ could be production, that is the bug, not the carve-out.
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`. The old instant-session hold's `instant_hold` / `instant_release` / `instant_capture` (Decision #3) were **removed in migration `0014`** — §18 made instant billing a single flat `booking_debit` (§7.4) and no hold model exists in the live Bubble app. Postgres has no `ALTER TYPE ... DROP VALUE`, so `0014` does the rename-create-alter-drop dance by hand, guarded by a check that no row still uses the three values (none did — the ledger is append-only, so rows of a dropped type could not have been rewritten). |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `earning_reversal`, `purchase_reversal`. The last two were added in `drizzle/0017` (Phase 8 Part 6): `earning_reversal` takes back a tutor's released earnings when an admin force-cancels (debit, reference = the booking), and `purchase_reversal` takes back the credits a PayPal-refunded payment minted (debit, reference = the payment). The old instant-session hold's `instant_hold` / `instant_release` / `instant_capture` (Decision #3) were **removed in migration `0014`** — §18 made instant billing a single flat `booking_debit` (§7.4) and no hold model exists in the live Bubble app. Postgres has no `ALTER TYPE ... DROP VALUE`, so `0014` does the rename-create-alter-drop dance by hand, guarded by a check that no row still uses the three values (none did — the ledger is append-only, so rows of a dropped type could not have been rewritten). |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -432,7 +432,7 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 
 **`tutor_earnings`** — one row per completed session.
 
-`tutor_id, booking_id unique FK, gross_credits, platform_fee_credits, net_credits, status enum('held','available','withdrawn'), available_at timestamptz`
+`tutor_id, booking_id unique FK, gross_credits, platform_fee_credits, net_credits, status enum('held','available','withdrawn','reversed'), available_at timestamptz` (`reversed` added in `drizzle/0017`, Phase 8 Part 6: see §7.11)
 
 `available_at = booking.ended_at + earnings_hold_hours` (§18: **48 hours**). Platform fee is `platform_fee_percent` = **25%** (tutor keeps 75%).
 
@@ -720,6 +720,14 @@ Pagination: cursor-based, 24 per page.
 **Joining:** the join button on `/dashboard/bookings/[id]` becomes active 10 minutes before `scheduled_start_at` and stays active until 30 minutes after `scheduled_end_at`. It calls `/api/lessonspace/join` (7.7) and navigates to `/classroom/[bookingId]`.
 
 **Cancellation:** there is **no cancellation path for either party** — neither student nor tutor can cancel a booking, and there are **no refunds** on the normal path (`cancellation_enabled = false`, §18). The **only** unwind is an **admin force-cancel with refund** in `/admin/bookings` (full credit refund via the ledger). The booking-status values `cancelled_by_student` / `cancelled_by_tutor` / `no_show_student` / `no_show_tutor` are **retained in the enum but are admin- or cron-set only, never user-set**.
+
+> **Admin force-cancel and force-complete (settled with Noora 2026-09-15, built Phase 8 Part 6).** From `/admin/bookings/[id]`, each with a required note, `requireRole('admin')` first, the booking row locked, and an `audit_log` row (`booking.force_cancel`, `booking.force_complete`).
+>
+> - **Force-cancel** is allowed from `confirmed`, `in_progress`, `completed`, `no_show_student` and `no_show_tutor`. The admin picks `cancelled_by_tutor` or `cancelled_by_student`, which is for reporting only; the money is the same either way.
+>   - **The student always gets back what the booking's `booking_debit` took**, as a `booking_refund` credit referenced by the booking (once), whoever asked for the cancellation. No partial refunds.
+>   - **The tutor side follows the earnings row (§7.11).** No row: nothing. `held`: marked `reversed` and never paid. `available` and still covered by the wallet with no open withdrawal: an `earning_reversal` debit of `net_credits` (once), row `reversed`. `available` but held by an open withdrawal or no longer covered, or `withdrawn`: the tutor keeps it and the platform absorbs the cost, recorded in the audit payload.
+>   - The cancelled status frees the slot at once, because `bookings_no_overlap` only counts `pending_payment`, `confirmed` and `in_progress`.
+> - **Force-complete** is allowed from `confirmed`, `in_progress`, `no_show_tutor` (the tutor showed proof they attended) and `no_show_student`. It's refused for a scheduled session that hasn't started, and for a booking with no `price_credits`. It sets `completed`, keeps an existing `ended_at` (otherwise the scheduled end once passed, otherwise now), and writes the held earnings row through the same `insertHeldEarnings` and `splitEarnings` as `complete-sessions`, released after `earnings_hold_hours`. A `no_show_student` already has its row, so only the status moves.
 
 **Completion:** when both parties have left and `scheduled_end_at` has passed, or by cron 30 minutes after `scheduled_end_at`, status → `completed`, `tutor_earnings` row created `held`.
 
@@ -1037,6 +1045,12 @@ Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plug
 > lookup or write**; a missing `PAYPAL_WEBHOOK_ID` is a 503 so the delivery is retried rather than
 > discarded. See `docs/DECISIONS.md`.
 
+> **Refund reversal (settled with Noora 2026-09-15, built Phase 8 Part 6).** Refunds are made in PayPal; NowTutors never calls a PayPal refund API. After a **full** refund the webhook has marked the payment `refunded`, and an admin presses **Reverse this refund** on `/admin/payments` (note required, once per payment, `payment.reverse_refund` audit row):
+>
+> - A direct payment whose `booking_debit` still stands (no `booking_refund`) **cancels that booking** through the force-cancel path with no credits refund, because the money already went back through PayPal. The mint and the debit already net to zero, and the tutor side follows §7.3.
+> - Otherwise (a credit package, retained direct-pay credits, or a booking already refunded in credits) a `purchase_reversal` debit takes back the minted credits, capped at the student's balance. Any shortfall (credits already spent) is absorbed and recorded.
+> - Partial refunds aren't automated: the admin uses the audited credit adjustment on `/admin/users/[id]`.
+
 > **Known constraint:** real-card testing can't be completed from Port Harcourt due to PayPal availability. Plan for a supervised live test with a real end user, and build an admin "reconcile payment" view (`/admin/payments`) that lets an admin look up a PayPal order id and see exactly what the system did with it. That view is how you'll debug the one transaction you can't run yourself.
 
 ### 7.7 LessonSpace
@@ -1223,6 +1237,8 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 - **The hold is the only debit.** The credits leave the wallet at request. **Mark paid writes no ledger row**: a second debit would take the money twice, and `delta <> 0` rules out a zero marker. Paid is recorded by `status`, `external_reference`, `processed_by/at` and `audit_log`.
 - `/admin/withdrawals`: queue with tutor, amount, USD equivalent, destination email, request date. Transitions are `requested → approved → paid`, or `requested|approved → rejected`; each locks the request row and re-checks status, so a repeat is refused. Actions: **Approve** (`approved`), **Mark paid** (only from `approved`; requires an `external_reference`; no ledger row; flips to `withdrawn` every `available` earnings row of that tutor whose `session_earning` credit was written at or before the request; emails the tutor), **Reject** (requires a note of at least 5 characters; writes a `withdrawal_reversed` credit for the full amount against the same reference, so the `(type, reference_id)` index allows it once; emails the tutor). A tutor cannot cancel a request in v1, so `cancelled` is unused. Emails are Phase 10 hooks.
 - Every transition writes to `audit_log`.
+
+- **Reversed earnings (Phase 8 Part 6).** `earning_status` gains `reversed` (`drizzle/0017`): an admin force-cancel sets it on a `held` row, or on an `available` row whose credit it took back with an `earning_reversal` debit. `release-earnings` only claims `held`, so a reversed row is never paid. Released earnings that a withdrawal already holds, or that were withdrawn, aren't clawed back; the platform absorbs the cost (§7.3).
 
 `payout_method` is an enum with one value today. Adding Wise, Payoneer, Alipay, or WeChat Pay later means adding enum values and a destination-field schema per method — **not in scope for v1** (Section 14).
 
@@ -1834,7 +1850,7 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
 **Phase 4 (bookings):**
 4. **Cancellation & refunds** — **no cancellation path for either party, and no refunds** on the
    normal path. The only unwind is an **admin force-cancel + refund** in `/admin/bookings`
-   (`cancellation_enabled = false`). See §7.3.
+   (`cancellation_enabled = false`). See §7.3. **Money rules settled 2026-09-15 and built in Phase 8 Part 6** (§7.3, §7.6, §7.11): a full credits refund on every force-cancel, paid-out tutor earnings absorbed by the platform, force-complete of a tutor no-show on proof, and PayPal refunds made in PayPal followed by an admin credit reversal, with partial refunds handled by a manual adjustment.
 5. **Booking window** — students may book at most **7 days ahead** (`max_booking_days_ahead = 7`);
    **minimum notice keeps the existing default** (`min_booking_notice_minutes = 120`).
 6. **Rescheduling** — **not supported**, and there is no cancel-and-rebook either (no cancel path);

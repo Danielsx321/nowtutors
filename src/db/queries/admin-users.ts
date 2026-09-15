@@ -114,7 +114,7 @@ export interface AdminUserDetail {
   tutor: { slug: string; approvalStatus: "pending" | "approved" | "rejected"; isLive: boolean } | null;
   /** Bookings where the user is student or tutor, counted by status. */
   bookingsByStatus: Record<string, number>;
-  earnings: { held: number; available: number; withdrawn: number };
+  earnings: { held: number; available: number; withdrawn: number; reversed: number };
   openWithdrawal: { amountCredits: number; status: string } | null;
 }
 
@@ -174,7 +174,7 @@ export async function getAdminUserDetail(userId: string): Promise<AdminUserDetai
   ]);
   if (!p) return null;
 
-  const earnings = { held: 0, available: 0, withdrawn: 0 };
+  const earnings = { held: 0, available: 0, withdrawn: 0, reversed: 0 };
   for (const r of earningRows) earnings[r.status] = Number(r.credits);
 
   return {

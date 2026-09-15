@@ -4,6 +4,25 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-15)
 
+**Phase 8 Part 6 — admin bookings, refunds and acceptance — is BUILT on `phase-8-part6-admin-bookings-acceptance`; PR open, not merged.**
+Money rules were settled with Noora first (2026-09-15, all four recommendations accepted; SPEC §7.3, §7.6,
+§7.11, §18). `/admin/bookings` (filter by status, participant and date) and `/admin/bookings/[id]` with
+**force-cancel** (full credits refund of what the booking debit took; tutor held earnings reversed,
+released-and-still-in-wallet earnings taken back, paid-out ones absorbed) and **force-complete** (tutor
+no-show on proof, stuck sessions; held earnings through the cron's own insert and split).
+**"Reverse this refund"** on `/admin/payments` after a full PayPal refund: takes back the minted credits
+(capped at the balance) or cancels the booking a direct payment paid for. **Migration `0017`**
+(`earning_reversal`, `purchase_reversal`, `reversed`) is applied to the test project only. Gates:
+typecheck and lint clean; `pnpm test` 488 passed (24 new); `pnpm test:dom` 29 passed; `pnpm build`
+passed; DB lane 14 passed including a two-admin double-cancel race; fourteen-break falsification pass,
+all caught. Test project reconcile after all runs: 0 mismatches across 11 wallets. The pages redirect a
+signed-out visitor to `/login`. The overlap carry-forward is investigated (likely an instant session;
+production query in DECISIONS §7). **Not yet done:** E2E test 4 run (Daniels runs it, RUNBOOK) and the
+signed-in page checks. See DECISIONS, "Phase 8 Part 6".
+
+**Post-merge, TO DO:** `pnpm db:migrate` on `mipnoxlhurdbaahmvhhx` for `0017` (RUNBOOK). Phase 8 is
+marked complete in SPEC §16 only once E2E test 4's output is recorded.
+
 **Phase 8 Part 5 — admin users and subjects — is MERGED via PR #63 (`1452c03`), deployed, and `0016` is APPLIED to `mipnoxlhurdbaahmvhhx`.**
 `/admin/users` (search by email or name, filter by role or suspension), `/admin/users/[id]` (profile,
 sessions, earnings, paginated ledger, plus suspend, audited credit adjustment and promote to admin) and

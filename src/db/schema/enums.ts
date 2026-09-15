@@ -59,6 +59,10 @@ export const creditTransactionType = pgEnum("credit_transaction_type", [
   "withdrawal_paid",
   "withdrawal_reversed",
   "admin_adjustment",
+  // Phase 8 Part 6 (drizzle/0017): an admin force-cancel taking back a tutor's
+  // released earnings, and a PayPal refund taking back the credits it minted.
+  "earning_reversal",
+  "purchase_reversal",
 ]);
 
 export const paymentProvider = pgEnum("payment_provider", ["paypal"]);
@@ -80,6 +84,9 @@ export const earningStatus = pgEnum("earning_status", [
   "held",
   "available",
   "withdrawn",
+  // Phase 8 Part 6 (drizzle/0017): the booking was force-cancelled, so this row
+  // is never paid (release only claims `held`) or its credit was taken back.
+  "reversed",
 ]);
 
 export const withdrawalStatus = pgEnum("withdrawal_status", [

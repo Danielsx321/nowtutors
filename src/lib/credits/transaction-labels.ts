@@ -19,6 +19,8 @@ const LABELS: Record<CreditTransactionType, string> = {
   withdrawal_paid: "Withdrawal paid",
   withdrawal_reversed: "Withdrawal reversed",
   admin_adjustment: "Admin adjustment",
+  earning_reversal: "Earnings reversed",
+  purchase_reversal: "Refunded purchase removed",
 };
 
 export function creditTransactionLabel(type: CreditTransactionType): string {

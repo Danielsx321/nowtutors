@@ -278,13 +278,13 @@ export async function hasOpenWithdrawal(tutorId: string): Promise<boolean> {
 }
 
 export interface EarningsBreakdown {
-  totals: Record<"held" | "available" | "withdrawn", number>;
+  totals: Record<"held" | "available" | "withdrawn" | "reversed", number>;
   rows: {
     id: string;
     bookingId: string;
     grossCredits: number;
     netCredits: number;
-    status: "held" | "available" | "withdrawn";
+    status: "held" | "available" | "withdrawn" | "reversed";
     availableAt: Date | null;
     createdAt: Date;
   }[];
@@ -317,7 +317,7 @@ export async function getTutorEarningsBreakdown(
       .orderBy(desc(tutorEarnings.createdAt))
       .limit(100),
   ]);
-  const totals = { held: 0, available: 0, withdrawn: 0 };
+  const totals = { held: 0, available: 0, withdrawn: 0, reversed: 0 };
   for (const s of sums) totals[s.status] = s.net;
   return { totals, rows };
 }
