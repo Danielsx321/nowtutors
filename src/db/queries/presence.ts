@@ -57,11 +57,24 @@ export async function touchPresence(
  * beacon that used to do it was removed (docs/DECISIONS.md). An ungraceful exit
  * is answered by the `live_tutors` view at read time (§3.1) and tidied by the
  * sweep — neither of which can mistake a refresh for a departure.
+ *
+ * **Never while broadcasting (Q5, Phase 9 Part 3).** Both directions carry
+ * `live_mode is distinct from 'broadcast'` in the WHERE clause: turning instant
+ * on would overwrite a live broadcast's mode, and turning it off would clear
+ * `is_live` under one. The start-broadcast transaction writes the same row, so
+ * under READ COMMITTED a toggle that lands after it re-evaluates against
+ * `broadcast` and matches nothing. Ending a broadcast is the only way out of
+ * broadcast mode (`endBroadcast`), apart from the sweep.
  */
+export type SetTutorLiveResult =
+  | { status: "ok"; isLive: boolean; liveMode: "instant" | "broadcast" | null }
+  | { status: "broadcasting" }
+  | { status: "no_profile" };
+
 export async function setTutorLive(
   userId: string,
   live: boolean,
-): Promise<{ isLive: boolean; liveMode: "instant" | "broadcast" | null } | null> {
+): Promise<SetTutorLiveResult> {
   const [row] = await db
     .update(tutorProfiles)
     .set(
@@ -69,21 +82,38 @@ export async function setTutorLive(
         ? { isLive: true, liveMode: "instant", lastSeenAt: new Date() }
         : { isLive: false, liveMode: null },
     )
-    .where(eq(tutorProfiles.userId, userId))
+    .where(
+      and(
+        eq(tutorProfiles.userId, userId),
+        sql`${tutorProfiles.liveMode} is distinct from 'broadcast'`,
+      ),
+    )
     .returning({
       isLive: tutorProfiles.isLive,
       liveMode: tutorProfiles.liveMode,
     });
-  return row ?? null;
+  if (row) return { status: "ok", ...row };
+
+  const [current] = await db
+    .select({ liveMode: tutorProfiles.liveMode })
+    .from(tutorProfiles)
+    .where(eq(tutorProfiles.userId, userId))
+    .limit(1);
+  return current?.liveMode === "broadcast" ? { status: "broadcasting" } : { status: "no_profile" };
 }
 
 /** Current toggle state for the tutor's own dashboard. */
 export async function getTutorLiveState(
   userId: string,
-): Promise<{ isLive: boolean; lastSeenAt: Date | null } | null> {
+): Promise<{
+  isLive: boolean;
+  liveMode: "instant" | "broadcast" | null;
+  lastSeenAt: Date | null;
+} | null> {
   const [row] = await db
     .select({
       isLive: tutorProfiles.isLive,
+      liveMode: tutorProfiles.liveMode,
       lastSeenAt: tutorProfiles.lastSeenAt,
     })
     .from(tutorProfiles)

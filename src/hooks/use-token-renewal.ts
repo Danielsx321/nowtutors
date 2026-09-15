@@ -3,6 +3,7 @@
 import * as React from "react";
 import { renewalDelayMs, RENEWAL_RETRY_MS } from "@/lib/agora/renewal";
 import type { SessionTokenGrant } from "@/lib/agora/client";
+import type { TokenRequestBody } from "@/lib/agora/token-body";
 
 /**
  * Schedules the SPEC §9 step 6 token renewal off the server-reported
@@ -12,19 +13,21 @@ import type { SessionTokenGrant } from "@/lib/agora/client";
  * Part 3A) precisely so this fires while the current token is still valid.
  *
  * Renewal re-runs the token route's existing checks unchanged — participation
- * and the elapsed refusal Part 3B added. A renewal past the deadline is
- * refused the same way an initial join is, and that refusal's best-effort
- * deadline transition applies unchanged; this hook does not special-case it.
- * `onRefused` is how the caller learns a renewal came back non-OK so it can
- * ask the server what is actually true (the same `refreshState` the timer's
- * `onExpired` already calls) rather than this hook guessing.
+ * and the elapsed refusal Part 3B added for a session; host ownership, liveness
+ * and host freshness for a broadcast (Phase 9 Part 3). A refused renewal is not
+ * special-cased here. `onRefused` is how the caller learns a renewal came back
+ * non-OK so it can ask the server what is actually true rather than this hook
+ * guessing.
+ *
+ * `target` is the same body the first token request sent: `{ bookingId }` or
+ * `{ broadcastId }`.
  */
-export function useTokenRenewal(
-  bookingId: string,
+export function useTokenRenewal<G extends { expiresAt: string } = SessionTokenGrant>(
+  target: TokenRequestBody,
   /** The current token's server-reported expiry, or null before the first join. */
   expiresAt: string | null,
   /** Swap the renewed token into the live client without dropping the connection. */
-  onRenewed: (grant: SessionTokenGrant) => void | Promise<void>,
+  onRenewed: (grant: G) => void | Promise<void>,
   /** A renewal request came back non-2xx, or the fetch itself failed after a retry. */
   onRefused?: (body: unknown) => void,
 ): void {
@@ -32,6 +35,10 @@ export function useTokenRenewal(
   onRenewedRef.current = onRenewed;
   const onRefusedRef = React.useRef(onRefused);
   onRefusedRef.current = onRefused;
+
+  // A string, so a caller passing a fresh object literal each render doesn't
+  // reschedule the timer.
+  const body = JSON.stringify(target);
 
   React.useEffect(() => {
     if (!expiresAt) return;
@@ -44,10 +51,10 @@ export function useTokenRenewal(
         const res = await fetch("/api/agora/token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bookingId }),
+          body,
           cache: "no-store",
         });
-        const body: unknown = await res.json().catch(() => null);
+        const json: unknown = await res.json().catch(() => null);
         if (cancelled) return;
 
         if (!res.ok) {
@@ -55,10 +62,10 @@ export function useTokenRenewal(
           // fixed retry would only ask it the same question again. The caller
           // resolves truth (e.g. the deadline actor) instead of this hook
           // guessing at a backoff.
-          onRefusedRef.current?.(body);
+          onRefusedRef.current?.(json);
           return;
         }
-        await onRenewedRef.current(body as SessionTokenGrant);
+        await onRenewedRef.current(json as G);
       } catch {
         // A network failure, not a refusal — the route's checks never ran.
         // One retry on a fixed delay, not a recurring timer: still
@@ -75,5 +82,5 @@ export function useTokenRenewal(
       clearTimeout(timer);
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [bookingId, expiresAt]);
+  }, [body, expiresAt]);
 }

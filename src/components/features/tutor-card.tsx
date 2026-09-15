@@ -17,9 +17,28 @@ import type { TutorCardData, LiveStatus } from "@/db/queries/tutors";
 // never is_live (SPEC §3.1). The card is an ink surface, so the LIVE badge uses
 // LivePill's ink variant (live-400 fill + ink-900 text, 4.75:1 — SPEC §10.1/§10.2).
 // offline/online stay as white pills overlaying the ink avatar band.
-function StatusBadge({ status }: { status: LiveStatus }) {
+function StatusBadge({
+  status,
+  broadcastId,
+}: {
+  status: LiveStatus;
+  broadcastId?: string | null;
+}) {
   if (status === "live") {
-    return <LivePill surface="ink" className="shadow-sm" />;
+    // A live tutor is broadcasting (Phase 9 Part 3): the badge opens the
+    // broadcast. No video preview on the card, which would bill an Agora
+    // audience minute for every browse visitor (DECISIONS, Phase 9 Part 3).
+    return broadcastId ? (
+      <Link
+        href={`/live/${broadcastId}`}
+        className="focus-ring-on-ink inline-flex rounded-full"
+        aria-label="LIVE, watch the broadcast"
+      >
+        <LivePill surface="ink" className="shadow-sm" />
+      </Link>
+    ) : (
+      <LivePill surface="ink" className="shadow-sm" />
+    );
   }
   if (status === "online") {
     return (
@@ -58,8 +77,9 @@ export function TutorCard({ tutor, favouriteMode, loginHref }: TutorCardProps) {
           name={tutor.displayName ?? "Tutor"}
           size="xl"
         />
-        <div className="absolute left-2 top-2">
-          <StatusBadge status={tutor.liveStatus} />
+        {/* z-10 so the LIVE link sits above the card's stretched profile link. */}
+        <div className="absolute left-2 top-2 z-10">
+          <StatusBadge status={tutor.liveStatus} broadcastId={tutor.liveBroadcastId} />
         </div>
         <FavouriteHeart
           className="absolute right-2 top-2 z-10"

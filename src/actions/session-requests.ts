@@ -125,6 +125,13 @@ export async function createSessionRequest(
   if (!tutor.isLive) {
     return { error: "This tutor just went offline. Try someone else on Live now." };
   }
+  // Q5 (Phase 9 Part 3): broadcasting takes a tutor out of instant requests.
+  if (tutor.isBroadcasting) {
+    return {
+      error:
+        "This tutor is broadcasting right now. Watch them on Live now, or request a session when they finish.",
+    };
+  }
   if (!tutor.acceptsInstant) {
     return { error: "This tutor doesn't take instant sessions." };
   }
@@ -249,6 +256,8 @@ export async function acceptSessionRequest(
         error:
           "You have a scheduled booking starting within that session's length. Finish or reschedule it first.",
       };
+    case "tutor_broadcasting":
+      return { error: "You're broadcasting right now. End your broadcast to take instant sessions." };
     case "failed_payment":
       return {
         error: `The student no longer has the ${result.priceCredits} credits this session was quoted at, so nothing was charged.`,

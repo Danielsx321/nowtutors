@@ -27,8 +27,24 @@ export interface TutorCardData {
   hourlyRateCredits: number;
   subjects: string[]; // up to 3 names
   liveStatus: LiveStatus;
+  /**
+   * The tutor's live broadcast, set only when `liveStatus` is `live` (Phase 9
+   * Part 3). The card's LIVE badge links to `/live/[id]`; there is no video
+   * preview on cards (DECISIONS, Phase 9 Part 3).
+   */
+  liveBroadcastId?: string | null;
   isFavourited: boolean;
 }
+
+/**
+ * The tutor's live broadcast id, for a card or profile whose tutor is live in
+ * broadcast mode. `tutor_profiles.user_id` must be in scope.
+ */
+export const liveBroadcastIdSql = sql<string | null>`(
+  select b.id from broadcasts b
+   where b.tutor_id = ${tutorProfiles.userId} and b.status = 'live'
+   limit 1
+)`;
 
 export interface BrowseResult {
   cards: TutorCardData[];
@@ -121,6 +137,7 @@ export async function browseTutors(
       country: publicProfiles.country,
       liveMemberUserId: liveTutors.userId,
       liveMode: liveTutors.liveMode,
+      liveBroadcastId: liveBroadcastIdSql,
       isFavourited: sql<boolean>`${favourites.id} is not null`,
       sortKey: sql<number>`${spec.col}`,
       subjects: subjectsAgg,
@@ -160,6 +177,7 @@ export async function browseTutors(
       : r.liveMode === "broadcast"
         ? "live"
         : "online",
+    liveBroadcastId: r.liveMemberUserId && r.liveMode === "broadcast" ? r.liveBroadcastId : null,
     isFavourited: r.isFavourited,
   }));
 

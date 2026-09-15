@@ -41,6 +41,11 @@ export interface InstantTutorInfo {
   acceptsInstant: boolean;
   /** Membership of the `live_tutors` view — never `tutor_profiles.is_live`. */
   isLive: boolean;
+  /**
+   * Live in `broadcast` mode. Q5 (Phase 9 Part 3): such a tutor can't be sent an
+   * instant request, so eligibility is `isLive && !isBroadcasting`.
+   */
+  isBroadcasting: boolean;
 }
 
 /**
@@ -59,6 +64,7 @@ export async function getInstantTutorInfo(
       hourlyRateCredits: tutorProfiles.hourlyRateCredits,
       acceptsInstant: tutorProfiles.acceptsInstant,
       liveMemberUserId: liveTutors.userId,
+      liveMode: liveTutors.liveMode,
     })
     .from(tutorProfiles)
     .leftJoin(liveTutors, eq(liveTutors.userId, tutorProfiles.userId))
@@ -66,11 +72,13 @@ export async function getInstantTutorInfo(
     .limit(1);
 
   if (!row) return null;
+  const isLive = row.liveMemberUserId != null;
   return {
     userId: row.userId,
     hourlyRateCredits: row.hourlyRateCredits,
     acceptsInstant: row.acceptsInstant,
-    isLive: row.liveMemberUserId != null,
+    isLive,
+    isBroadcasting: isLive && row.liveMode === "broadcast",
   };
 }
 
@@ -355,6 +363,22 @@ export async function expirePendingRequestsForTutors(
 function acceptTx(tx: DbTransaction): AcceptTx {
   return {
     ledger: walletExecutor(tx),
+
+    /**
+     * Q5 (Phase 9 Part 3). The tutor's row under FOR UPDATE, taken FIRST in the
+     * accept. `startBroadcast` takes the same lock and then expires this tutor's
+     * pending requests, so both transactions lock tutor before request and can't
+     * deadlock; whichever commits second sees the other's result.
+     */
+    async lockTutorLiveMode(tutorId) {
+      const [row] = await tx
+        .select({ liveMode: tutorProfiles.liveMode })
+        .from(tutorProfiles)
+        .where(eq(tutorProfiles.userId, tutorId))
+        .for("update")
+        .limit(1);
+      return row?.liveMode ?? null;
+    },
 
     async lockRequest(requestId) {
       const [row] = await tx

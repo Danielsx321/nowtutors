@@ -52,13 +52,18 @@ export async function setInstantAvailability(
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) return { error: "Could not change your availability." };
 
-  const row = await setTutorLive(userId, parsed.data.live);
-  if (!row) return { error: "No tutor profile found for this account." };
+  // Refused while broadcasting (Q5, Phase 9 Part 3): the WHERE clause in
+  // setTutorLive decides it, so a toggle racing a broadcast start can't win.
+  const res = await setTutorLive(userId, parsed.data.live);
+  if (res.status === "broadcasting") {
+    return { error: "You're broadcasting right now. End your broadcast first." };
+  }
+  if (res.status === "no_profile") return { error: "No tutor profile found for this account." };
 
   // The live list and the tutor's own dashboard both change.
   revalidatePath("/tutor");
   revalidatePath("/tutors");
   revalidatePath("/");
 
-  return { ok: true, isLive: row.isLive };
+  return { ok: true, isLive: res.isLive };
 }
