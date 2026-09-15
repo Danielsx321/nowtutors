@@ -1915,7 +1915,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 
 **Phase 9.5 — Design overhaul ("On Air").** Added 2026-09-15 at the client's request (the design read as dated). Six PR-sized parts, no migration, no money or booking rule change: (1) semantic tokens, fonts, restyled primitives, `docs/DESIGN.md`, the token contrast test; (2) shell (header, footer, app shell, sidebar, mobile bottom bar); (3) public and student surfaces led by the tutor card; (4) live moments with dark scoped to the rooms; (5) tutor surfaces; (6) admin, the photo-at-approval rule, alias cleanup, acceptance. Plan: workspace `plans/2026-09-15-nowtutors-design-overhaul.md`.
 *Accept:* every E2E spec (1 to 7 plus a design smoke) passes on Daniels' run; `grep -rE 'ink-|gold-|purple-|live-4|live-5|gray-' src` returns nothing and the alias block is gone; Lighthouse accessibility 90+ on `/`, `/tutors`, one profile and `/dashboard`; the client has the before-and-after set.
-*Status:* **Part 1 (foundation) merged 2026-09-15** (PR #74, `be6a209`). **Part 2 (shell) built 2026-09-15**, PR open. Parts 3 to 6 pending.
+*Status:* **Part 1 (foundation) merged 2026-09-15** (PR #74, `be6a209`). **Part 2 (shell) merged 2026-09-15** (PR #76, `c2df144`). Parts 3 to 6 pending.
 
 **Phase 10 — Email, polish, launch prep.** All templates, reminder cron, empty/loading/error states everywhere, accessibility pass, Lighthouse pass, `RUNBOOK.md` complete, production env configured, LessonSpace waiting room set, PayPal live credentials, one supervised real-card test.
 *Accept:* the runbook checklist is fully ticked.
