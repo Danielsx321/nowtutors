@@ -29,9 +29,15 @@ export default async function SessionLayout({
   // participation check would 404 them anyway, but the shell has no nav for it.
   if (profile.role === "admin") redirect("/admin");
 
+  // The rooms are dark (design overhaul Part 4, DESIGN.md "Tokens"): less
+  // glare around a video, and the room reads as a different place from the
+  // rest of the app. `.theme-dark` re-resolves every role, so nothing inside
+  // knows which theme it's in.
   return (
-    <AppShell role={profile.role} title="Session">
-      {children}
-    </AppShell>
+    <div className="theme-dark">
+      <AppShell role={profile.role} title="Session">
+        {children}
+      </AppShell>
+    </div>
   );
 }

@@ -4,6 +4,18 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-16)
 
+**DESIGN OVERHAUL Part 4 (live moments) is BUILT on `design-part4-live`, PR open, not merged. No migration, no prod
+step.** Rooms are dark. The instant room opens on a lobby (device check, mic meter, speaker test, Join disabled
+until it passes), then the tutor's video in a spotlight with the student as a small tile, a labelled control bar,
+connection warnings from the SDK's own events, and time-left warnings at 5, 2 and 1 minutes; a proper end screen.
+The tutor's incoming request is a call (Accept focused and green, chime with mute, missed-call notice). The
+student's wait is `waiting-for-tutor.tsx` with two ways forward. `/live` has 16:9 cards, a Just started row and a
+subject filter; `/live/[id]` is a dark band with an ended card that offers a 1:1; the host has a live status bar and
+an End broadcast confirm. **Screen share, in-session chat and tutor notes moved to their own phase (Daniels).**
+DECISIONS "Design overhaul Part 4". Gates: typecheck and lint clean, 684 unit, 86 DOM (17 new), build passed.
+**Not yet run:** a two-person session on the test project and E2E 5 and 7 (RUNBOOK). **Next:** Daniels runs those,
+merges; then Part 5 (tutor surfaces) from `main`.
+
 **DESIGN OVERHAUL Part 3 (public and student) is MERGED via PR #80 (`aca6172`), deployed. No migration, no prod
 step.** `/` stays one page (Daniels): a hero with the real live count and faces above the filter
 bar and grid, subject tiles, how it works and a tutor band below, on the unfiltered first page only. New

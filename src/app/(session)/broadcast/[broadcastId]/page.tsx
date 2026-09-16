@@ -33,8 +33,8 @@ export default async function BroadcastHostPage({
   return (
     <div className="flex flex-col gap-5 px-4 py-2 md:px-6">
       <header className="min-w-0">
-        <h1 className="text-h2 font-bold text-gray-700">{broadcast.title}</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-h2 font-bold text-text">{broadcast.title}</h1>
+        <p className="mt-1 text-body text-text-muted">
           {broadcast.subjectName ? `${broadcast.subjectName} · ` : ""}Live broadcast
         </p>
       </header>
@@ -44,16 +44,17 @@ export default async function BroadcastHostPage({
           broadcastId={broadcast.id}
           hostName={broadcast.tutorName}
           hostAvatarUrl={broadcast.tutorAvatarUrl}
+          startedAt={broadcast.startedAt?.toISOString() ?? null}
         />
       ) : (
-        <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
-          <h2 className="text-h3 font-bold text-white">This broadcast has ended</h2>
-          <p className="mt-2 max-w-prose text-body text-ink-300">
+        <div className="rounded-xl border border-border bg-surface-raised p-6">
+          <h2 className="text-h3 font-bold text-text">This broadcast has ended</h2>
+          <p className="mt-2 max-w-prose text-body text-text-muted">
             {broadcast.peakViewers === 1
               ? "1 person watched at the peak."
               : `${broadcast.peakViewers} people watched at the peak.`}
           </p>
-          <Button asChild variant="ink" className="mt-4">
+          <Button asChild variant="primary" className="mt-4">
             <Link href="/tutor/broadcasts">Back to broadcasts</Link>
           </Button>
         </div>

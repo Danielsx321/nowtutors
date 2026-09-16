@@ -7,14 +7,8 @@ import { cn } from "@/lib/utils";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Modal,
-  ModalContent,
-  ModalDescription,
-  ModalHeader,
-  ModalTitle,
-} from "@/components/ui/modal";
-import { ProgressRing } from "@/components/ui/progress-ring";
+import { Modal, ModalContent } from "@/components/ui/modal";
+import { WaitingForTutor } from "@/components/features/booking/waiting-for-tutor";
 import {
   Select,
   SelectContent,
@@ -36,6 +30,7 @@ const ANY_SUBJECT = "any";
 export interface InstantRequestWidgetProps {
   tutorId: string;
   tutorName: string;
+  tutorAvatarUrl?: string | null;
   hourlyRateCredits: number;
   durations: number[];
   subjects: BookableSubject[];
@@ -66,6 +61,7 @@ export interface InstantRequestWidgetProps {
 export function InstantRequestWidget({
   tutorId,
   tutorName,
+  tutorAvatarUrl,
   hourlyRateCredits,
   durations,
   subjects,
@@ -240,167 +236,22 @@ export function InstantRequestWidget({
 
       <Modal open={open} onOpenChange={(next) => !next && closeWaiting()}>
         <ModalContent size="sm">
-          <WaitingBody
+          <WaitingForTutor
             tutorName={tutorName}
+            tutorAvatarUrl={tutorAvatarUrl}
             priceCredits={waiting?.priceCredits ?? price}
             secondsLeft={secondsLeft}
             fraction={fraction}
             elapsed={elapsed}
             status={outcome?.status ?? "pending"}
             onClose={closeWaiting}
+            onBookTime={() => {
+              closeWaiting();
+              document.getElementById("book")?.scrollIntoView({ behavior: "smooth" });
+            }}
           />
         </ModalContent>
       </Modal>
     </div>
-  );
-}
-
-/**
- * The waiting modal's contents. Five states, and they are deliberately five
- * rather than "answered / not answered": a tutor who declined, a tutor who never
- * looked, and a balance that moved between the quote and the accept are
- * different facts, and a student who is told the wrong one takes the wrong next
- * step (§4.3 is the same argument, one layer down, for `failed_payment` being
- * its own status).
- *
- * `elapsed` is only ever reached when nothing arrived: the server refuses to
- * accept a request past `expires_at`, so a ring that has run out can never be
- * contradicted by a late acceptance.
- */
-function WaitingBody({
-  tutorName,
-  priceCredits,
-  secondsLeft,
-  fraction,
-  elapsed,
-  status,
-  onClose,
-}: {
-  tutorName: string;
-  priceCredits: number;
-  secondsLeft: number;
-  fraction: number;
-  elapsed: boolean;
-  status: string;
-  onClose: () => void;
-}) {
-  const browseLive = (
-    <Link href="/tutors?live=1" className="font-medium text-accent hover:underline">
-      See who else is live now
-    </Link>
-  );
-
-  if (status === "accepted") {
-    return (
-      <>
-        <ModalHeader>
-          <ModalTitle>{tutorName} accepted</ModalTitle>
-          <ModalDescription>Taking you into the session…</ModalDescription>
-        </ModalHeader>
-        <div className="grid place-items-center py-4">
-          <ProgressRing value={1} label="✓" />
-        </div>
-      </>
-    );
-  }
-
-  if (status === "declined") {
-    return (
-      <Outcome
-        title="Tutor is unavailable right now"
-        body={<>{tutorName} can&apos;t take a session at the moment. {browseLive}.</>}
-        onClose={onClose}
-      />
-    );
-  }
-
-  if (status === "failed_payment") {
-    return (
-      <Outcome
-        title="Your balance changed"
-        body={
-          <>
-            You no longer have the {priceCredits} credits this session was quoted
-            at, so <strong>nothing was charged</strong>.{" "}
-            <Link
-              href="/dashboard/wallet"
-              className="font-medium text-accent hover:underline"
-            >
-              Top up
-            </Link>{" "}
-            and try again.
-          </>
-        }
-        onClose={onClose}
-      />
-    );
-  }
-
-  if (status === "cancelled") {
-    return (
-      <Outcome
-        title="Request cancelled"
-        body={<>This request was cancelled. {browseLive}.</>}
-        onClose={onClose}
-      />
-    );
-  }
-
-  if (status === "expired" || elapsed) {
-    return (
-      <Outcome
-        title="No answer"
-        body={
-          <>
-            {tutorName} didn&apos;t answer in time, so{" "}
-            <strong>nothing was charged</strong>. {browseLive}.
-          </>
-        }
-        onClose={onClose}
-      />
-    );
-  }
-
-  return (
-    <>
-      <ModalHeader>
-        <ModalTitle>Waiting for {tutorName}</ModalTitle>
-        <ModalDescription>
-          They have {secondsLeft} seconds to answer. You&apos;re charged{" "}
-          {priceCredits} credits only if they accept.
-        </ModalDescription>
-      </ModalHeader>
-      <div className="grid place-items-center py-4">
-        <ProgressRing
-          value={fraction}
-          label={secondsLeft}
-          size={96}
-          live
-          aria-label={`${secondsLeft} seconds left`}
-        />
-      </div>
-    </>
-  );
-}
-
-function Outcome({
-  title,
-  body,
-  onClose,
-}: {
-  title: string;
-  body: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <ModalHeader>
-        <ModalTitle>{title}</ModalTitle>
-        <ModalDescription>{body}</ModalDescription>
-      </ModalHeader>
-      <Button variant="secondary" onClick={onClose}>
-        Close
-      </Button>
-    </>
   );
 }

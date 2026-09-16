@@ -10,6 +10,7 @@ import { FormsSection } from "./_sections/forms";
 import { FeedbackSection } from "./_sections/feedback";
 import { DataDisplaySection } from "./_sections/data-display";
 import { TutorCardSection } from "./_sections/tutor-card";
+import { LiveMomentsSection } from "./_sections/live-moments";
 import { AuthSection } from "./_sections/auth";
 import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
@@ -22,6 +23,7 @@ const sections = [
   { id: "feedback", label: "Feedback" },
   { id: "data-display", label: "Data display" },
   { id: "tutor-card", label: "TutorCard" },
+  { id: "live-moments", label: "Live moments" },
   { id: "auth", label: "Auth" },
   { id: "overlays", label: "Overlays" },
   { id: "layouts", label: "Layouts" },
@@ -86,6 +88,7 @@ export default function KitchenSink() {
         <FeedbackSection surface={surface} />
         <DataDisplaySection surface={surface} />
         <TutorCardSection surface={surface} />
+        <LiveMomentsSection surface={surface} />
         <AuthSection surface={surface} />
         <OverlaysSection surface={surface} />
         <LayoutsPreviewSection surface={surface} />

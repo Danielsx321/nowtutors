@@ -80,6 +80,20 @@ Two states, one colour family, mutually exclusive (SPEC §7.8, Q5: a broadcastin
 
 The chip is always text. A dot on its own is decoration, never the indicator. No red for live, anywhere.
 
+## Rooms
+
+Every live room is dark: `.theme-dark` on the `(session)` layout (instant session, classroom, broadcast host) and on the `/live/[id]` band under the light site header. Dialogs portal outside that wrapper, so a room's own confirms carry `className="theme-dark"` themselves.
+
+- **Lobby first.** A device check before anything joins. Join is disabled until it passes; a blocked device says exactly where to allow it.
+- **Spotlight.** The tutor's video is the picture (students publish audio only, SPEC §9); the student is a small tile in the corner from `md`, stacked below on phones. A side-by-side switch sits in the bar.
+- **Control bar.** `ControlBar`: 44px labelled toggles with a fixed accessible name and `aria-pressed` = on; an off device turns the danger colour and says "Mic off". The end action sits apart on the right, in `danger`.
+- **Connection banner.** One polite live region. Silent when all is well; words and one action when it isn't ("Turn off video", "Rejoin").
+- **Time.** The clock turns `warning` at 5 minutes and `danger` in the last minute; a toast at 5, a banner from 2, each announced once.
+- **The incoming request is a call.** Green on-air ring round the student, a short rise-in (`dialog-call-in`), Accept focused and green, a two-note chime the tutor can mute (remembered per browser), and a notice that stays when a call is missed.
+- **The student's wait never dead-ends.** No answer or a decline offers "Try another live tutor" and "Book a time with {name}"; the credits line stays exact (charged at accept, nothing held before).
+
+Sounds are synthesised with Web Audio; the product ships no audio files.
+
 ## Money
 
 `<Money credits={45} usdPerCredit={rate} showUsd per="hr" />` renders "45 cr / hr ≈ $45". `usdPerCredit` comes from the direct-pay basis package (`lib/credits/packages.ts`); it is never hard-coded. The payout rate to tutors ($1 per credit) is a tutor-side number and never appears on a student surface.

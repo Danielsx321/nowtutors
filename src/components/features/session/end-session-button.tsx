@@ -65,7 +65,7 @@ export function EndSessionButton({
 
   return (
     <>
-      <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="danger" onClick={() => setOpen(true)}>
         <PhoneOff aria-hidden />
         End session
       </Button>
@@ -76,7 +76,7 @@ export function EndSessionButton({
           if (!pending) setOpen(next);
         }}
       >
-        <ModalContent size="sm">
+        <ModalContent size="sm" className="theme-dark">
           <ModalHeader>
             <ModalTitle>End this session?</ModalTitle>
             <ModalDescription>

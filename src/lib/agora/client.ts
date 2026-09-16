@@ -57,8 +57,20 @@ export interface SessionClientHandlers {
   /** Whether the other participant is currently in the channel. */
   onRemotePresence?(present: boolean): void;
   onConnectionState?(state: ConnectionState): void;
+  /**
+   * Network quality, as the SDK reports it about every two seconds once
+   * joined: 0 unknown, 1 excellent to 6 down (Agora's scale). `remote` is the
+   * other participant's uplink, or 0 when they aren't here. Display only.
+   */
+  onNetworkQuality?(quality: NetworkQuality): void;
   /** A failure after a successful join (device lost, publish rejected). */
   onError?(err: unknown): void;
+}
+
+export interface NetworkQuality {
+  uplink: number;
+  downlink: number;
+  remote: number;
 }
 
 type Phase = "idle" | "joining" | "joined" | "disposed";
@@ -249,6 +261,25 @@ export class SessionClient {
 
     client.on("connection-state-change", (state) => {
       this.#handlers.onConnectionState?.(state);
+    });
+
+    // Fired by the SDK on its own schedule; nothing here polls. The remote
+    // figure is read in the same tick from the SDK's cached stats.
+    client.on("network-quality", (stats) => {
+      if (this.disposed) return;
+      let remote = 0;
+      if (this.#remoteUid !== null) {
+        try {
+          remote = client.getRemoteNetworkQuality()[String(this.#remoteUid)]?.uplinkNetworkQuality ?? 0;
+        } catch {
+          remote = 0;
+        }
+      }
+      this.#handlers.onNetworkQuality?.({
+        uplink: stats.uplinkNetworkQuality,
+        downlink: stats.downlinkNetworkQuality,
+        remote,
+      });
     });
   }
 
