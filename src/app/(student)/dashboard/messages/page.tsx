@@ -16,7 +16,7 @@ export default async function StudentMessagesPage() {
       emptyAction={
         <Link
           href="/tutors"
-          className="focus-ring inline-flex h-11 items-center rounded-md bg-purple-500 px-4 text-body font-medium text-white hover:bg-purple-700"
+          className="focus-ring inline-flex h-11 items-center rounded-full bg-primary px-5 text-body font-medium text-on-primary hover:bg-primary/85"
         >
           Find tutors
         </Link>

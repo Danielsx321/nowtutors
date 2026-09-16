@@ -68,7 +68,7 @@ export function LoginForm({
             </Label>
             <Link
               href="/forgot-password"
-              className="focus-ring rounded-sm text-small text-purple-500 hover:underline"
+              className="focus-ring rounded-sm text-small text-accent hover:underline"
             >
               Forgot password?
             </Link>
@@ -89,11 +89,11 @@ export function LoginForm({
         </Button>
       </form>
 
-      <p className="text-center text-small text-gray-500">
+      <p className="text-center text-small text-text-muted">
         New to NowTutors?{" "}
         <Link
           href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-          className="focus-ring rounded-sm font-medium text-purple-500 hover:underline"
+          className="focus-ring rounded-sm font-medium text-accent hover:underline"
         >
           Create an account
         </Link>

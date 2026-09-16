@@ -104,11 +104,11 @@ export function SignupForm({ next }: { next?: string }) {
         </Button>
       </form>
 
-      <p className="text-center text-small text-gray-500">
+      <p className="text-center text-small text-text-muted">
         Already have an account?{" "}
         <Link
           href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
-          className="focus-ring rounded-sm font-medium text-purple-500 hover:underline"
+          className="focus-ring rounded-sm font-medium text-accent hover:underline"
         >
           Log in
         </Link>

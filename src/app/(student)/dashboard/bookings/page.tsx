@@ -22,7 +22,7 @@ export default async function StudentBookingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl py-8">
-      <h1 className="mb-6 text-h1 font-bold text-gray-700">Your bookings</h1>
+      <h1 className="mb-6 text-h1 font-bold text-text">Your bookings</h1>
       <BookingList
         groups={groupBookingsByTab(items)}
         basePath="/dashboard/bookings"

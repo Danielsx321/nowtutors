@@ -4,6 +4,18 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-16)
 
+**DESIGN OVERHAUL Part 3 (public and student) is BUILT on `design-part3-public-student`, PR open, not merged. No
+migration, no prod step.** `/` stays one page (Daniels): a hero with the real live count and faces above the filter
+bar and grid, subject tiles, how it works and a tutor band below, on the unfiltered first page only. New
+`TutorCard` (grid and row variants, three states from one function, proof row, one action, no rating), filter bar
+with a Live now chip and a true result count, tutor profile with a sticky panel on `lg` and a bottom bar below it
+(one primary action), student dashboard as a feed, wallet with one large balance and an Added / Spent filter,
+favourites as rows, auth and onboarding on raised cards, `lib/copy/trust.ts` with the guarantee on. DECISIONS
+"Design overhaul Part 3". Gates: typecheck and lint clean, 680 unit, 69 DOM (11 new), build passed. **Not yet seen
+signed in:** `/dashboard`, `/dashboard/wallet`, `/dashboard/favourites`, a booking detail and a live tutor's card
+(no tutor was live on the test project); their queries were run against the test project. **Next:** Daniels
+checks those signed in on the Vercel preview, merges; then Part 4 (live moments) from `main`.
+
 **DESIGN OVERHAUL brand update ("Part 2.5") is MERGED via PR #78 (`004267b`), deployed. No migration, no prod
 step.** Noora answered the six open design questions. Her real logo is a white "tutornow" on dark teal, so:
 `Wordmark` is now her artwork re-set as "nowtutors" (one SVG path in `currentColor`, approved by her), DM Sans is

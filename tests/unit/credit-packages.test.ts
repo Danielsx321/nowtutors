@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  basisUsdPerCredit,
   findCreditPackage,
   parseCreditPackages,
   requireCreditPackage,
@@ -84,5 +85,27 @@ describe("credit package lookup", () => {
     expect(toPayPalAmount(9.99)).toBe("9.99");
     expect(toPayPalAmount(40)).toBe("40.00");
     expect(toPayPalAmount(67.9)).toBe("67.90");
+  });
+});
+
+describe("basisUsdPerCredit (the student-side ≈ $ anchor)", () => {
+  const pkg = (id: string, credits: number, priceUsd: number, basis = false) => ({
+    id,
+    name: id,
+    credits,
+    priceUsd,
+    isDirectPayBasis: basis,
+  });
+
+  it("is the basis tier's price per credit", () => {
+    expect(basisUsdPerCredit([pkg("s", 10, 15), pkg("m", 30, 39.99, true)])).toBeCloseTo(1.333, 3);
+  });
+
+  it("is null when no tier is the basis, so no wrong number is shown", () => {
+    expect(basisUsdPerCredit([pkg("s", 10, 15)])).toBeNull();
+  });
+
+  it("is null when more than one tier claims the basis", () => {
+    expect(basisUsdPerCredit([pkg("a", 10, 10, true), pkg("b", 20, 30, true)])).toBeNull();
   });
 });

@@ -36,7 +36,7 @@ export function FavouriteHeart({
   if (mode === "hidden") return null;
 
   const base = cn(
-    "focus-ring grid size-9 place-items-center rounded-full bg-white/90 shadow-sm transition-colors hover:bg-white",
+    "focus-ring grid size-9 place-items-center rounded-full bg-surface-raised/90 shadow-sm transition-colors hover:bg-surface-raised",
     className,
   );
 
@@ -48,7 +48,7 @@ export function FavouriteHeart({
         onClick={(e) => e.stopPropagation()}
         className={base}
       >
-        <Heart className="size-5 text-gray-500" />
+        <Heart className="size-5 text-text-muted" />
       </Link>
     );
   }
@@ -78,7 +78,7 @@ export function FavouriteHeart({
       <Heart
         className={cn(
           "size-5 transition-colors",
-          favourited ? "fill-purple-500 text-purple-500" : "text-gray-500",
+          favourited ? "fill-accent text-accent" : "text-text-muted",
         )}
       />
     </button>

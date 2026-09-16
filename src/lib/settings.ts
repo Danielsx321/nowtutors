@@ -6,6 +6,7 @@ import { seededSetting } from "@/db/platform-settings-defaults";
 import {
   parseCreditPackages,
   type CreditPackage,
+  basisUsdPerCredit,
 } from "@/lib/credits/packages";
 import { parsePayoutRate } from "@/lib/withdrawals/payout-rate";
 import type { WithdrawalSettings } from "@/lib/withdrawals/withdrawals";
@@ -131,6 +132,11 @@ export async function getCreditPackages(): Promise<CreditPackage[]> {
   return parsed.length
     ? parsed
     : parseCreditPackages(seededSetting<unknown>("credit_packages"));
+}
+
+/** USD per credit for the student-side "≈ $" anchor, or null (never a guess). */
+export async function getUsdPerCredit(): Promise<number | null> {
+  return basisUsdPerCredit(await getCreditPackages());
 }
 
 /**

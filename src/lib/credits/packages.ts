@@ -130,6 +130,18 @@ export function directPayUsdCents(
   return Math.ceil((priceCredits * basisCents) / basis.credits);
 }
 
+/**
+ * USD per credit at the direct-pay basis tier: the "≈ $" anchor next to a
+ * credit price on student surfaces (DESIGN.md, "Money"). Null when the basis
+ * isn't exactly one package, so the anchor disappears instead of showing a
+ * wrong number. Display only; charges go through {@link directPayUsdCents}.
+ */
+export function basisUsdPerCredit(packages: readonly CreditPackage[]): number | null {
+  const flagged = packages.filter((p) => p.isDirectPayBasis);
+  if (flagged.length !== 1) return null;
+  return flagged[0].priceUsd / flagged[0].credits;
+}
+
 /** `directPayUsdCents` as PayPal's 2-decimal string. */
 export function directPayAmount(
   priceCredits: number,

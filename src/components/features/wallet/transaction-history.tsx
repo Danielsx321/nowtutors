@@ -58,22 +58,22 @@ export function TransactionHistory({
       <TableBody>
         {transactions.map((t) => (
           <TableRow key={t.id}>
-            <TableCell className="whitespace-nowrap text-gray-500">
+            <TableCell className="whitespace-nowrap text-text-muted">
               {dateFormat.format(t.createdAt)}
             </TableCell>
             <TableCell>{t.description ?? "—"}</TableCell>
-            <TableCell className="text-gray-500">
+            <TableCell className="text-text-muted">
               {creditTransactionLabel(t.type)}
             </TableCell>
             <TableCell
               className={cn(
                 "whitespace-nowrap text-right font-medium tabular-nums",
-                t.delta > 0 ? "text-success" : "text-gray-700",
+                t.delta > 0 ? "text-success" : "text-text",
               )}
             >
               {formatCreditDelta(t.delta)}
             </TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-500">
+            <TableCell className="whitespace-nowrap text-right tabular-nums text-text-muted">
               {t.balanceAfter.toLocaleString()}
             </TableCell>
           </TableRow>

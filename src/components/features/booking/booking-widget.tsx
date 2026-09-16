@@ -32,6 +32,11 @@ interface BookingWidgetProps {
   tutorTimeZone: string;
   walletBalance: number;
   loginHref: string;
+  /**
+   * How loud the booking action is. `secondary` when a live "Start now" action
+   * sits above it on the profile, so the page has one primary action.
+   */
+  emphasis?: "primary" | "secondary";
 }
 
 /**
@@ -52,6 +57,7 @@ export function BookingWidget({
   tutorTimeZone,
   walletBalance,
   loginHref,
+  emphasis = "primary",
 }: BookingWidgetProps) {
   const router = useRouter();
   const [duration, setDuration] = React.useState<number>(durations[0] ?? 60);
@@ -78,12 +84,14 @@ export function BookingWidget({
 
   if (mode === "anon") {
     return (
-      <Alert variant="info" title="Sign in to book">
-        <Link href={loginHref} className="font-medium text-purple-500 hover:underline">
-          Log in or create an account
-        </Link>{" "}
-        to book a session with this tutor.
-      </Alert>
+      <div className="space-y-2">
+        <Button asChild variant={emphasis} className="w-full">
+          <Link href={loginHref}>Sign in to book</Link>
+        </Button>
+        <p className="text-small text-text-muted">
+          Log in or create an account to pick a time with this tutor.
+        </p>
+      </div>
     );
   }
   if (mode === "tutor") {
@@ -137,8 +145,8 @@ export function BookingWidget({
               className={cn(
                 "focus-ring flex-1 rounded-md border px-3 py-2 text-small font-medium transition-colors",
                 d === duration
-                  ? "border-purple-500 bg-purple-500 text-white"
-                  : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
+                  ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
+                  : "border-border bg-surface-raised text-text hover:border-border",
               )}
             >
               {d} min
@@ -165,18 +173,18 @@ export function BookingWidget({
 
       <div className="space-y-1.5">
         <Label>Pick a time</Label>
-        <p className="text-caption text-gray-500">
+        <p className="text-caption text-text-muted">
           Times shown in your timezone ({viewerTimeZone}). Tutor’s timezone: {tutorTimeZone}.
         </p>
-        <div className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-gray-200 p-3">
+        <div className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-border p-3">
           {dayGroups.length === 0 && (
-            <p className="py-4 text-center text-small text-gray-500">
+            <p className="py-4 text-center text-small text-text-muted">
               No {duration}-minute slots available.
             </p>
           )}
           {dayGroups.map((group) => (
             <div key={group.key} className="space-y-1.5">
-              <p className="text-caption font-semibold uppercase tracking-wide text-gray-500">
+              <p className="text-caption font-semibold text-text-muted">
                 {group.label}
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -189,8 +197,8 @@ export function BookingWidget({
                     className={cn(
                       "focus-ring rounded-md border px-2.5 py-1.5 text-small transition-colors",
                       slot.iso === selectedSlot
-                        ? "border-purple-500 bg-purple-500 text-white"
-                        : "border-gray-200 bg-white text-gray-700 hover:border-purple-300",
+                        ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
+                        : "border-border bg-surface-raised text-text hover:border-accent",
                     )}
                   >
                     {slot.time}
@@ -214,15 +222,15 @@ export function BookingWidget({
         />
       </div>
 
-      <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
-        <span className="text-small text-gray-500">Price</span>
-        <span className="text-body font-semibold text-gray-700">{price} credits</span>
+      <div className="flex items-center justify-between rounded-md bg-surface-muted px-3 py-2">
+        <span className="text-small text-text-muted">Price</span>
+        <span data-numeric className="text-body font-semibold text-text">{price} credits</span>
       </div>
 
       {selectedSlot && !canAfford && (
         <Alert variant="warning" title="Not enough credits">
           This session costs {price} credits; your balance is {walletBalance}.{" "}
-          <Link href="/dashboard/wallet" className="font-medium text-purple-500 hover:underline">
+          <Link href="/dashboard/wallet" className="font-medium text-accent hover:underline">
             Top up
           </Link>
           .
@@ -231,6 +239,7 @@ export function BookingWidget({
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Button
+        variant={emphasis}
         className="w-full"
         onClick={onConfirm}
         disabled={!selectedSlot || !subjectId || submitting || !canAfford}

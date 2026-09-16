@@ -73,7 +73,7 @@ export function BookingDetailView({
     <div className="mx-auto max-w-2xl py-8">
       <Link
         href={backHref}
-        className="focus-ring mb-4 inline-flex items-center gap-1.5 rounded-sm text-small text-gray-500 hover:text-gray-700"
+        className="focus-ring mb-4 inline-flex items-center gap-1.5 rounded-sm text-small text-text-muted hover:text-text"
       >
         <ArrowLeft className="size-4" aria-hidden />
         Back to bookings
@@ -89,10 +89,10 @@ export function BookingDetailView({
                 size="lg"
               />
               <div>
-                <p className="text-caption uppercase tracking-wide text-gray-500">
+                <p className="text-caption text-text-muted">
                   {booking.otherPartyRole === "tutor" ? "Session with" : "Student"}
                 </p>
-                <h1 className="text-h2 font-bold text-gray-700">
+                <h1 className="font-display text-h2 font-bold text-text">
                   {booking.otherPartyName ?? "—"}
                 </h1>
               </div>
@@ -119,11 +119,11 @@ export function BookingDetailView({
           </dl>
 
           {booking.priceCredits != null && (
-            <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
-              <span className="text-small text-gray-500">
+            <div className="flex items-center justify-between rounded-md bg-surface-muted px-3 py-2">
+              <span className="text-small text-text-muted">
                 {booking.isStudent ? "Paid" : "You earn"}
               </span>
-              <span className="text-body font-semibold text-gray-700">
+              <span data-numeric className="text-body font-semibold text-text">
                 {booking.priceCredits} credits
               </span>
             </div>
@@ -131,17 +131,17 @@ export function BookingDetailView({
 
           {booking.studentNotes && (
             <div className="space-y-1">
-              <p className="text-caption uppercase tracking-wide text-gray-500">
+              <p className="text-caption text-text-muted">
                 {booking.isStudent ? "Your notes" : "Student notes"}
               </p>
-              <p className="whitespace-pre-line text-body text-gray-700">
+              <p className="whitespace-pre-line text-body text-text">
                 {booking.studentNotes}
               </p>
             </div>
           )}
 
           {isUpcoming && (
-            <div className="space-y-2 border-t border-gray-100 pt-4">
+            <div className="space-y-2 border-t border-border pt-4">
               <JoinControl
                 booking={booking}
                 viewerId={viewerId}
@@ -230,7 +230,7 @@ function JoinControl({
         <Video className="size-4" aria-hidden />
         Join classroom
       </Button>
-      <p className="text-center text-caption text-gray-500">
+      <p className="text-center text-caption text-text-muted">
         {access.reason === "too_early" && joinWindow
           ? `Opens ${JOIN_WINDOW_BEFORE_MINUTES} minutes before the session, at ${timeFmt.format(joinWindow.opensAt)}.`
           : access.reason === "too_late"
@@ -255,12 +255,12 @@ function Detail({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-gray-400" aria-hidden>
+      <span className="mt-0.5 text-border-strong" aria-hidden>
         {icon}
       </span>
       <div>
-        <dt className="text-caption uppercase tracking-wide text-gray-500">{term}</dt>
-        <dd className="text-body text-gray-700">{children}</dd>
+        <dt className="text-caption text-text-muted">{term}</dt>
+        <dd className="text-body text-text">{children}</dd>
       </div>
     </div>
   );

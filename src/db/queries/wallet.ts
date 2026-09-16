@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { creditTransactions, payments, wallets } from "@/db/schema";
 import type { CreditTransactionType } from "@/lib/credits/ledger";
@@ -68,15 +68,27 @@ export async function getWalletBalanceFor(userId: string): Promise<number> {
  * into range, so a hand-typed `?page=999` renders the last page rather than an
  * empty table.
  */
+export type WalletDirection = "in" | "out";
+
 export async function getWalletHistory(
   userId: string,
   page = 1,
   pageSize = WALLET_PAGE_SIZE,
+  /** `in`: credits added (delta > 0). `out`: credits spent (delta < 0). Omitted: everything. */
+  direction?: WalletDirection,
 ): Promise<WalletHistoryPage> {
+  const where = and(
+    eq(creditTransactions.userId, userId),
+    direction === "in"
+      ? gt(creditTransactions.delta, 0)
+      : direction === "out"
+        ? lt(creditTransactions.delta, 0)
+        : undefined,
+  );
   const [{ total }] = await db
     .select({ total: count() })
     .from(creditTransactions)
-    .where(eq(creditTransactions.userId, userId));
+    .where(where);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const current = Math.min(Math.max(1, Math.trunc(page) || 1), pageCount);
@@ -92,7 +104,7 @@ export async function getWalletHistory(
       createdAt: creditTransactions.createdAt,
     })
     .from(creditTransactions)
-    .where(eq(creditTransactions.userId, userId))
+    .where(where)
     // Matches credit_tx_user_created_idx (user_id, created_at desc) exactly.
     .orderBy(desc(creditTransactions.createdAt))
     .limit(pageSize)

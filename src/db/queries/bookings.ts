@@ -230,6 +230,8 @@ export interface BookingListItem {
   durationMinutes: number | null;
   priceCredits: number | null;
   subjectName: string | null;
+  /** The counterpart's user id: the tutor for a student, for the Message shortcut. */
+  otherPartyId: string;
   otherPartyName: string | null;
   otherPartyAvatarUrl: string | null;
 }
@@ -257,6 +259,7 @@ export async function getBookingsForParticipant(
       durationMinutes: bookings.durationMinutes,
       priceCredits: bookings.priceCredits,
       subjectName: subjects.name,
+      otherPartyId: other.id,
       otherPartyName: other.displayName,
       otherPartyFullName: other.fullName,
       otherPartyAvatarUrl: other.avatarUrl,
@@ -275,6 +278,7 @@ export async function getBookingsForParticipant(
     durationMinutes: r.durationMinutes,
     priceCredits: r.priceCredits,
     subjectName: r.subjectName,
+    otherPartyId: r.otherPartyId,
     otherPartyName: r.otherPartyName ?? r.otherPartyFullName ?? null,
     otherPartyAvatarUrl: r.otherPartyAvatarUrl,
   }));
@@ -430,6 +434,7 @@ export async function getBookingDetailForParticipant(
     studentNotes: row.studentNotes,
     isStudent,
     otherPartyRole: isStudent ? "tutor" : "student",
+    otherPartyId: isStudent ? row.tutorId : row.studentId,
     otherPartyName: isStudent
       ? (row.tutorName ?? row.tutorFullName ?? null)
       : (row.studentName ?? row.studentFullName ?? null),

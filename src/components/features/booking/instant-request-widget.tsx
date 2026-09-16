@@ -107,12 +107,14 @@ export function InstantRequestWidget({
 
   if (mode === "anon") {
     return (
-      <Alert variant="info" title="Sign in to request a session">
-        <Link href={loginHref} className="font-medium text-purple-500 hover:underline">
-          Log in or create an account
-        </Link>{" "}
-        to start a session with {tutorName} right now.
-      </Alert>
+      <div className="space-y-2">
+        <Button asChild variant="live" className="w-full">
+          <Link href={loginHref}>Sign in to start now</Link>
+        </Button>
+        <p className="text-small text-text-muted">
+          Log in or create an account to start a session with {tutorName} right now.
+        </p>
+      </div>
     );
   }
   if (mode !== "student") return null;
@@ -165,15 +167,15 @@ export function InstantRequestWidget({
                 className={cn(
                   "focus-ring rounded-md border px-3 py-2 text-small font-medium transition-colors",
                   d === duration
-                    ? "border-purple-500 bg-purple-500 text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
+                    ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
+                    : "border-border bg-surface-raised text-text hover:border-border",
                 )}
               >
                 {d} min
                 <span
                   className={cn(
                     "ml-1.5 font-normal",
-                    d === duration ? "text-white/80" : "text-gray-500",
+                    d === duration ? "text-accent" : "text-text-muted",
                   )}
                 >
                   · {p} credits
@@ -218,7 +220,7 @@ export function InstantRequestWidget({
       {!canAfford && (
         <Alert variant="warning" title="Not enough credits">
           This session costs {price} credits; your balance is {walletBalance}.{" "}
-          <Link href="/dashboard/wallet" className="font-medium text-purple-500 hover:underline">
+          <Link href="/dashboard/wallet" className="font-medium text-accent hover:underline">
             Top up
           </Link>
           .
@@ -227,6 +229,7 @@ export function InstantRequestWidget({
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Button
+        variant="live"
         className="w-full"
         onClick={onRequest}
         disabled={submitting || !canAfford}
@@ -282,7 +285,7 @@ function WaitingBody({
   onClose: () => void;
 }) {
   const browseLive = (
-    <Link href="/tutors?live=1" className="font-medium text-purple-500 hover:underline">
+    <Link href="/tutors?live=1" className="font-medium text-accent hover:underline">
       See who else is live now
     </Link>
   );
@@ -321,7 +324,7 @@ function WaitingBody({
             at, so <strong>nothing was charged</strong>.{" "}
             <Link
               href="/dashboard/wallet"
-              className="font-medium text-purple-500 hover:underline"
+              className="font-medium text-accent hover:underline"
             >
               Top up
             </Link>{" "}

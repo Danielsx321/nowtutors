@@ -21,8 +21,8 @@ export function OnboardingFlow({
     return (
       <div className="space-y-6">
         <div className="space-y-1 text-center">
-          <h1 className="text-h2 font-bold text-gray-700">Welcome to NowTutors</h1>
-          <p className="text-body text-gray-500">
+          <h1 className="text-h2 font-bold text-text">Welcome to NowTutors</h1>
+          <p className="text-body text-text-muted">
             How do you want to use NowTutors? You can&apos;t change this later.
           </p>
         </div>
@@ -50,16 +50,16 @@ export function OnboardingFlow({
         <button
           type="button"
           onClick={() => setStep("role")}
-          className="focus-ring inline-flex items-center gap-1.5 rounded-sm text-small font-medium text-gray-500 hover:text-gray-700"
+          className="focus-ring inline-flex items-center gap-1.5 rounded-sm text-small font-medium text-text-muted hover:text-text"
         >
           <ArrowLeft className="size-4" aria-hidden />
           Change
         </button>
         <div className="space-y-1">
-          <h1 className="text-h2 font-bold text-gray-700">
+          <h1 className="text-h2 font-bold text-text">
             {step === "student" ? "Set up your account" : "Create your tutor profile"}
           </h1>
-          <p className="text-body text-gray-500">
+          <p className="text-body text-text-muted">
             {step === "student"
               ? "A few details so we can tailor your experience."
               : "Tell students who you are. Your profile is reviewed before it goes live."}
@@ -91,15 +91,15 @@ export function RoleCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "focus-ring flex flex-col items-start gap-2 rounded-lg border border-gray-200 bg-white p-5 text-left transition-colors",
-        "hover:border-purple-500 hover:bg-purple-100/40",
+        "focus-ring flex flex-col items-start gap-2 rounded-lg border border-border bg-surface-raised p-5 text-left transition-colors",
+        "hover:border-accent hover:bg-surface-muted/40",
       )}
     >
-      <span className="grid size-12 place-items-center rounded-full bg-purple-100 text-purple-700">
+      <span className="grid size-12 place-items-center rounded-full bg-surface-muted text-accent">
         {icon}
       </span>
-      <span className="text-body-lg font-bold text-gray-700">{title}</span>
-      <span className="text-small text-gray-500">{description}</span>
+      <span className="text-body-lg font-bold text-text">{title}</span>
+      <span className="text-small text-text-muted">{description}</span>
     </button>
   );
 }
