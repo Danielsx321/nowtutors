@@ -69,7 +69,7 @@ export function OpensInCountdown({ opensAt }: { opensAt: string }) {
       role="timer"
       aria-live="off"
       aria-label={`Opens in about ${minutes === 0 ? `${seconds} seconds` : minutes === 1 ? "1 minute" : `${minutes} minutes`}`}
-      className="font-mono text-h3 tabular-nums text-white"
+      className="font-mono text-h3 tabular-nums text-text"
     >
       {minutes}:{String(seconds).padStart(2, "0")}
     </p>

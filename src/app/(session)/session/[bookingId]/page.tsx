@@ -66,8 +66,8 @@ export default async function SessionPage({
     <div className="flex flex-col gap-5 px-4 py-2 md:px-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-h2 font-bold text-gray-700">{heading}</h1>
-          <p className="mt-1 text-body text-gray-500">
+          <h1 className="font-display text-h2 font-bold text-text">{heading}</h1>
+          <p className="mt-1 text-body text-text-muted">
             with {view.otherPartyName}
             {view.durationMinutes ? ` · ${view.durationMinutes} minutes` : ""}
           </p>
@@ -106,10 +106,10 @@ export default async function SessionPage({
  */
 function NotLive({ status }: { status: string }) {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
-      <h2 className="text-h3 font-bold text-white">This session isn&apos;t live</h2>
-      <p className="mt-2 max-w-prose text-body text-ink-300">
-        It&apos;s marked <span className="text-white">{bookingStatusMeta(status).label.toLowerCase()}</span>,
+    <div className="rounded-xl border border-border bg-surface-raised p-6">
+      <h2 className="text-h3 font-bold text-text">This session isn&apos;t live</h2>
+      <p className="mt-2 max-w-prose text-body text-text-muted">
+        It&apos;s marked <span className="text-text">{bookingStatusMeta(status).label.toLowerCase()}</span>,
         so there&apos;s no room to join. If you think that&apos;s wrong, your bookings
         page has the full history.
       </p>
@@ -131,9 +131,9 @@ function NotLive({ status }: { status: string }) {
  */
 function TimeIsUp() {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
-      <h2 className="text-h3 font-bold text-white">This session&apos;s time is up</h2>
-      <p className="mt-2 max-w-prose text-body text-ink-300">
+    <div className="rounded-xl border border-border bg-surface-raised p-6">
+      <h2 className="text-h3 font-bold text-text">This session&apos;s time is up</h2>
+      <p className="mt-2 max-w-prose text-body text-text-muted">
         The booked time has run out, so the room is closed. Sessions run for the
         length they were booked for and can&apos;t be extended — if you need more
         time, start a new session.

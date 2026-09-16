@@ -98,10 +98,10 @@ export default async function ClassroomPage({
     <div className="flex flex-col gap-5 px-4 py-2 md:px-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-h2 font-bold text-gray-700">
+          <h1 className="text-h2 font-bold text-text">
             {row.subjectName ?? "Tutoring session"}
           </h1>
-          <p className="mt-1 text-body text-gray-500">
+          <p className="mt-1 text-body text-text-muted">
             with {otherPartyName}
             {row.durationMinutes ? ` · ${row.durationMinutes} minutes` : ""}
           </p>
@@ -181,28 +181,28 @@ function NotOpenYet({
 
   return (
     <Panel
-      icon={<CalendarClock className="mt-0.5 size-6 shrink-0 text-gold-400" aria-hidden />}
+      icon={<CalendarClock className="mt-0.5 size-6 shrink-0 text-accent" aria-hidden />}
       title="The classroom isn't open yet"
       backHref={backHref}
     >
       {opensAt ? (
         <>
-          <p className="max-w-prose text-body text-ink-300">
+          <p className="max-w-prose text-body text-text-muted">
             It opens {JOIN_WINDOW_BEFORE_MINUTES} minutes before your session, at{" "}
-            <span className="text-white">{formatTime(opensAt, timeZone)}</span>
+            <span className="text-text">{formatTime(opensAt, timeZone)}</span>
             {otherDay ? ` on ${formatDay(opensAt, timeZone)}` : ""}. You can leave
             this page open — it&apos;ll let you in on its own.
           </p>
           {soon && (
             <div className="mt-4">
-              <p className="text-caption uppercase tracking-wide text-ink-300">Opens in</p>
+              <p className="text-caption text-text-muted">Opens in</p>
               <OpensInCountdown opensAt={opensAt.toISOString()} />
             </div>
           )}
           <JoinWindowRefresh at={opensAt.toISOString()} />
         </>
       ) : (
-        <p className="max-w-prose text-body text-ink-300">
+        <p className="max-w-prose text-body text-text-muted">
           This session doesn&apos;t have a start time yet, so there&apos;s nothing
           to open. Your bookings page has the details.
         </p>
@@ -227,17 +227,17 @@ function WindowClosed({
 }) {
   return (
     <Panel
-      icon={<DoorClosed className="mt-0.5 size-6 shrink-0 text-ink-300" aria-hidden />}
+      icon={<DoorClosed className="mt-0.5 size-6 shrink-0 text-text-muted" aria-hidden />}
       title="This classroom has closed"
       backHref={backHref}
     >
-      <p className="max-w-prose text-body text-ink-300">
+      <p className="max-w-prose text-body text-text-muted">
         The classroom stays open until {JOIN_WINDOW_AFTER_MINUTES} minutes after a
         session ends
         {closesAt ? (
           <>
             , which was{" "}
-            <span className="text-white">{formatTime(closesAt, timeZone)}</span> on{" "}
+            <span className="text-text">{formatTime(closesAt, timeZone)}</span> on{" "}
             {formatDay(closesAt, timeZone)}
           </>
         ) : null}
@@ -256,13 +256,13 @@ function WindowClosed({
 function NotJoinable({ status, backHref }: { status: string; backHref: string }) {
   return (
     <Panel
-      icon={<Info className="mt-0.5 size-6 shrink-0 text-ink-300" aria-hidden />}
+      icon={<Info className="mt-0.5 size-6 shrink-0 text-text-muted" aria-hidden />}
       title="There's no classroom to join"
       backHref={backHref}
     >
-      <p className="max-w-prose text-body text-ink-300">
+      <p className="max-w-prose text-body text-text-muted">
         This booking is marked{" "}
-        <span className="text-white">
+        <span className="text-text">
           {bookingStatusMeta(status).label.toLowerCase()}
         </span>
         , so there&apos;s no room to open. Your bookings page has the full history.
@@ -284,15 +284,15 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
+    <div className="rounded-xl border border-border bg-surface-raised p-6">
       <div className="flex gap-4">
         {icon}
         <div className="min-w-0">
-          <h2 className="text-h3 font-bold text-white">{title}</h2>
+          <h2 className="text-h3 font-bold text-text">{title}</h2>
           <div className="mt-2">{children}</div>
           <Link
             href={backHref}
-            className="focus-ring-on-ink mt-4 inline-flex items-center rounded-sm text-small font-medium text-gold-400 hover:underline"
+            className="focus-ring mt-4 inline-flex items-center rounded-sm text-small font-medium text-accent hover:underline"
           >
             Back to this booking
           </Link>

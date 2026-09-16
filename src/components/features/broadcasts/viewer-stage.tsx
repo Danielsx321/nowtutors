@@ -14,6 +14,8 @@ export interface ViewerStageProps {
   broadcastId: string;
   tutorName: string;
   tutorAvatarUrl?: string | null;
+  /** For "Book a 1:1" when the class ends. */
+  tutorSlug?: string | null;
   /** The viewer's Agora uid as a string: their Presence key, so two tabs count once. */
   viewerKey: string;
 }
@@ -33,7 +35,7 @@ type Phase = "connecting" | "live" | "ended" | "error";
  * leaves the channel; if not (a host reconnecting), it keeps waiting. A token
  * refused at join is the same answer.
  */
-export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, viewerKey }: ViewerStageProps) {
+export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, tutorSlug, viewerKey }: ViewerStageProps) {
   const [phase, setPhase] = React.useState<Phase>("connecting");
   const [error, setError] = React.useState<string | null>(null);
   const [attempt, setAttempt] = React.useState(0);
@@ -127,27 +129,17 @@ export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, viewerKey 
   );
 
   if (phase === "ended") {
-    return (
-      <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm" data-broadcast-ended>
-        <h2 className="text-h3 font-bold text-white">This broadcast has ended</h2>
-        <p className="mt-2 max-w-prose text-body text-ink-300">
-          {tutorName} isn&apos;t live any more. See who else is teaching right now.
-        </p>
-        <Button asChild variant="ink" className="mt-4">
-          <Link href="/live">Live now</Link>
-        </Button>
-      </div>
-    );
+    return <BroadcastEnded tutorName={tutorName} tutorSlug={tutorSlug} />;
   }
 
   if (phase === "error") {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/10 p-6">
+      <div role="alert" className="rounded-xl border border-danger bg-danger-surface p-6">
         <div className="flex gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
           <div className="min-w-0">
-            <p className="font-bold text-gray-700">Couldn&apos;t open the broadcast</p>
-            <p className="mt-1 text-body text-gray-700">{error}</p>
+            <p className="font-semibold text-text">Couldn&apos;t open the broadcast</p>
+            <p className="mt-1 text-body text-text">{error}</p>
             <Button
               className="mt-4"
               onClick={() => {
@@ -177,10 +169,36 @@ export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, viewerKey 
         track={hostVideo}
         emptyReason={hostPresent ? "camera-off" : "waiting"}
       />
-      <p className="inline-flex items-center gap-1.5 text-small text-gray-500" data-viewer-count={count}>
+      <p className="inline-flex items-center gap-1.5 text-small text-text-muted" data-viewer-count={count}>
         <Users className="size-4" aria-hidden />
         {count} watching
       </p>
+    </div>
+  );
+}
+
+/**
+ * The card a viewer sees when the class is over (design overhaul Part 4). The
+ * heading is the exact string E2E and the DOM test read; the ways forward are
+ * a 1:1 with the same tutor, or someone else who is live.
+ */
+export function BroadcastEnded({ tutorName, tutorSlug }: { tutorName: string; tutorSlug?: string | null }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-raised p-6" data-broadcast-ended>
+      <h2 className="font-display text-h3 font-semibold text-text">This broadcast has ended</h2>
+      <p className="mt-2 max-w-prose text-body text-text-muted">
+        {tutorName}&apos;s live class is over. Book a 1:1 to keep going, or see who else is teaching now.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {tutorSlug && (
+          <Button asChild>
+            <Link href={`/tutors/${tutorSlug}`}>Book a 1:1 with {tutorName}</Link>
+          </Button>
+        )}
+        <Button asChild variant="secondary">
+          <Link href="/live">Live now</Link>
+        </Button>
+      </div>
     </div>
   );
 }

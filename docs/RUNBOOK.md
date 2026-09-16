@@ -459,6 +459,14 @@ already-running script.
   doesn't, the drop-in swap is Schibsted Grotesk (display) plus Figtree (text) in `src/app/layout.tsx` and
   `globals.css`, recorded in DECISIONS; (b) ~~send Noora the preview link to `/dev/kitchen-sink` for the six
   assumptions listed in PROGRESS~~ done 2026-09-16, all six settled (DECISIONS "Design overhaul: Noora's answers"). Parts 2 to 6 each add nothing here.
+- [ ] **Design overhaul Part 4 (live moments)**, before merging `design-part4-live`: (a) on the Vercel preview,
+  one instant session with two people (tutor goes live, student requests, tutor accepts): both lobbies, Join, the
+  spotlight, mute and camera toggles, a time warning if the session is short enough, End session and the end
+  screen; (b) `pnpm test:e2e tests/e2e/presence-ungraceful-exit.spec.ts tests/e2e/broadcast-two-viewers.spec.ts`
+  with nothing else on port 3000. No migration, no prod step.
+- **Don't run `pnpm build` while `pnpm dev` is serving the same folder.** They share `.next`, and the build
+  overwrites the dev server's chunks: pages start returning a bare "Internal Server Error" ("Cannot find module
+  ./vendor-chunks/..."). Stop the dev server, delete `.next`, start it again. Found 2026-09-16.
 - [ ] **Agora `live` mode check**: Phase 9 Part 3. Broadcasts use the same App ID and token service as
   instant sessions, in `live` mode (host plus audience at the low-latency level). After the deploy, a tutor
   starts a broadcast on production and a signed-in student in another browser opens it from `/live`: the

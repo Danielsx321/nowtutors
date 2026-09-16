@@ -1,19 +1,23 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import type { ConnectionState } from "agora-rtc-sdk-ng";
-import { AlertTriangle, Loader2, Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { toast } from "sonner";
+import { AlertTriangle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SessionClient, type SessionTokenGrant } from "@/lib/agora/client";
+import { SessionClient, type NetworkQuality, type SessionTokenGrant } from "@/lib/agora/client";
 import {
   VideoTile,
   type PlayableVideoTrack,
 } from "@/components/features/session/video-tile";
-import { SessionTimer } from "@/components/features/session/session-timer";
+import { SessionTimer, type TimeStage } from "@/components/features/session/session-timer";
 import { EndSessionButton } from "@/components/features/session/end-session-button";
+import { ControlBar } from "@/components/features/session/control-bar";
+import { ConnectionBanner } from "@/components/features/session/connection-banner";
+import { Lobby } from "@/components/features/session/lobby";
 import { useTokenRenewal } from "@/hooks/use-token-renewal";
 import { getSessionState } from "@/actions/sessions";
-import { cn } from "@/lib/utils";
 
 /**
  * The instant-session room (SPEC §7.4 in-session UI, §9).
@@ -23,7 +27,13 @@ import { cn } from "@/lib/utils";
  * pass adds the mic/camera toggles and token renewal that Part 3B carved out.
  * Screen share, text chat and credits consumed/earned are still absent rather
  * than stubbed — an inert control that looks live is worse than one that isn't
- * there.
+ * there. They are their own phase (DECISIONS, design overhaul Part 4).
+ *
+ * **Design overhaul Part 4** put a lobby in front of the join (nothing touches
+ * the SDK until the person clicks Join, after a device check), the tutor's
+ * video in a spotlight with the student as a small tile, a labelled control
+ * bar, connection-quality warnings from the SDK's own events, and staged
+ * time-left warnings. The join, renewal, end and teardown logic is unchanged.
  *
  * **The countdown is cosmetic and this component never decides the session is
  * over.** It ticks a deadline the server computed from `bookings.started_at`,
@@ -56,7 +66,7 @@ export interface SessionRoomProps {
   durationMinutes: number | null;
 }
 
-type Phase = "connecting" | "joining" | "live" | "error";
+type Phase = "lobby" | "connecting" | "joining" | "live" | "error";
 
 interface TokenErrorBody {
   error?: unknown;
@@ -72,7 +82,10 @@ export function SessionRoom({
   initialDeadline,
   durationMinutes,
 }: SessionRoomProps) {
-  const [phase, setPhase] = React.useState<Phase>("connecting");
+  const [phase, setPhase] = React.useState<Phase>("lobby");
+  const [quality, setQuality] = React.useState<NetworkQuality | null>(null);
+  const [stage, setStage] = React.useState<TimeStage>("normal");
+  const [layout, setLayout] = React.useState<"spotlight" | "side-by-side">("spotlight");
   const [error, setError] = React.useState<string | null>(null);
   /** A failure AFTER a successful join. Worth saying, not worth tearing the room down for. */
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -145,7 +158,10 @@ export function SessionRoom({
     wasPresent.current = remotePresent;
   }, [remotePresent, refreshState]);
 
+  const inLobby = phase === "lobby";
   React.useEffect(() => {
+    // Nothing joins, and no device is asked for, until the lobby's Join.
+    if (inLobby) return;
     // Constructed synchronously so the cleanup below can always dispose it —
     // including while the join is still awaiting device permission, which is
     // exactly when an abandoned camera gets stranded.
@@ -154,6 +170,7 @@ export function SessionRoom({
       onRemoteVideo: setRemoteVideo,
       onRemotePresence: setRemotePresent,
       onConnectionState: setConnection,
+      onNetworkQuality: setQuality,
       onError: (err) => setNotice(describeJoinError(err)),
     });
 
@@ -206,8 +223,10 @@ export function SessionRoom({
       void client.leave();
     };
     // `attempt` is the retry trigger: bumping it tears the old client down
-    // through this cleanup and builds a fresh one.
-  }, [bookingId, attempt]);
+    // through this cleanup and builds a fresh one. `inLobby` flipping to false
+    // is the first join. `phase` itself is deliberately not a dependency: the
+    // effect sets it, and re-running on every phase change would rejoin.
+  }, [bookingId, attempt, inLobby]);
 
   const retry = () => {
     setError(null);
@@ -216,9 +235,15 @@ export function SessionRoom({
     setRemoteVideo(null);
     setRemotePresent(false);
     setTokenExpiresAt(null);
+    setQuality(null);
     setPhase("connecting");
     setAttempt((n) => n + 1);
   };
+
+  const onStageChange = React.useCallback((next: TimeStage) => {
+    setStage(next);
+    if (next === "five") toast("5 minutes left in this session.");
+  }, []);
 
   /**
    * Swap the renewed token in without dropping the connection (§9 step 6),
@@ -262,16 +287,35 @@ export function SessionRoom({
 
   // Terminal, and checked before the error branch: a token refusal that arrives
   // *because* the session ended should read as "it's over", not as a failure.
-  if (finished) return <SessionEnded viewerIsTutor={viewerIsTutor} />;
+  if (finished) {
+    return (
+      <SessionEnded
+        viewerIsTutor={viewerIsTutor}
+        otherPartyName={otherPartyName}
+        durationMinutes={durationMinutes}
+      />
+    );
+  }
+
+  if (phase === "lobby") {
+    return (
+      <Lobby
+        needsCamera={viewerIsTutor}
+        otherPartyName={otherPartyName}
+        otherPartyAvatarUrl={otherPartyAvatarUrl}
+        onJoin={() => setPhase("connecting")}
+      />
+    );
+  }
 
   if (phase === "error") {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/10 p-6">
+      <div role="alert" className="rounded-xl border border-danger bg-danger-surface p-6">
         <div className="flex gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
           <div className="min-w-0">
-            <p className="font-bold text-gray-700">Couldn&apos;t join the session</p>
-            <p className="mt-1 text-body text-gray-700">{error}</p>
+            <p className="font-semibold text-text">Couldn&apos;t join the session</p>
+            <p className="mt-1 text-body text-text">{error}</p>
             <Button className="mt-4" onClick={retry}>
               Try again
             </Button>
@@ -310,8 +354,10 @@ export function SessionRoom({
 
   // The student never publishes video, so their tile is an audio-only card
   // rather than an empty frame waiting for a picture that is not coming.
+  const spotlight = layout === "spotlight";
   const studentTile = viewerIsTutor ? (
     <VideoTile
+      compact={spotlight}
       name={otherPartyName}
       roleLabel="Student"
       avatarUrl={otherPartyAvatarUrl}
@@ -320,6 +366,7 @@ export function SessionRoom({
     />
   ) : (
     <VideoTile
+      compact={spotlight}
       name={viewerName}
       roleLabel="You"
       avatarUrl={viewerAvatarUrl}
@@ -329,65 +376,74 @@ export function SessionRoom({
     />
   );
 
+  const cameraOn = cameraEnabled === true;
+
   return (
-    <div className="flex flex-col gap-4">
-      <ConnectionBanner phase={phase} connection={connection} />
-      {/*
-        The control bar. Screen share still belongs here and is a separate
-        pass; mic/camera toggles are this one.
-      */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <SessionTimer
           deadline={deadline}
           durationMinutes={durationMinutes}
           onExpired={refreshState}
+          onStageChange={onStageChange}
         />
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="ink-ghost"
-            size="icon"
-            disabled={phase !== "live"}
-            onClick={() => void toggleMic()}
-            aria-pressed={!micEnabled}
-            aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
-          >
-            {micEnabled ? <Mic aria-hidden /> : <MicOff aria-hidden />}
-          </Button>
-          {/* Student sessions publish no camera track (§9); nothing to toggle. */}
-          {cameraEnabled !== null && (
-            <Button
-              type="button"
-              variant="ink-ghost"
-              size="icon"
-              disabled={phase !== "live"}
-              onClick={() => void toggleCamera()}
-              aria-pressed={!cameraEnabled}
-              aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"}
-            >
-              {cameraEnabled ? <Video aria-hidden /> : <VideoOff aria-hidden />}
-            </Button>
-          )}
-          <EndSessionButton
-            bookingId={bookingId}
-            viewerIsTutor={viewerIsTutor}
-            onEnded={finish}
-          />
-        </div>
+        {!remotePresent && phase === "live" && (
+          <p className="text-small text-text-muted">Waiting for {otherPartyName}…</p>
+        )}
       </div>
+
+      <ConnectionBanner
+        phase={phase}
+        connection={connection}
+        quality={phase === "live" ? quality : null}
+        otherRole={viewerIsTutor ? "Your student" : "Your tutor"}
+        onTurnOffVideo={viewerIsTutor && cameraOn ? () => void toggleCamera() : undefined}
+        onRejoin={retry}
+      />
+
+      {(stage === "two" || stage === "final") && (
+        <p className="flex items-center gap-2 rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
+          <Clock className="size-4 shrink-0" aria-hidden />
+          {stage === "final"
+            ? "Less than a minute left. The room closes on time."
+            : "2 minutes left. The session ends on time and can't be extended."}
+        </p>
+      )}
+
       {notice && (
         <p
           role="status"
           aria-live="polite"
-          className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-small text-gray-700"
+          className="rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning"
         >
           {notice}
         </p>
       )}
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-        {tutorTile}
-        {studentTile}
-      </div>
+
+      {spotlight ? (
+        <div className="space-y-3 md:relative md:space-y-0">
+          {tutorTile}
+          <div className="w-40 md:absolute md:bottom-3 md:right-3 md:w-52">{studentTile}</div>
+        </div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+          {tutorTile}
+          {studentTile}
+        </div>
+      )}
+
+      <ControlBar
+        micEnabled={micEnabled}
+        cameraEnabled={cameraEnabled}
+        disabled={phase !== "live"}
+        onToggleMic={() => void toggleMic()}
+        onToggleCamera={() => void toggleCamera()}
+        layout={layout}
+        onToggleLayout={() => setLayout((l) => (l === "spotlight" ? "side-by-side" : "spotlight"))}
+        endAction={
+          <EndSessionButton bookingId={bookingId} viewerIsTutor={viewerIsTutor} onEnded={finish} />
+        }
+      />
     </div>
   );
 }
@@ -400,66 +456,57 @@ export function SessionRoom({
  * Copy that thanked someone vaguely and left the money unmentioned would read as
  * reassurance, and the first time a student went looking for a partial refund
  * they would find this screen had implied one.
+ *
+ * There is no Rejoin here: this screen only renders once the server has closed
+ * the session, and a closed session has no room to go back to. A rating ask
+ * belongs under the summary once reviews exist (after launch, §18); until then
+ * nothing renders in that slot.
  */
-function SessionEnded({ viewerIsTutor }: { viewerIsTutor: boolean }) {
+function SessionEnded({
+  viewerIsTutor,
+  otherPartyName,
+  durationMinutes,
+}: {
+  viewerIsTutor: boolean;
+  otherPartyName: string;
+  durationMinutes: number | null;
+}) {
+  const bookings = viewerIsTutor ? "/tutor/bookings" : "/dashboard/bookings";
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-6 shadow-sm">
-      <h2 className="text-h3 font-bold text-white">This session has ended</h2>
-      <p className="mt-2 max-w-prose text-body text-ink-300">
-        The room is closed and your camera and microphone have been released.
+    <section
+      aria-labelledby="ended-title"
+      className="mx-auto w-full max-w-xl space-y-4 rounded-xl border border-border bg-surface-raised p-6 text-center"
+    >
+      <h2 id="ended-title" className="font-display text-h2 font-semibold text-text">
+        Session ended
+      </h2>
+      <p className="text-body text-text">
+        {durationMinutes ? `Your ${durationMinutes}-minute session` : "Your session"} with {otherPartyName} is over.
+      </p>
+      <p className="mx-auto max-w-prose text-small text-text-muted">
+        Your camera and microphone have been released.
         {viewerIsTutor
           ? " It'll show up in your bookings, and the earnings from it follow once it's been closed out."
           : " It'll show up in your bookings. The session was paid for in full when it started, so there's nothing outstanding and nothing to refund."}
       </p>
-      <Button className="mt-4" variant="ink" asChild>
-        <a href={viewerIsTutor ? "/tutor/bookings" : "/dashboard/bookings"}>
-          Back to bookings
-        </a>
-      </Button>
-    </div>
-  );
-}
-
-function ConnectionBanner({
-  phase,
-  connection,
-}: {
-  phase: Phase;
-  connection: ConnectionState | null;
-}) {
-  const reconnecting = connection === "RECONNECTING" || connection === "CONNECTING";
-  const label =
-    phase === "connecting"
-      ? "Connecting to the session…"
-      : phase === "joining"
-        ? "Joining — allow microphone access when your browser asks."
-        : reconnecting
-          ? "Reconnecting…"
-          : "Connected";
-  const settled = phase === "live" && !reconnecting;
-
-  return (
-    <div
-      // The status changes without a user action, so it is announced (§10.3).
-      role="status"
-      aria-live="polite"
-      className={cn(
-        "flex items-center gap-2 rounded-md border px-3 py-2 text-small",
-        settled
-          ? "border-gray-200 bg-gray-50 text-gray-700"
-          : "border-warning/30 bg-warning/10 text-gray-700",
-      )}
-    >
-      {settled ? (
-        <span
-          className="size-2 shrink-0 rounded-full bg-live-500"
-          aria-hidden
-        />
-      ) : (
-        <Loader2 className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
-      )}
-      {label}
-    </div>
+      <div className="flex flex-wrap justify-center gap-2 pt-2">
+        <Button asChild>
+          <Link href={bookings}>Back to bookings</Link>
+        </Button>
+        {!viewerIsTutor && (
+          <Button asChild variant="secondary">
+            <Link href="/?live=1#tutors">Find a live tutor</Link>
+          </Button>
+        )}
+      </div>
+      <p className="text-small text-text-muted">
+        Something went wrong?{" "}
+        <Link href={bookings} className="focus-ring rounded-sm font-medium text-accent hover:underline">
+          Find the session in your bookings
+        </Link>
+        .
+      </p>
+    </section>
   );
 }
 

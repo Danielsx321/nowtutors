@@ -271,6 +271,14 @@ table,
   50% { box-shadow: 0 0 0 3px var(--live), 0 0 0 7px color-mix(in srgb, var(--live) 35%, transparent); }
 }
 
+/* An incoming call arrives with a little more presence than a dialog: a
+   short rise and scale. Flattened by the reduced-motion block like the rest. */
+@keyframes dialog-call-in {
+  0% { opacity: 0; transform: translate(-50%, -44%) scale(0.92); }
+  60% { opacity: 1; transform: translate(-50%, -51%) scale(1.01); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
 /* Overlays (Modal, Drawer, AlertDialog scrim) */
 [data-slot="overlay"][data-state="open"] { animation: overlay-in 150ms var(--ease-out-brand); }
 [data-slot="overlay"][data-state="closed"] { animation: overlay-out 120ms var(--ease-out-brand); }
@@ -278,6 +286,8 @@ table,
 /* Centred dialogs (Modal, AlertDialog) */
 [data-slot="modal-content"][data-state="open"] { animation: dialog-in 180ms var(--ease-out-brand); }
 [data-slot="modal-content"][data-state="closed"] { animation: dialog-out 140ms var(--ease-out-brand); }
+
+[data-slot="modal-content"].dialog-call[data-state="open"] { animation: dialog-call-in 260ms var(--ease-out-brand); }
 
 /* Side drawer */
 [data-slot="drawer-content"][data-state="open"] { animation: drawer-in-right 220ms var(--ease-out-brand); }

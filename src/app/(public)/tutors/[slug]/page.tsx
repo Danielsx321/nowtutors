@@ -298,6 +298,7 @@ export default async function TutorProfilePage({
                 <InstantRequestWidget
                   tutorId={tutor.userId}
                   tutorName={name}
+                  tutorAvatarUrl={tutor.avatarUrl}
                   hourlyRateCredits={tutor.hourlyRateCredits}
                   durations={bookingSettings.sessionDurations}
                   subjects={bookableSubjects}

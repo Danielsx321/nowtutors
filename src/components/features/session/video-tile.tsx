@@ -6,11 +6,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 /**
- * `VideoTile` (SPEC §10.2) — one participant's frame on the ink surface.
- *
- * An ink card: `ink-900` fill with an `ink-700` border, because there is no
- * lighter ink to elevate onto (§10.1). White label text (9.29:1), `ink-300` for
- * the secondary line (4.69:1).
+ * `VideoTile` (SPEC §10.2): one participant's frame. Rooms render inside
+ * `.theme-dark`, so the raised surface is the dark one and the name label sits
+ * on the canvas colour at 80% over the picture.
  *
  * The Agora track is *played* here rather than in the room component: attaching a
  * media track to an element is a rendering concern, and keeping it next to the
@@ -39,6 +37,8 @@ export interface VideoTileProps {
   muted?: boolean;
   /** The big tile. The other is a companion, sized down. */
   primary?: boolean;
+  /** Small picture-in-picture tile: compact label, no avatar caption. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -56,6 +56,7 @@ export function VideoTile({
   avatarUrl,
   muted,
   primary,
+  compact,
   className,
 }: VideoTileProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -79,8 +80,8 @@ export function VideoTile({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-sm",
-        primary ? "aspect-video w-full" : "aspect-video w-full sm:aspect-[4/3]",
+        "relative overflow-hidden rounded-xl border border-border bg-surface-raised",
+        primary || compact ? "aspect-video w-full" : "aspect-video w-full sm:aspect-[4/3]",
         className,
       )}
     >
@@ -92,9 +93,9 @@ export function VideoTile({
           <Avatar
             src={avatarUrl ?? undefined}
             name={name}
-            size={primary ? "lg" : "md"}
+            size={primary ? "xl" : compact ? "sm" : "md"}
           />
-          <div className="flex items-center gap-2 text-ink-300">
+          <div className={cn("flex items-center gap-2 text-text-muted", compact && "sr-only")}>
             {emptyReason === "audio-only" ? (
               <Mic className="size-4" aria-hidden />
             ) : (
@@ -105,14 +106,17 @@ export function VideoTile({
         </div>
       )}
 
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-ink-950/80 px-3 py-2">
-        <p className="truncate text-small font-medium text-white">
-          {name}
-          {roleLabel && <span className="ml-2 text-ink-300">{roleLabel}</span>}
-        </p>
-        {muted && (
-          <MicOff className="size-4 shrink-0 text-ink-300" aria-label="Muted" />
+      <div
+        className={cn(
+          "absolute bottom-0 left-0 flex max-w-full items-center gap-2 bg-surface/80",
+          compact ? "rounded-tr-md px-2 py-1" : "rounded-tr-lg px-3 py-2",
         )}
+      >
+        <p className={cn("truncate font-medium text-text", compact ? "text-caption" : "text-small")}>
+          {name}
+          {roleLabel && <span className="ml-2 text-text-muted">{roleLabel}</span>}
+        </p>
+        {muted && <MicOff className="size-4 shrink-0 text-danger" aria-label="Muted" />}
       </div>
     </div>
   );

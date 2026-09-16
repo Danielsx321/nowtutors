@@ -3,7 +3,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Bell, BellOff } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { OnAirRing } from "@/components/ui/on-air-ring";
 import { Button } from "@/components/ui/button";
 import {
   Modal,
@@ -24,6 +26,47 @@ import {
   listPendingIncomingRequests,
   type SerializedIncomingRequest,
 } from "@/actions/session-requests";
+
+/** Where the tutor's "no sound for requests" choice lives. Per browser, not per account. */
+export const CHIME_MUTED_KEY = "nowtutors:request-chime-muted";
+
+function readMuted(): boolean {
+  try {
+    return window.localStorage.getItem(CHIME_MUTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A short two-note chime, synthesised with Web Audio so there is no sound file
+ * to ship. Browsers may refuse to play before the page has had a click; that
+ * failure is silent, and the modal is the signal regardless.
+ */
+function playChime() {
+  try {
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [880, 1175].forEach((freq, i) => {
+      const at = ctx.currentTime + i * 0.18;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.25, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.4);
+    });
+    window.setTimeout(() => void ctx.close().catch(() => {}), 1000);
+  } catch {
+    // No audio is not a failure worth surfacing: the modal is on screen.
+  }
+}
 
 export interface IncomingRequestsProps {
   tutorId: string;
@@ -146,9 +189,40 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
 
   // The ring reaching zero closes the modal. The row itself is moved to
   // `expired` by the cron (§12) — this is the local consequence, not the write.
+  // A missed call leaves a notice that stays until dismissed (design overhaul
+  // Part 4): a tutor who stepped away should find out they missed someone.
+  // Only on the ring running out, not when the student cancels or another
+  // accept settles the row.
   React.useEffect(() => {
-    if (current && elapsed) drop(current.id);
+    if (!current || !elapsed) return;
+    drop(current.id);
+    toast(`Missed request from ${current.studentName ?? "a student"}`, {
+      description: "They didn't get an answer in time. Stay live to catch the next one.",
+      duration: Infinity,
+    });
   }, [current, elapsed, drop]);
+
+  // Ring once per request, unless the tutor has turned the sound off.
+  const [muted, setMuted] = React.useState(false);
+  React.useEffect(() => setMuted(readMuted()), []);
+  const rungFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!current || rungFor.current === current.id) return;
+    rungFor.current = current.id;
+    if (!readMuted()) playChime();
+  }, [current]);
+
+  const toggleMuted = () => {
+    const next = !muted;
+    setMuted(next);
+    try {
+      window.localStorage.setItem(CHIME_MUTED_KEY, next ? "1" : "0");
+    } catch {
+      // Private mode: the choice lasts for this page only.
+    }
+  };
+
+  const acceptRef = React.useRef<HTMLButtonElement>(null);
 
   async function onAccept() {
     if (!current) return;
@@ -183,33 +257,56 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
     <>
       {indicator}
       <Modal open onOpenChange={(open) => !open && drop(current.id)}>
-        <ModalContent size="md" hideClose>
-          <ModalHeader>
-            <ModalTitle>Instant session request</ModalTitle>
-            <ModalDescription>
-              {current.studentName ?? "A student"} wants to start now.
-            </ModalDescription>
-          </ModalHeader>
+        <ModalContent
+          size="md"
+          hideClose
+          className="dialog-call"
+          // Accept gets the focus: answering is the likely action, and Enter
+          // should take it. Decline is one Tab away (design overhaul Part 4).
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            acceptRef.current?.focus();
+          }}
+        >
+          {/* Said once, when the request opens, not on every tick. */}
+          <p aria-live="assertive" aria-atomic="true" className="sr-only" data-call-announcement>
+            {`Instant session request from ${current.studentName ?? "a student"}: ${current.durationMinutes} minutes${current.subjectName ? `, ${current.subjectName}` : ""}.`}
+          </p>
 
-          <div className="flex items-start gap-4">
-            <Avatar
-              src={current.studentAvatarUrl}
-              name={current.studentName ?? "Student"}
-              size="lg"
-            />
+          <div className="flex items-start justify-between gap-3">
+            <ModalHeader className="pr-0">
+              <ModalTitle>Instant session request</ModalTitle>
+              <ModalDescription>
+                {current.studentName ?? "A student"} wants to start now.
+              </ModalDescription>
+            </ModalHeader>
+            <button
+              type="button"
+              onClick={toggleMuted}
+              aria-pressed={!muted}
+              aria-label="Request sound"
+              className="focus-ring grid size-9 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-muted hover:text-text"
+            >
+              {muted ? <BellOff className="size-5" aria-hidden /> : <Bell className="size-5" aria-hidden />}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <OnAirRing className="shrink-0">
+              <Avatar
+                src={current.studentAvatarUrl}
+                name={current.studentName ?? "Student"}
+                size="xl"
+              />
+            </OnAirRing>
             <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-body font-medium text-gray-700">
+              <p className="font-display text-body-lg font-semibold text-text">
                 {current.durationMinutes} minutes
                 {current.subjectName ? ` · ${current.subjectName}` : ""}
               </p>
-              <p className="text-small text-gray-500">
+              <p data-numeric className="text-small text-text-muted">
                 Earns you {current.priceCredits} credits
               </p>
-              {current.message && (
-                <p className="mt-2 whitespace-pre-line rounded-md bg-gray-50 p-3 text-small text-gray-700">
-                  {current.message}
-                </p>
-              )}
             </div>
             <ProgressRing
               value={fraction}
@@ -218,6 +315,12 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
               aria-label={`${secondsLeft} seconds left to answer`}
             />
           </div>
+
+          {current.message && (
+            <p className="whitespace-pre-line rounded-lg bg-surface-muted p-3 text-small text-text">
+              {current.message}
+            </p>
+          )}
 
           <ModalFooter>
             <Button
@@ -229,6 +332,8 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
               Decline
             </Button>
             <Button
+              ref={acceptRef}
+              variant="live"
               onClick={onAccept}
               disabled={pending !== null}
               loading={pending === "accept"}
