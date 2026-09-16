@@ -45,11 +45,16 @@ describe("design tokens: contrast floors (SPEC §10.3)", () => {
     }
   }
 
-  it("has no pair that draws signal yellow as text on a light surface", () => {
+  it("has no pair that draws live green on the teal accent", () => {
     const bad = pairs.filter(
-      (p) => p.fg === "signal" && ["surface", "surface-raised", "surface-muted"].includes(p.bg),
+      (p) => (p.fg === "live" && p.bg === "accent") || (p.fg === "accent" && p.bg === "live"),
     );
     expect(bad).toEqual([]);
+  });
+
+  it("has no yellow signal role any more (Noora, 2026-09-16: green is live now)", () => {
+    expect(Object.keys(tokens)).not.toContain("signal");
+    expect(css).not.toMatch(/--signal\b/);
   });
 });
 

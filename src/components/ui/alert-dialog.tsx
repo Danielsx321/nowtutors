@@ -99,7 +99,7 @@ export function AlertDialogFooter({
 export const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & {
-    variant?: "primary" | "signal" | "danger";
+    variant?: "primary" | "live" | "danger";
   }
 >(({ className, variant = "primary", ...props }, ref) => (
   <AlertDialogPrimitive.Action

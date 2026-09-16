@@ -6,7 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 /**
  * Buttons are pills (DESIGN.md, "Shape"). `primary` is the ink fill and the
- * default action everywhere; `signal` is the yellow fill and is reserved for
+ * default action everywhere; `live` is the green fill and is reserved for
  * live actions ("Request now", "Go live", "Join"): it is the product's one
  * loud colour and must stay rare.
  */
@@ -20,10 +20,10 @@ const buttonVariants = cva(
         secondary:
           "border border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
         ghost: "text-text hover:bg-surface-muted",
-        signal: "bg-signal text-on-signal hover:brightness-95",
+        live: "bg-live text-on-live hover:brightness-95",
         danger: "bg-danger text-on-danger hover:brightness-95",
-        /** @deprecated alias of `signal`. REMOVE IN PART 6. */
-        ink: "bg-signal text-on-signal hover:brightness-95",
+        /** @deprecated alias of `live`. REMOVE IN PART 6. */
+        ink: "bg-live text-on-live hover:brightness-95",
         /** @deprecated white ghost for the old ink header, gone with it. REMOVE IN PART 6. */
         "ink-ghost": "text-text-on-inverse hover:bg-text-on-inverse/10",
       },

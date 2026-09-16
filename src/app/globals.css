@@ -3,7 +3,7 @@
 /* ─────────────────────────────────────────────────────────────────────────
    Design tokens — SPEC §10.1, docs/DESIGN.md. This file is the ONLY place raw
    colour values, font sizes, radii and shadows live. Components reference
-   roles (surface, text, primary, signal, live...) never colours, so a palette
+   roles (surface, text, primary, accent, live...) never colours, so a palette
    change is an edit here and nowhere else.
 
    Two themes, same roles: light on `:root`, dark under `.theme-dark`. The
@@ -24,14 +24,13 @@
   --text-on-inverse: #FFFFFF;
   --primary: #15171C;
   --on-primary: #FFFFFF;
-  --signal: #FEE401;
-  --on-signal: #15171C;
-  --accent: #6B2A8A;
+  --accent: #0B3A47;
   --live: #1E7A46;
+  --on-live: #FFFFFF;
   --live-surface: #E6F7EC;
   --border: #E4E6EA;
   --border-strong: #8A909C;
-  --focus: #6B2A8A;
+  --focus: #0B3A47;
   --danger: #B3261E;
   --on-danger: #FFFFFF;
   --danger-surface: #FBEAE9;
@@ -56,14 +55,13 @@
   --text-on-inverse: #FFFFFF;
   --primary: #F2F3F5;
   --on-primary: #15171C;
-  --signal: #FEE401;
-  --on-signal: #111216;
-  --accent: #D2A8EA;
+  --accent: #7FC4D1;
   --live: #5FD68A;
+  --on-live: #111216;
   --live-surface: #1B1D23;
   --border: #2A2E37;
   --border-strong: #6B7280;
-  --focus: #D2A8EA;
+  --focus: #7FC4D1;
   --danger: #FF8A80;
   --on-danger: #111216;
   --danger-surface: #1B1D23;
@@ -82,17 +80,14 @@
      role. `bg-red-500` no longer exists on purpose. */
   --color-*: initial;
 
-  /* Type. The three faces are loaded by next/font in src/app/layout.tsx and
-     exposed as --font-funnel-display, --font-funnel-sans and --font-dm-sans.
-     `font-display` for titles and names, `font-sans` for everything else,
-     `font-wordmark` for the logo only (pinned so the app face can change
-     without touching the wordmark). */
+  /* Type. The two faces are loaded by next/font in src/app/layout.tsx and
+     exposed as --font-funnel-display and --font-funnel-sans. `font-display`
+     for titles and names, `font-sans` for everything else. The wordmark is
+     an SVG, so no font carries it. */
   --font-display: var(--font-funnel-display), "Funnel Display", ui-sans-serif,
     system-ui, sans-serif;
   --font-sans: var(--font-funnel-sans), "Funnel Sans", ui-sans-serif,
     system-ui, sans-serif;
-  --font-wordmark: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui,
-    sans-serif;
 
   /* Type scale. Paired size/leading so `text-h1` (etc.) carries its own
      line-height. */
@@ -147,10 +142,9 @@
   --color-text-on-inverse: var(--text-on-inverse);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
-  --color-signal: var(--signal);
-  --color-on-signal: var(--on-signal);
   --color-accent: var(--accent);
   --color-live: var(--live);
+  --color-on-live: var(--on-live);
   --color-live-surface: var(--live-surface);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -184,7 +178,7 @@
   --color-purple-300: var(--accent);
   --color-purple-500: var(--accent);
   --color-purple-700: var(--accent);
-  --color-gold-400: var(--signal);
+  --color-gold-400: var(--live);
   --color-live-500: var(--live);
   --color-live-400: var(--live);
   --color-gray-50: var(--surface-muted);
@@ -273,8 +267,8 @@ table,
   50% { opacity: 0.55; transform: scale(0.85); }
 }
 @keyframes on-air {
-  0%, 100% { box-shadow: 0 0 0 3px var(--signal), 0 0 0 5px transparent; }
-  50% { box-shadow: 0 0 0 3px var(--signal), 0 0 0 7px rgb(254 228 1 / 0.35); }
+  0%, 100% { box-shadow: 0 0 0 3px var(--live), 0 0 0 5px transparent; }
+  50% { box-shadow: 0 0 0 3px var(--live), 0 0 0 7px color-mix(in srgb, var(--live) 35%, transparent); }
 }
 
 /* Overlays (Modal, Drawer, AlertDialog scrim) */

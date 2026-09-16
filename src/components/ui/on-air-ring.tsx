@@ -10,11 +10,11 @@ export interface OnAirRingProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 /**
- * The yellow on-air ring around the photo of a tutor who is taking instant
- * requests right now (DESIGN.md, "The live signal"). This is the ONLY place
- * signal yellow touches a tutor: it marks "start in 60 seconds", not
- * "broadcasting" (that is the green LIVE chip). Pair it with a `LiveChip`
- * label; the ring alone is not the indicator. Wrap an `Avatar` or a photo.
+ * The green on-air ring around the photo of a tutor who is taking instant
+ * requests right now (DESIGN.md, "The live signal"). It marks "start in 60
+ * seconds"; broadcasting is the LIVE chip without a ring. Pair it with a
+ * `LiveChip` label: the ring alone is not the indicator, because colour
+ * alone never is. Wrap an `Avatar` or a photo.
  */
 export function OnAirRing({
   active = true,
@@ -27,7 +27,7 @@ export function OnAirRing({
     <span
       className={cn(
         "relative inline-block rounded-full",
-        active && "ring-[3px] ring-signal",
+        active && "ring-[3px] ring-live",
         active && !still && "animate-on-air",
         className,
       )}

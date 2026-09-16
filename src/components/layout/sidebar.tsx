@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Wordmark } from "@/components/layout/wordmark";
+import { Monogram, Wordmark } from "@/components/layout/wordmark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { NavItem } from "@/components/layout/nav-config";
 
@@ -98,7 +98,7 @@ export function Sidebar({
     <>
       <aside className="hidden w-16 shrink-0 flex-col gap-6 border-r border-border bg-surface px-2 py-4 md:flex lg:hidden">
         <div className="grid place-items-center" aria-hidden>
-          <span className="font-wordmark text-h3 font-bold text-text">N</span>
+          <Monogram />
         </div>
         <SidebarNav items={items} collapsed />
       </aside>

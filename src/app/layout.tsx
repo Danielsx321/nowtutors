@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { DM_Sans, Funnel_Display, Funnel_Sans } from "next/font/google";
+import { Funnel_Display, Funnel_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-// Three faces, all bundled at build by next/font (no runtime request to
+// Two faces, both bundled at build by next/font (no runtime request to
 // Google). Funnel Display carries titles and names, Funnel Sans everything
-// else, DM Sans only the wordmark (docs/DESIGN.md, "Type").
+// else (docs/DESIGN.md, "Type"). The wordmark is a vector, not a font.
 const funnelDisplay = Funnel_Display({
   subsets: ["latin"],
   weight: ["600", "700", "800"],
@@ -17,13 +17,6 @@ const funnelSans = Funnel_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-funnel-sans",
-  display: "swap",
-});
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["700"],
-  variable: "--font-dm-sans",
   display: "swap",
 });
 
@@ -40,7 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${funnelDisplay.variable} ${funnelSans.variable} ${dmSans.variable}`}
+      className={`${funnelDisplay.variable} ${funnelSans.variable}`}
     >
       <body>
         <Providers>{children}</Providers>

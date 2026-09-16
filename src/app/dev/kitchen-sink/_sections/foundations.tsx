@@ -51,21 +51,20 @@ export function FoundationsSection({ surface }: { surface: Surface }) {
         <Swatch token="text" role="body, headings" className="bg-text" surface={surface} />
         <Swatch token="text-muted" role="secondary" className="bg-text-muted" surface={surface} />
         <Swatch token="primary" role="primary button" className="bg-primary" surface={surface} />
-        <Swatch token="accent" role="links, focus" className="bg-accent" surface={surface} />
+        <Swatch token="accent" role="links, focus, small accents (teal)" className="bg-accent" surface={surface} />
         <Swatch token="border" role="hairlines" className="bg-border" surface={surface} />
         <Swatch token="border-strong" role="inputs" className="bg-border-strong" surface={surface} />
       </Demo>
 
-      <Demo label="Signal and status. Yellow is a fill, never text or a border on white." surface={surface}>
-        <Swatch token="signal" role="live signal, wordmark" className="bg-signal" surface={surface} />
-        <Swatch token="live" role="Live now, LIVE" className="bg-live" surface={surface} />
+      <Demo label="Live and status. Green is live now; never green on the teal accent." surface={surface}>
+        <Swatch token="live" role="Live now, LIVE, Request now" className="bg-live" surface={surface} />
         <Swatch token="live-surface" role="live chip fill" className="bg-live-surface" surface={surface} />
         <Swatch token="danger" role="destructive" className="bg-danger" surface={surface} />
         <Swatch token="warning" role="warning text" className="bg-warning" surface={surface} />
         <Swatch token="success" role="= live" className="bg-success" surface={surface} />
       </Demo>
 
-      <Demo label="Type: Funnel Display for titles and names, Funnel Sans for everything else, DM Sans for the wordmark only" surface={surface} className="flex-col items-start gap-2">
+      <Demo label="Type: Funnel Display for titles and names, Funnel Sans for everything else. The wordmark is a vector, not a font" surface={surface} className="flex-col items-start gap-2">
         <p className="font-display text-display font-bold text-text">Learn anything, live.</p>
         <p className="font-display text-h2 font-semibold text-text">Amara Okafor</p>
         <p className="text-body text-text">

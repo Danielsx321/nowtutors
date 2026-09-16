@@ -16,8 +16,8 @@ export interface RatingStarsProps
 
 /**
  * Read-only 5-star rating with fractional fill. In the inventory but not
- * rendered anywhere until reviews exist (SPEC §18). Filled stars are ink, not
- * yellow: yellow is the live signal and nothing else (DESIGN.md).
+ * rendered anywhere until reviews exist (SPEC §18), after launch. Filled stars are ink, not
+ * green: green is the live signal and nothing else (DESIGN.md).
  */
 export function RatingStars({
   value,
