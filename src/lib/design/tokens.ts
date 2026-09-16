@@ -20,14 +20,13 @@ export const tokens = {
   "text-on-inverse": { light: "#FFFFFF", dark: "#FFFFFF" },
   primary: { light: "#15171C", dark: "#F2F3F5" },
   "on-primary": { light: "#FFFFFF", dark: "#15171C" },
-  signal: { light: "#FEE401", dark: "#FEE401" },
-  "on-signal": { light: "#15171C", dark: "#111216" },
-  accent: { light: "#6B2A8A", dark: "#D2A8EA" },
+  accent: { light: "#0B3A47", dark: "#7FC4D1" },
   live: { light: "#1E7A46", dark: "#5FD68A" },
+  "on-live": { light: "#FFFFFF", dark: "#111216" },
   "live-surface": { light: "#E6F7EC", dark: "#1B1D23" },
   border: { light: "#E4E6EA", dark: "#2A2E37" },
   "border-strong": { light: "#8A909C", dark: "#6B7280" },
-  focus: { light: "#6B2A8A", dark: "#D2A8EA" },
+  focus: { light: "#0B3A47", dark: "#7FC4D1" },
   danger: { light: "#B3261E", dark: "#FF8A80" },
   "on-danger": { light: "#FFFFFF", dark: "#111216" },
   "danger-surface": { light: "#FBEAE9", dark: "#1B1D23" },
@@ -45,8 +44,8 @@ export const UI_FLOOR = 3;
 /**
  * Every foreground/background pairing a component is allowed to draw, with
  * the WCAG floor it must clear. A pair missing from this list is not a
- * sanctioned combination (yellow as text on white, for example, is absent on
- * purpose: it measures 1.29:1 and DESIGN.md bans it).
+ * sanctioned combination (live green on the teal accent, for example, is
+ * absent on purpose: it measures 2.3:1 and DESIGN.md bans it).
  */
 export const pairs: ReadonlyArray<{
   fg: TokenName;
@@ -63,9 +62,10 @@ export const pairs: ReadonlyArray<{
   { fg: "text-muted", bg: "surface-raised", floor: TEXT_FLOOR, note: "secondary on cards" },
   { fg: "text-muted", bg: "surface-muted", floor: TEXT_FLOOR, note: "secondary on grouped areas" },
   { fg: "on-primary", bg: "primary", floor: TEXT_FLOOR, note: "primary button label" },
-  { fg: "on-signal", bg: "signal", floor: TEXT_FLOOR, note: "signal button label, wordmark block" },
+  { fg: "on-live", bg: "live", floor: TEXT_FLOOR, note: "live button label (Request now)" },
   { fg: "accent", bg: "surface", floor: TEXT_FLOOR, note: "links" },
   { fg: "accent", bg: "surface-raised", floor: TEXT_FLOOR, note: "links on cards" },
+  { fg: "live", bg: "surface-raised", floor: UI_FLOOR, note: "on-air ring around a photo on a card" },
   { fg: "live", bg: "surface", floor: TEXT_FLOOR, note: "LIVE text on canvas" },
   { fg: "live", bg: "live-surface", floor: TEXT_FLOOR, note: "Live now chip" },
   { fg: "text-on-inverse", bg: "surface-inverse", floor: TEXT_FLOOR, note: "footer text" },
@@ -73,7 +73,7 @@ export const pairs: ReadonlyArray<{
   { fg: "focus", bg: "surface", floor: UI_FLOOR, note: "focus ring on canvas" },
   // Interactive content on a dark surface sits inside a `.theme-dark` scope
   // (DESIGN.md, "Dark islands"), so the ring that lands on surface-inverse is
-  // always the dark theme's. The light plum on near-black measures 1.98:1 and
+  // always the dark theme's. The deep teal on near-black measures 1.46:1 and
   // is never drawn.
   { fg: "focus", bg: "surface-inverse", floor: UI_FLOOR, note: "focus ring inside a dark island", themes: ["dark"] },
   { fg: "on-danger", bg: "danger", floor: TEXT_FLOOR, note: "danger button label" },

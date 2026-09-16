@@ -37,7 +37,7 @@ export function SignalSection({ surface }: { surface: Surface }) {
 
   return (
     <Section id="signal" title="Live signal, proof, money (new in the overhaul)" surface={surface}>
-      <Demo label="Wordmark: ink Now, Tutors on the yellow block. Same component everywhere." surface={surface}>
+      <Demo label="Wordmark: Noora's nowtutors logo as one vector, ink on light, white on dark. Same component everywhere." surface={surface}>
         <Wordmark size="sm" />
         <Wordmark />
         <Wordmark size="lg" />
@@ -53,7 +53,7 @@ export function SignalSection({ surface }: { surface: Surface }) {
         <LiveChip size="sm" label="LIVE" viewers={2} />
       </Demo>
 
-      <Demo label="OnAirRing: the yellow ring marks a tutor taking instant requests. Paired with the chip, never alone." surface={surface}>
+      <Demo label="OnAirRing: the green ring marks a tutor taking instant requests. Paired with the chip, never alone." surface={surface}>
         <OnAirRing>
           <Avatar size="xl" name="Liam Bennett" />
         </OnAirRing>
@@ -63,7 +63,7 @@ export function SignalSection({ surface }: { surface: Surface }) {
         <OnAirRing active={false}>
           <Avatar size="lg" name="Amara Okafor" />
         </OnAirRing>
-        <Button variant="signal">Request now</Button>
+        <Button variant="live">Request now</Button>
       </Demo>
 
       <Demo label="StatRow: proof on the person (Experience, Sessions, Rate). New tutors say New." surface={surface} className="items-stretch">
