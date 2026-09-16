@@ -4,14 +4,14 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-16)
 
-**DESIGN OVERHAUL brand update ("Part 2.5") is BUILT on `design-brand-teal`, PR open, not merged. No migration, no
-prod step.** Noora answered the six open design questions. Her real logo is a white "tutornow" on dark teal, so:
+**DESIGN OVERHAUL brand update ("Part 2.5") is MERGED via PR #78 (`004267b`), deployed. No migration, no prod
+step.** Noora answered the six open design questions. Her real logo is a white "tutornow" on dark teal, so:
 `Wordmark` is now her artwork re-set as "nowtutors" (one SVG path in `currentColor`, approved by her), DM Sans is
 gone, the accent and focus ring are teal (`#0B3A47` light, `#7FC4D1` dark) used lightly (buttons and footer stay
 ink), yellow is retired (`signal` roles deleted; `Button` `live` variant, green `OnAirRing`, new `on-live` token),
 photos at approval and reviews after launch confirmed, and the no-show promise confirmed (Part 3 creates
 `lib/copy/trust.ts` with the flag on). DECISIONS "Design overhaul: Noora's answers". Gates: typecheck and lint
-clean, 677 unit, 58 DOM, build passed. **Next:** Daniels merges; then Part 3 (public and student surfaces) starts
+clean, 677 unit, 58 DOM, build passed. **Next:** Part 3 (public and student surfaces) starts
 from `main` and reads `live` wherever the plan says `signal`.
 
 **DESIGN OVERHAUL Part 2 (shell) is MERGED via PR #76 (`c2df144`), deployed. No prod step.** The ink shell is gone:
