@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -37,16 +37,8 @@ export interface Subject {
   name: string;
 }
 
-export function TutorFilters({
-  subjects,
-  onNavigate,
-  surface = "light",
-}: {
-  subjects: Subject[];
-  onNavigate?: () => void;
-  /** "ink" mirrors the Bubble dark sidebar (desktop rail); "light" is the default drawer surface. */
-  surface?: "light" | "ink";
-}) {
+/** The URL-backed filter state and its setters. Filters live in the query string so links are shareable (SPEC §7.2). */
+function useFilterParams(onNavigate?: () => void) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -65,9 +57,7 @@ export function TutorFilters({
     const params = new URLSearchParams(searchParams);
     const all = params.getAll(key);
     params.delete(key);
-    const next = all.includes(value)
-      ? all.filter((v) => v !== value)
-      : [...all, value];
+    const next = all.includes(value) ? all.filter((v) => v !== value) : [...all, value];
     next.forEach((v) => params.append(key, v));
     push(params);
   };
@@ -85,79 +75,69 @@ export function TutorFilters({
   const liveNow = searchParams.get("live") === "1";
   const sort = searchParams.get("sort") ?? "relevance";
   const hasFilters =
-    selectedSubjects.length > 0 ||
-    selectedLangs.length > 0 ||
-    !!priceBand ||
-    liveNow ||
-    sort !== "relevance";
+    selectedSubjects.length > 0 || selectedLangs.length > 0 || !!priceBand || liveNow || sort !== "relevance";
 
-  const ink = surface === "ink";
-  const headingText = ink ? "text-white" : "text-gray-700";
-  const labelText = ink ? "text-white" : "text-gray-700";
-  const rowText = ink ? "text-white" : "text-gray-700";
-  const checkboxInk = ink
-    ? "border-ink-300 data-[state=checked]:border-gold-400 data-[state=checked]:bg-gold-400 data-[state=checked]:text-ink-900 data-[state=indeterminate]:border-gold-400 data-[state=indeterminate]:bg-gold-400 data-[state=indeterminate]:text-ink-900"
-    : undefined;
-  const switchInk = ink ? "data-[state=checked]:bg-gold-400" : undefined;
-  const selectTriggerInk = ink
-    ? "border-ink-700 bg-ink-800 text-white data-[placeholder]:text-ink-300 hover:border-ink-300 [&_svg]:text-ink-300"
-    : undefined;
+  return { push, toggleMulti, setSingle, selectedSubjects, selectedLangs, priceBand, liveNow, sort, hasFilters };
+}
+
+function SortSelect({ id, sort, onChange, className }: { id: string; sort: string; onChange: (v: string) => void; className?: string }) {
+  return (
+    <Select value={sort} onValueChange={onChange}>
+      <SelectTrigger id={id} aria-label="Sort tutors" className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SORT_OPTIONS.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * The filter groups: price, subjects, language. On `md` and up they sit in the
+ * left rail; on phones they open in a sheet from the bar, where `withSort` adds
+ * the sort select (the bar has no room for it there).
+ */
+export function TutorFilters({
+  subjects,
+  onNavigate,
+  withSort = false,
+}: {
+  subjects: Subject[];
+  onNavigate?: () => void;
+  withSort?: boolean;
+}) {
+  const f = useFilterParams(onNavigate);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className={cn("text-h3 font-bold", headingText)}>Filters</h2>
-        {hasFilters && (
-          <Button
-            variant={ink ? "ink-ghost" : "ghost"}
-            size="sm"
-            onClick={() => push(new URLSearchParams())}
-          >
+        <h2 className="text-h3 font-semibold text-text">Filters</h2>
+        {f.hasFilters && (
+          <Button variant="ghost" size="sm" onClick={() => f.push(new URLSearchParams())}>
             Clear all
           </Button>
         )}
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="sort" className={ink ? "text-white" : undefined}>
-          Sort
-        </Label>
-        <Select value={sort} onValueChange={(v) => setSingle("sort", v)}>
-          <SelectTrigger id="sort" className={selectTriggerInk}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <label className="flex items-center justify-between gap-3">
-        <span className={cn("text-small font-medium", labelText)}>Live now</span>
-        <Switch
-          checked={liveNow}
-          onCheckedChange={(c) => setSingle("live", c ? "1" : null)}
-          className={switchInk}
-        />
-      </label>
+      {withSort && (
+        <div className="space-y-1.5">
+          <Label htmlFor="sort-sheet">Sort</Label>
+          <SortSelect id="sort-sheet" sort={f.sort} onChange={(v) => f.setSingle("sort", v)} />
+        </div>
+      )}
 
       <fieldset className="space-y-2">
-        <legend className={cn("text-small font-medium", labelText)}>Price</legend>
+        <legend className="text-small font-medium text-text">Price per hour</legend>
         {PRICE_BAND_KEYS.map((key) => (
-          <label
-            key={key}
-            className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
-          >
+          <label key={key} className="flex cursor-pointer items-center gap-2 text-body text-text">
             <Checkbox
-              checked={priceBand === key}
-              onCheckedChange={() =>
-                setSingle("price", priceBand === key ? null : key)
-              }
-              className={checkboxInk}
+              checked={f.priceBand === key}
+              onCheckedChange={() => f.setSingle("price", f.priceBand === key ? null : key)}
             />
             {PRICE_BANDS[key].label}
           </label>
@@ -165,17 +145,13 @@ export function TutorFilters({
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className={cn("text-small font-medium", labelText)}>Subjects</legend>
+        <legend className="text-small font-medium text-text">Subjects</legend>
         <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
           {subjects.map((s) => (
-            <label
-              key={s.slug}
-              className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
-            >
+            <label key={s.slug} className="flex cursor-pointer items-center gap-2 text-body text-text">
               <Checkbox
-                checked={selectedSubjects.includes(s.slug)}
-                onCheckedChange={() => toggleMulti("subject", s.slug)}
-                className={checkboxInk}
+                checked={f.selectedSubjects.includes(s.slug)}
+                onCheckedChange={() => f.toggleMulti("subject", s.slug)}
               />
               <span className="line-clamp-1">{s.name}</span>
             </label>
@@ -184,16 +160,12 @@ export function TutorFilters({
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className={cn("text-small font-medium", labelText)}>Language</legend>
+        <legend className="text-small font-medium text-text">Language</legend>
         {LANGUAGES.map((lang) => (
-          <label
-            key={lang}
-            className={cn("flex cursor-pointer items-center gap-2 text-body", rowText)}
-          >
+          <label key={lang} className="flex cursor-pointer items-center gap-2 text-body text-text">
             <Checkbox
-              checked={selectedLangs.includes(lang)}
-              onCheckedChange={() => toggleMulti("lang", lang)}
-              className={checkboxInk}
+              checked={f.selectedLangs.includes(lang)}
+              onCheckedChange={() => f.toggleMulti("lang", lang)}
             />
             {lang}
           </label>
@@ -203,6 +175,12 @@ export function TutorFilters({
   );
 }
 
+/**
+ * The bar above the results, at every width (research report 01, finding 8):
+ * the "Live now" chip first, because it is the product's signature filter, then
+ * the result count across all pages, then sort on `md` and up or a Filters
+ * sheet on phones.
+ */
 export function TutorFiltersBar({
   subjects,
   resultCount,
@@ -211,24 +189,55 @@ export function TutorFiltersBar({
   resultCount: number;
 }) {
   const [open, setOpen] = React.useState(false);
+  const f = useFilterParams();
   return (
-    <div className="flex items-center justify-between md:hidden">
-      <p className="text-small text-gray-500">{resultCount} tutors</p>
-      <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerTrigger asChild>
-          <Button variant="secondary" size="sm">
-            Filters
-          </Button>
-        </DrawerTrigger>
-        <DrawerContent>
-          <DrawerHeader>
-            <DrawerTitle>Filters</DrawerTitle>
-          </DrawerHeader>
-          <DrawerBody>
-            <TutorFilters subjects={subjects} onNavigate={() => setOpen(false)} />
-          </DrawerBody>
-        </DrawerContent>
-      </Drawer>
+    <div className="flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        aria-pressed={f.liveNow}
+        onClick={() => f.setSingle("live", f.liveNow ? null : "1")}
+        className={cn(
+          "focus-ring inline-flex h-9 items-center gap-2 rounded-full border px-4 text-small font-semibold transition-colors",
+          f.liveNow
+            ? "border-live bg-live-surface text-live"
+            : "border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn("size-2 rounded-full", f.liveNow ? "animate-pulse-live bg-live" : "bg-live")}
+        />
+        Live now
+      </button>
+
+      <p data-numeric className="text-small text-text-muted" aria-live="polite">
+        {resultCount.toLocaleString()} {resultCount === 1 ? "tutor" : "tutors"}
+      </p>
+
+      <div className="ml-auto flex items-center gap-2">
+        <SortSelect
+          id="sort"
+          sort={f.sort}
+          onChange={(v) => f.setSingle("sort", v)}
+          className="hidden h-9 w-52 md:flex"
+        />
+        <Drawer open={open} onOpenChange={setOpen}>
+          <DrawerTrigger asChild>
+            <Button variant="secondary" size="sm" className="md:hidden">
+              <SlidersHorizontal aria-hidden />
+              Filters
+            </Button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>Filters</DrawerTitle>
+            </DrawerHeader>
+            <DrawerBody>
+              <TutorFilters subjects={subjects} withSort onNavigate={() => setOpen(false)} />
+            </DrawerBody>
+          </DrawerContent>
+        </Drawer>
+      </div>
     </div>
   );
 }

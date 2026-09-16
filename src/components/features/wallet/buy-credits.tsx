@@ -239,7 +239,7 @@ export function BuyCredits({ packages, paypalClientId }: BuyCreditsProps) {
   return (
     <div className="space-y-4">
       <fieldset>
-        <legend className="mb-2 text-body font-medium text-gray-700">
+        <legend className="mb-2 text-body font-medium text-text">
           Choose a package
         </legend>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -251,8 +251,8 @@ export function BuyCredits({ packages, paypalClientId }: BuyCreditsProps) {
                 className={cn(
                   "focus-within:focus-ring flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors",
                   isSelected
-                    ? "border-purple-500 bg-purple-50"
-                    : "border-gray-200 hover:border-gray-300",
+                    ? "border-accent bg-surface-muted"
+                    : "border-border hover:border-border",
                 )}
               >
                 <span className="flex items-center gap-2">
@@ -264,17 +264,17 @@ export function BuyCredits({ packages, paypalClientId }: BuyCreditsProps) {
                     onChange={() => setSelected(pkg.id)}
                     className="sr-only"
                   />
-                  <Coins className="size-4 text-purple-500" aria-hidden />
+                  <Coins className="size-4 text-accent" aria-hidden />
                   <span>
-                    <span className="block text-body font-medium text-gray-700">
+                    <span className="block text-body font-medium text-text">
                       {pkg.name}
                     </span>
-                    <span className="block text-small text-gray-500">
+                    <span className="block text-small text-text-muted">
                       {pkg.credits.toLocaleString()} credits
                     </span>
                   </span>
                 </span>
-                <span className="text-body font-bold text-gray-700">
+                <span className="text-body font-bold text-text">
                   ${pkg.priceUsd.toFixed(2)}
                 </span>
               </label>
@@ -302,13 +302,13 @@ export function BuyCredits({ packages, paypalClientId }: BuyCreditsProps) {
 
       <div>
         {!sdkReady && (
-          <div className="flex items-center gap-2 text-small text-gray-500">
+          <div className="flex items-center gap-2 text-small text-text-muted">
             <Spinner size="sm" /> Loading PayPal…
           </div>
         )}
         <div ref={containerRef} aria-busy={status.kind === "working"} />
         {status.kind === "working" && (
-          <p className="mt-2 flex items-center gap-2 text-small text-gray-500">
+          <p className="mt-2 flex items-center gap-2 text-small text-text-muted">
             <Spinner size="sm" /> Talking to PayPal…
           </p>
         )}

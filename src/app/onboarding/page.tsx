@@ -21,8 +21,8 @@ export default async function OnboardingPage() {
     .orderBy(asc(subjectsTable.sortOrder));
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-12">
-      <div className="mx-auto w-full max-w-xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+    <div className="min-h-screen bg-surface-muted px-4 py-12">
+      <div className="mx-auto w-full max-w-xl rounded-xl border border-border bg-surface-raised p-6 sm:p-8">
         <OnboardingFlow userId={user.id} subjects={subjectRows} />
       </div>
     </div>

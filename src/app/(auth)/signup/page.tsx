@@ -15,8 +15,8 @@ export default async function SignupPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-h2 font-bold text-gray-700">Create your account</h1>
-        <p className="text-body text-gray-500">
+        <h1 className="text-h2 font-bold text-text">Create your account</h1>
+        <p className="text-body text-text-muted">
           Learn from live tutors, or teach and earn.
         </p>
       </div>

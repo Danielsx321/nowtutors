@@ -20,11 +20,14 @@ export function MessageTutorButton({
   loginHref,
   signedIn,
   className,
+  variant = "secondary",
 }: {
   tutorId: string;
   loginHref: string;
   signedIn: boolean;
   className?: string;
+  /** Secondary by default: messaging supports the booking action, it isn't the main one. */
+  variant?: "primary" | "secondary";
 }) {
   const router = useRouter();
   const [error, setError] = React.useState<string | null>(null);
@@ -32,19 +35,19 @@ export function MessageTutorButton({
 
   if (!signedIn) {
     return (
-      <Link
-        href={loginHref}
-        className="focus-ring inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-4 text-body font-medium text-gray-700 hover:bg-gray-50"
-      >
-        <MessageSquare className="size-4" aria-hidden />
-        Sign in to message
-      </Link>
+      <Button asChild variant="secondary" className={className}>
+        <Link href={loginHref}>
+          <MessageSquare aria-hidden />
+          Sign in to message
+        </Link>
+      </Button>
     );
   }
 
   return (
     <div className="space-y-2">
       <Button
+        variant={variant}
         className={className}
         loading={pending}
         onClick={() =>

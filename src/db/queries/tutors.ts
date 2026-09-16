@@ -25,6 +25,11 @@ export interface TutorCardData {
   ratingAvg: number;
   ratingCount: number;
   hourlyRateCredits: number;
+  /** Null when the tutor never filled it in; the card shows "New". */
+  yearsExperience: number | null;
+  completedSessions: number;
+  /** Whether an "online" tutor takes instant requests (SPEC §7.4). */
+  acceptsInstant: boolean;
   subjects: string[]; // up to 3 names
   liveStatus: LiveStatus;
   /**
@@ -49,6 +54,76 @@ export const liveBroadcastIdSql = sql<string | null>`(
 export interface BrowseResult {
   cards: TutorCardData[];
   nextCursor: string | null;
+}
+
+/** The subjects aggregate every card select uses. `tutor_profiles.user_id` must be in scope. */
+export const cardSubjectsSql = sql<
+  string[]
+>`coalesce((select array_agg(s.name order by s.sort_order) from tutor_subjects ts join subjects s on s.id = ts.subject_id where ts.tutor_id = ${tutorProfiles.userId}), '{}')`;
+
+/** The columns every card select needs, so browse and favourites can't drift. */
+export const cardColumns = {
+  userId: tutorProfiles.userId,
+  slug: tutorProfiles.slug,
+  headline: tutorProfiles.headline,
+  hourlyRateCredits: tutorProfiles.hourlyRateCredits,
+  ratingAvg: tutorProfiles.ratingAvg,
+  ratingCount: tutorProfiles.ratingCount,
+  yearsExperience: tutorProfiles.yearsExperience,
+  completedSessions: tutorProfiles.completedSessions,
+  acceptsInstant: tutorProfiles.acceptsInstant,
+  displayName: publicProfiles.displayName,
+  avatarUrl: publicProfiles.avatarUrl,
+  country: publicProfiles.country,
+  liveMemberUserId: liveTutors.userId,
+  liveMode: liveTutors.liveMode,
+  liveBroadcastId: liveBroadcastIdSql,
+  subjects: cardSubjectsSql,
+};
+
+type CardRow = {
+  userId: string;
+  slug: string;
+  headline: string | null;
+  hourlyRateCredits: number;
+  ratingAvg: string | number;
+  ratingCount: number;
+  yearsExperience: number | null;
+  completedSessions: number;
+  acceptsInstant: boolean;
+  displayName: string | null;
+  avatarUrl: string | null;
+  country: string | null;
+  liveMemberUserId: string | null;
+  liveMode: string | null;
+  liveBroadcastId: string | null;
+  subjects: string[] | null;
+};
+
+/** Row to card. Live status derives from `live_tutors` membership, never `is_live` (SPEC §3.1). */
+export function toTutorCard(r: CardRow, isFavourited: boolean): TutorCardData {
+  return {
+    userId: r.userId,
+    slug: r.slug,
+    displayName: r.displayName,
+    avatarUrl: r.avatarUrl,
+    country: r.country,
+    headline: r.headline,
+    ratingAvg: Number(r.ratingAvg),
+    ratingCount: r.ratingCount,
+    hourlyRateCredits: r.hourlyRateCredits,
+    yearsExperience: r.yearsExperience,
+    completedSessions: r.completedSessions,
+    acceptsInstant: r.acceptsInstant,
+    subjects: (r.subjects ?? []).slice(0, 3),
+    liveStatus: !r.liveMemberUserId
+      ? "offline"
+      : r.liveMode === "broadcast"
+        ? "live"
+        : "online",
+    liveBroadcastId: r.liveMemberUserId && r.liveMode === "broadcast" ? r.liveBroadcastId : null,
+    isFavourited,
+  };
 }
 
 // Keyset sort spec: a primary column + direction, with user_id asc as the stable
@@ -94,16 +169,7 @@ export async function browseTutors(
   const spec = sortSpec(query.sort);
   const cursor = decodeCursor(query.cursor);
 
-  const conditions: SQL[] = [
-    eq(tutorProfiles.approvalStatus, "approved"),
-    eq(profiles.isSuspended, false),
-    ...composeTutorFilters(query),
-  ];
-
-  // live_now filter → require live_tutors membership (view-derived, §3.1).
-  if (query.liveNow) {
-    conditions.push(sql`${liveTutors.userId} is not null`);
-  }
+  const conditions: SQL[] = browseConditions(query);
 
   // Keyset continuation for the chosen sort.
   if (cursor) {
@@ -117,30 +183,13 @@ export async function browseTutors(
     );
   }
 
-  const subjectsAgg = sql<
-    string[]
-  >`coalesce((select array_agg(s.name order by s.sort_order) from tutor_subjects ts join subjects s on s.id = ts.subject_id where ts.tutor_id = ${tutorProfiles.userId}), '{}')`;
-
   const primaryOrder = spec.dir === "desc" ? desc(spec.col) : asc(spec.col);
 
   const rows = await db
     .select({
-      userId: tutorProfiles.userId,
-      slug: tutorProfiles.slug,
-      headline: tutorProfiles.headline,
-      hourlyRateCredits: tutorProfiles.hourlyRateCredits,
-      ratingAvg: tutorProfiles.ratingAvg,
-      ratingCount: tutorProfiles.ratingCount,
-      completedSessions: tutorProfiles.completedSessions,
-      displayName: publicProfiles.displayName,
-      avatarUrl: publicProfiles.avatarUrl,
-      country: publicProfiles.country,
-      liveMemberUserId: liveTutors.userId,
-      liveMode: liveTutors.liveMode,
-      liveBroadcastId: liveBroadcastIdSql,
+      ...cardColumns,
       isFavourited: sql<boolean>`${favourites.id} is not null`,
       sortKey: sql<number>`${spec.col}`,
-      subjects: subjectsAgg,
     })
     .from(tutorProfiles)
     .innerJoin(publicProfiles, eq(publicProfiles.id, tutorProfiles.userId))
@@ -161,29 +210,102 @@ export async function browseTutors(
   const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
   const last = page[page.length - 1];
 
-  const cards: TutorCardData[] = page.map((r) => ({
-    userId: r.userId,
-    slug: r.slug,
-    displayName: r.displayName,
-    avatarUrl: r.avatarUrl,
-    country: r.country,
-    headline: r.headline,
-    ratingAvg: Number(r.ratingAvg),
-    ratingCount: r.ratingCount,
-    hourlyRateCredits: r.hourlyRateCredits,
-    subjects: (r.subjects ?? []).slice(0, 3),
-    liveStatus: !r.liveMemberUserId
-      ? "offline"
-      : r.liveMode === "broadcast"
-        ? "live"
-        : "online",
-    liveBroadcastId: r.liveMemberUserId && r.liveMode === "broadcast" ? r.liveBroadcastId : null,
-    isFavourited: r.isFavourited,
-  }));
+  const cards: TutorCardData[] = page.map((r) => toTutorCard(r, r.isFavourited));
 
   return {
     cards,
     nextCursor:
       hasMore && last ? encodeCursor(Number(last.sortKey), last.userId) : null,
   };
+}
+
+/** Approved, non-suspended, filtered. Shared by the page query and the count so they can't disagree. */
+function browseConditions(query: TutorQuery): SQL[] {
+  const conditions: SQL[] = [
+    eq(tutorProfiles.approvalStatus, "approved"),
+    eq(profiles.isSuspended, false),
+    ...composeTutorFilters(query),
+  ];
+  // live_now filter → require live_tutors membership (view-derived, §3.1).
+  if (query.liveNow) {
+    conditions.push(sql`${liveTutors.userId} is not null`);
+  }
+  return conditions;
+}
+
+/**
+ * How many tutors match the filters, across every page: the "128 tutors" line
+ * on browse. Same joins and conditions as {@link browseTutors}, no cursor.
+ */
+export async function countBrowseTutors(query: TutorQuery): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tutorProfiles)
+    .innerJoin(publicProfiles, eq(publicProfiles.id, tutorProfiles.userId))
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+    .leftJoin(liveTutors, eq(liveTutors.userId, tutorProfiles.userId))
+    .where(and(...browseConditions(query)));
+  return row?.n ?? 0;
+}
+
+export interface LiveStrip {
+  /** Every approved, non-suspended tutor in `live_tutors`, both modes. */
+  count: number;
+  /** Up to `limit` of them for the face strip, instant-available first. */
+  faces: { userId: string; slug: string; displayName: string | null; avatarUrl: string | null }[];
+}
+
+/**
+ * The home hero's "N tutors live now" and its faces (research report 01: the
+ * one thing no competitor can show). Real numbers only; zero renders zero.
+ */
+export async function getLiveStrip(limit = 6): Promise<LiveStrip> {
+  const base = and(
+    eq(tutorProfiles.approvalStatus, "approved"),
+    eq(profiles.isSuspended, false),
+  );
+  const [countRows, faces] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(liveTutors)
+      .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
+      .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+      .where(base),
+    db
+      .select({
+        userId: tutorProfiles.userId,
+        slug: tutorProfiles.slug,
+        displayName: publicProfiles.displayName,
+        avatarUrl: publicProfiles.avatarUrl,
+      })
+      .from(liveTutors)
+      .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
+      .innerJoin(publicProfiles, eq(publicProfiles.id, tutorProfiles.userId))
+      .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+      .where(base)
+      .orderBy(sql`(${liveTutors.liveMode} = 'broadcast')`, desc(tutorProfiles.completedSessions))
+      .limit(limit),
+  ]);
+  return { count: countRows[0]?.n ?? 0, faces };
+}
+
+export interface SubjectCount {
+  slug: string;
+  name: string;
+  tutors: number;
+}
+
+/** Active subjects that at least one bookable tutor teaches, with the count, for the subject tiles. */
+export async function getSubjectTutorCounts(): Promise<SubjectCount[]> {
+  const rows = await db.execute<{ slug: string; name: string; tutors: number }>(sql`
+    select s.slug, s.name, count(distinct tp.user_id)::int as tutors
+      from subjects s
+      join tutor_subjects ts on ts.subject_id = s.id
+      join tutor_profiles tp on tp.user_id = ts.tutor_id
+      join profiles p on p.id = tp.user_id
+     where s.is_active and tp.approval_status = 'approved' and not p.is_suspended
+     group by s.slug, s.name, s.sort_order
+     order by count(distinct tp.user_id) desc, s.sort_order
+  `);
+  return Array.from(rows as Iterable<{ slug: string; name: string; tutors: number }>);
 }

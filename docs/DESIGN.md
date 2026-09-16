@@ -61,6 +61,8 @@ Spacing on the 4px grid. Comfortable density on marketplace pages (browse, profi
 
 The tutor card is the product (research report 05). Its anatomy, in order: photo inset with the on-air ring when the tutor takes instant requests; live chip top-left only when live or broadcasting (an offline tutor shows **no** status text: absence is the signal); favourite top-right; name in the display face; country; headline; the proof row (`StatRow`: Experience, Sessions, Rate with the "≈ $" anchor); one call to action. `live` "Request now" for instant-available, a "Watch live" link for broadcasting, `primary` "Book a session" otherwise.
 
+Two variants: `grid` (photo on top, `md` and up) and `row` (88px photo beside the text, phones and short lists such as Saved tutors). The whole card links to the profile through a stretched link on the name; the chip, heart and action sit above it. "Request now" goes to `/tutors/[slug]#start-now`. A tutor who is online but doesn't take instant requests reads as bookable, not live. In a grid the ring is static (`OnAirRing still`): many pulsing rings at once is noise.
+
 Rating is not in the row until reviews exist, which comes after launch (SPEC §18, Noora 2026-09-16). The slot is documented; it goes first in the row when it lands.
 
 Cards separate from the canvas by their border and hover to `border-strong`. No shadow at rest. Shadows are for things that float (popovers, drawers, modals).

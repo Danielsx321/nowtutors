@@ -53,7 +53,7 @@ export function BookingList({
           <TabsTrigger key={t.value} value={t.value}>
             {t.label}
             {groups[t.value].length > 0 && (
-              <span className="ml-1.5 text-caption text-gray-500">
+              <span className="ml-1.5 text-caption text-text-muted">
                 {groups[t.value].length}
               </span>
             )}
@@ -87,7 +87,7 @@ export function BookingList({
                 <Link
                   key={b.id}
                   href={`${basePath}/${b.id}`}
-                  className="focus-ring flex items-center gap-3 rounded-lg border border-gray-200 p-3 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                  className="focus-ring flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:border-border hover:bg-surface-muted"
                 >
                   <Avatar
                     src={b.otherPartyAvatarUrl}
@@ -96,23 +96,23 @@ export function BookingList({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-body font-medium text-gray-700">
+                      <p className="truncate text-body font-medium text-text">
                         {b.otherPartyName ?? counterpartLabel}
                       </p>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
                     </div>
-                    <p className="text-small text-gray-500">
+                    <p className="text-small text-text-muted">
                       {b.scheduledStartAt ? fmt.format(b.scheduledStartAt) : "—"}
                       {b.subjectName ? ` · ${b.subjectName}` : ""}
                       {b.durationMinutes ? ` · ${b.durationMinutes} min` : ""}
                     </p>
                   </div>
                   {b.priceCredits != null && (
-                    <span className="whitespace-nowrap text-small font-medium text-gray-500">
+                    <span className="whitespace-nowrap text-small font-medium text-text-muted">
                       {b.priceCredits} cr
                     </span>
                   )}
-                  <ChevronRight className="size-4 shrink-0 text-gray-400" aria-hidden />
+                  <ChevronRight className="size-4 shrink-0 text-border-strong" aria-hidden />
                 </Link>
               );
             })

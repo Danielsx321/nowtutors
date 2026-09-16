@@ -159,10 +159,10 @@ export function TutorForm({
           ))}
         </div>
         {selectedSubjects.length > 0 && (
-          <div className="space-y-2 rounded-md border border-gray-200 p-3">
+          <div className="space-y-2 rounded-md border border-border p-3">
             {selectedSubjects.map((s) => (
               <div key={s.slug} className="flex items-center justify-between gap-3">
-                <span className="text-small text-gray-700">
+                <span className="text-small text-text">
                   {nameFor.get(s.slug) ?? s.slug}
                 </span>
                 <div className="w-40">
@@ -218,7 +218,7 @@ export function TutorForm({
         <Label required>Languages you teach in</Label>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           {LANGUAGES.map((lang) => (
-            <label key={lang} className="flex items-center gap-2 text-small text-gray-700">
+            <label key={lang} className="flex items-center gap-2 text-small text-text">
               <Checkbox
                 checked={languages.includes(lang)}
                 onCheckedChange={() => toggleLanguage(lang)}
@@ -249,7 +249,7 @@ export function TutorForm({
         <FieldError>{errors.paypalEmail?.message}</FieldError>
       </div>
 
-      <p className="text-small text-gray-500">
+      <p className="text-small text-text-muted">
         Your profile is reviewed by our team before it goes live. You&apos;ll get
         an email once you&apos;re approved.
       </p>

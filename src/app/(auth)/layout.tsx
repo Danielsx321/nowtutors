@@ -1,7 +1,7 @@
 import { Wordmark } from "@/components/layout/wordmark";
 
 /**
- * Public auth shell: a centred card on the muted canvas (SPEC §6, §10). Auth
+ * Public auth shell: a centred raised card on the muted canvas (SPEC §6, §10). Auth
  * pages are public; per-page server logic redirects an already-signed-in user.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -11,7 +11,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <Wordmark href="/" size="sm" />
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-16">
-        <div className="w-full max-w-md">{children}</div>
+        <div className="w-full max-w-md rounded-xl border border-border bg-surface-raised p-6 md:p-8">{children}</div>
       </main>
     </div>
   );

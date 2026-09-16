@@ -626,8 +626,11 @@ Admin access is by `profiles.role = 'admin'` only. There is no admin signup rout
 
 ```
 PUBLIC
-/                                  Landing: hero, live-now tutors strip, subject grid, how it works
-/tutors                            Browse + filter (Section 7.2)
+/                                  Home AND browse, one page (amended 2026-09-16, design overhaul Part 3):
+                                   hero with the real live-now count and faces, then the filter bar and
+                                   tutor grid (Section 7.2); subject tiles, how it works and a tutor band
+                                   below. Hero and lower sections show on the unfiltered first page only.
+/tutors                            Redirects to / preserving the query string
 /tutors/[slug]                     Tutor profile: about, subjects, rate, reviews, availability calendar,
                                    "Book a session" and "Request now" (if live)
 /live                              Currently live broadcasts
@@ -714,7 +717,7 @@ Filters: subject (multi), price range (**credit bands in credits/hour**, compare
 
 Base query: `tutor_profiles` where `approval_status = 'approved'` and owning profile not suspended. When `live_now` is on, query the `live_tutors` view instead (Section 3.1) — **this is the fix for the stale LIVE badge, and it must be a view join, not a boolean check.**
 
-Card contents: avatar, display name, headline, rating + count, subjects (max 3 + overflow), rate, LIVE pill when in `live_tutors`, "Request now" when live and `accepts_instant`.
+Card contents (amended 2026-09-16, design overhaul Part 3; DESIGN.md "Cards"): photo inset (initials fallback), a "Live now" chip and the green on-air ring only when in `live_tutors` for instant sessions AND `accepts_instant`, a "LIVE" chip linking to the broadcast when broadcasting, nothing at all when offline; favourite heart; name; country; headline; proof row (Experience, Sessions, Rate with the "≈ $" anchor from the direct-pay basis package); one action: "Request now" (to the profile's Start now panel), "Watch live", or "Book a session". No rating until reviews exist (§18). A `row` variant is used below `md`. The filter bar leads with a "Live now" chip and shows the result count across all pages.
 
 Avatar rendering: `next/image` with `remotePatterns` configured for the Supabase Storage domain, plus a generated initials fallback. (The current "LIVE tutor card photos not rendering" bug is an image-host configuration issue in Bubble; in Next it's the `remotePatterns` allowlist. Get this right in Phase 3 and it never recurs.)
 
@@ -1916,7 +1919,7 @@ Each phase ends in a working, deployable app. Do not begin a phase before the pr
 
 **Phase 9.5 — Design overhaul ("On Air").** Added 2026-09-15 at the client's request (the design read as dated). Six PR-sized parts, no migration, no money or booking rule change: (1) semantic tokens, fonts, restyled primitives, `docs/DESIGN.md`, the token contrast test; (2) shell (header, footer, app shell, sidebar, mobile bottom bar); (3) public and student surfaces led by the tutor card; (4) live moments with dark scoped to the rooms; (5) tutor surfaces; (6) admin, the photo-at-approval rule, alias cleanup, acceptance. Plan: workspace `plans/2026-09-15-nowtutors-design-overhaul.md`.
 *Accept:* every E2E spec (1 to 7 plus a design smoke) passes on Daniels' run; `grep -rE 'ink-|gold-|purple-|live-4|live-5|gray-' src` returns nothing and the alias block is gone; Lighthouse accessibility 90+ on `/`, `/tutors`, one profile and `/dashboard`; the client has the before-and-after set.
-*Status:* **Part 1 (foundation) merged 2026-09-15** (PR #74, `be6a209`). **Part 2 (shell) merged 2026-09-15** (PR #76, `c2df144`). **Brand update (Part 2.5) merged 2026-09-16** (PR #78, `004267b`) after Noora's answers: teal accent, yellow removed, green live signal, SVG wordmark. Parts 3 to 6 pending.
+*Status:* **Part 1 (foundation) merged 2026-09-15** (PR #74, `be6a209`). **Part 2 (shell) merged 2026-09-15** (PR #76, `c2df144`). **Brand update (Part 2.5) merged 2026-09-16** (PR #78, `004267b`) after Noora's answers: teal accent, yellow removed, green live signal, SVG wordmark. **Part 3 (public and student) built 2026-09-16** on `design-part3-public-student`. Parts 3 to 6 pending.
 
 **Phase 10 — Email, polish, launch prep.** All templates, reminder cron, empty/loading/error states everywhere, accessibility pass, Lighthouse pass, `RUNBOOK.md` complete, production env configured, LessonSpace waiting room set, PayPal live credentials, one supervised real-card test.
 *Accept:* the runbook checklist is fully ticked.
