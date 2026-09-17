@@ -68,6 +68,7 @@ Locked unless there is a specific reason to deviate.
 | Auth | **Supabase Auth** | Email/password + Google OAuth — parity with current app, no custom crypto |
 | Styling | **Tailwind CSS v4** + CSS custom properties for brand tokens | See Section 13 |
 | UI primitives | **shadcn/ui** (Radix under the hood) | Copy-in components, restyled to the NowTutors palette. Radix packages in use: dialog, dropdown-menu, select, tabs, tooltip, checkbox, radio-group, switch, label, slot, and (design overhaul Part 1, approved 2026-09-15) **alert-dialog** and **progress** |
+| Home page globe | **`cobe`** (MIT, pulls `phenomenon`) | Added for the "live globe" rebuild, approved by Daniels 2026-09-17. A small WebGL globe on `/` only, dynamically imported in a Client Component, with a static fallback when WebGL is unavailable or reduced motion is asked for. Installed in Part C, where the globe is built |
 | Forms | **react-hook-form + zod** | One zod schema per form, reused server-side for validation |
 | Realtime | **Supabase Realtime** (Postgres changes + presence) | Replaces all `Do every 10 seconds` polling |
 | Video (instant + broadcast) | **Agora Web SDK (`agora-rtc-sdk-ng`)** | Existing Render token service reused |
@@ -1541,24 +1542,27 @@ Tokens are **roles, not colours**. Components reference `surface`, `text`, `prim
 
 | Token | Light | Dark (rooms) | Role |
 |---|---|---|---|
-| `surface` / `surface-raised` / `surface-muted` / `surface-inverse` | `#FFFFFF` / `#FFFFFF` / `#F4F5F7` / `#15171C` | `#111216` / `#1B1D23` / `#1B1D23` / `#15171C` | canvas; cards and popovers (separated by border, no shadow at rest); grouped areas; non-interactive dark fills |
-| `text` / `text-muted` / `text-on-inverse` | `#15171C` / `#5A6070` / `#FFFFFF` | `#F2F3F5` / `#A4A9B4` / `#FFFFFF` | body and headings; secondary (6.28:1 light, 7.15:1 dark); text on the inverse surface |
-| `primary` / `on-primary` | `#15171C` / `#FFFFFF` | `#F2F3F5` / `#15171C` | the primary button |
-| `accent` | `#0B3A47` | `#7FC4D1` | the brand teal, used lightly: links, selected states, the focus ring, small accents. Never a button fill or a large surface (12.28:1 light, 8.60:1 dark on raised) |
-| `live` / `on-live` / `live-surface` | `#1E7A46` / `#FFFFFF` / `#E6F7EC` | `#5FD68A` / `#111216` / `#1B1D23` | the live signal: "Live now" and "LIVE" text and dot, the on-air ring, the "Request now" button fill (label 5.35:1 light, 10.23:1 dark); the chip background (4.81:1). **Never on the teal accent** (2.3:1) |
-| `border` / `border-strong` | `#E4E6EA` / `#8A909C` | `#2A2E37` / `#6B7280` | hairlines (decorative); inputs and controls (3.21:1) |
+| `ground` (= `surface`) / `surface-raised` / `surface-muted` / `surface-inverse` | `#F1F1EF` / `#FFFFFF` / `#E9E9E5` / `#15171C` | `#0E0F12` / `#16181D` / `#16181D` / `#15171C` | the page canvas, warm off-white so white cards read as cards; cards and popovers; grouped areas; non-interactive dark fills. `surface` is kept as the older name for the canvas |
+| `text` / `text-muted` / `text-on-inverse` | `#111214` / `#63676E` / `#FFFFFF` | `#F2F3F5` / `#A4A9B4` / `#FFFFFF` | body and headings (16.57:1 on ground); secondary (5.02:1 on ground, 5.68:1 on cards); text on the inverse surface |
+| `primary` / `on-primary` | `#0B3A47` / `#FFFFFF` | `#F2F3F5` / `#0E0F12` | the teal fill: the main action and the active nav pill (12.28:1). In a room it inverts to a light pill |
+| `highlight` / `on-highlight` | `#F6C544` / `#111214` | same | the yellow fill: the second action beside a primary one (11.59:1) |
+| `ink` / `on-ink` | `#111214` / `#FFFFFF` | `#F2F3F5` / `#0E0F12` | a neutral solid button inside a card, where teal would compete with the page's primary |
+| `spark` / `spark-text` | `#E8843A` / `#A85416` | `#E8843A` / `#F0A868` | orange for marks only (globe dots, small badges); `spark-text` is the readable one (4.71:1 on ground) and is the only orange allowed to carry text |
+| `accent` | `#0B3A47` | `#7FC4D1` | the brand teal as links, selected states and the focus ring |
+| `live` / `on-live` / `live-surface` | `#1E7A46` / `#FFFFFF` / `#E6F7EC` | `#5FD68A` / `#0E0F12` / `#16181D` | the live signal: "Live now" and "LIVE" text and dot, the on-air ring, the "Request now" button fill; the chip background (4.81:1). **Never on the teal accent** (2.3:1) |
+| `border` / `border-strong` | `#E2E2DF` / `#767C88` | `#2A2E37` / `#767C88` | hairlines (decorative); inputs and controls (3.71:1 on ground) |
 | `focus` | = accent | = accent | the one focus ring |
-| `danger` / `on-danger` / `danger-surface` | `#B3261E` / `#FFFFFF` / `#FBEAE9` | `#FF8A80` / `#111216` / `#1B1D23` | destructive |
-| `warning` / `warning-surface` | `#8A5A00` / `#FFF4D6` | `#FFC857` / `#1B1D23` | warning |
+| `danger` / `on-danger` / `danger-surface` | `#B3261E` / `#FFFFFF` / `#FBEAE9` | `#FF8A80` / `#0E0F12` / `#16181D` | destructive |
+| `warning` / `warning-surface` | `#8A5A00` / `#FFF4D6` | `#FFC857` / `#16181D` | warning |
 | `success` | = live | = live | one green |
 
 The values are declared once in `src/app/globals.css` and mirrored as data in `src/lib/design/tokens.ts`. `tests/unit/design-tokens.test.ts` asserts the two agree, that every sanctioned foreground/background pair clears its floor (4.5:1 text, 3:1 controls) in both themes, and that no raw hex exists in `src/` outside those two files (the Google sign-in logo excepted).
 
-**Compatibility aliases (temporary).** `globals.css` carries the old colour-named utilities (`ink-*`, `purple-*`, `gold-400`, `live-4/500`, `gray-*`, `white`) mapped to the nearest role under a block headed REMOVE IN PART 6, so pages not yet converted stay legible between Parts 2 and 5. Part 6 deletes the block; a clean `pnpm typecheck && pnpm build` after that is the proof the sweep finished. New code must not use them.
+**Compatibility aliases (temporary).** `globals.css` carries the old colour-named utilities (`ink-*`, `purple-*`, `gold-400`, `live-4/500`, `gray-*`, `white`) mapped to the nearest role under a block headed REMOVE IN PART G, so pages not yet converted stay legible while the rebuild runs. Part G deletes the block; a clean `pnpm typecheck && pnpm build` after that is the proof the sweep finished. New code must not use them.
 
 **Type.** Funnel Display 600 to 800 (`font-display`) for page and section titles, tutor names, the hero and stat values; Funnel Sans 400 to 600 (`font-sans`) for everything else; both bundled by `next/font`. The wordmark is a vector, not a font. Scale unchanged: display 40/44, h1 32/38, h2 24/30, h3 20/26, body-lg 17/26, body 15/24, small 13/20, caption 12/16. Tabular figures on money and in tables (`data-numeric`).
 
-**Shape.** `--radius: 0.75rem`. Controls `md` (10px), cards `xl` (20px) with a `lg` (14px) photo inset, chips and every button `full`. Spacing on the 4px grid; pages full-bleed with a `px-4 md:px-6` gutter (`container-page` remains for the rare boxed page).
+**Shape.** Cards `card` (22px), the panel around a group of cards and every modal `panel` (26px), photo insets `photo` (15px), inputs and menus `lg` (14px), chips and every button `full`. Buttons are 38 / 46 / 54px tall (`sm` / `md` / `lg`); `md` and up clear the 44px touch target. Spacing on the 4px grid; pages full-bleed with a `px-4 md:px-6` gutter (`container-page` remains for the rare boxed page).
 
 **The wordmark** is one component (`components/layout/wordmark.tsx`): Noora's lowercase "nowtutors" logo as a single SVG path in `currentColor` (traced from her "tutornow" artwork and re-ordered to match the product name, with a matching "s"; approved by Noora 2026-09-16). Ink on light, white with `tone="onDark"` for footers and rooms. `Monogram` (the logo's own "n") marks the collapsed sidebar rail.
 
@@ -1583,6 +1587,8 @@ Responsive from 360px. **One** visible keyboard focus ring, 2px `focus` / 2px of
 Loading and empty states designed, not afterthoughts: an empty bookings list invites the student to browse tutors.
 
 **Trust line (settled with Noora 2026-09-16).** Student booking surfaces may promise: "If your tutor doesn't show, your credits come back." It matches the force-cancel refund rule (§7.6). "Secure payment via PayPal" ships alongside it. Reviews stay out of v1 and come after launch (§18); tutor photos are required at approval (built in Part 6).
+
+**Banned tells (v2, 2026-09-17).** The rebuild bans what made the first mockups read as a template, and two of them are enforced by `tests/unit/design-tokens.test.ts`: **no CSS gradient anywhere in `src/`** outside a named allowlist (the globe's fallback sphere and the skeleton shimmer), and **no `text-spark`** (orange is a mark; readable orange is `spark-text`). The rest are review rules: no tinted tile or coloured circle behind an icon, no coloured side stripe on a card or alert, no multicolour rules under a section, no gradient headline text or background glow, no second loud fill competing with the screen's primary action, no glassmorphism outside the home hero's proof strip, no tracked all-caps eyebrow, and no invented content (ratings, awards, badges, streaks or goals the app does not have). Icons are plain lines, stroke 1.8, in `currentColor` or teal. Full list with the reason for each: `docs/DESIGN.md`, "Banned tells".
 
 **The shell (design overhaul Part 2).** Light canvas throughout. Below `md` the sidebar is replaced by a fixed bottom bar of four destinations plus More, which opens the drawer holding the full list; between `md` and `lg` the sidebar is an icon rail with tooltips, and the label stays on the link as its accessible name; at `lg` it is labelled and full width. The active item is a muted fill with a 3px accent bar. Nothing in the bar may cover a composer or a sticky Save. The unread badge appears on the topbar's Messages link (which owns the `unread-badge` test id) and on the bottom bar's Messages item, both reading one shared count. Tutors carry the go-live switch in the topbar, so they can go live from any tutor page. **Navigation never links to a route that does not exist**: `/how-it-works`, `/pricing`, `/faq`, the legal pages and `/dashboard/settings` were linked before they were built and were dropped until Phase 10 builds them.
 

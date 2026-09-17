@@ -39,7 +39,7 @@ export const AlertDialogContent = React.forwardRef<
       ref={ref}
       data-slot="modal-content"
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-surface-raised p-6 text-text shadow-lg",
+        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-panel border border-border bg-surface-raised p-6 text-text shadow-lg",
         sizes[size],
         className,
       )}

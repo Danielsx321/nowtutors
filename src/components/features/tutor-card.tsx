@@ -93,7 +93,7 @@ export function TutorCard({
         <Link href={`/live/${tutor.liveBroadcastId}`}>Watch live</Link>
       </Button>
     ) : (
-      <Button asChild variant="primary" size="sm" className="relative z-10">
+      <Button asChild variant="ink" size="sm" className="relative z-10">
         <Link href={profileHref}>Book a session</Link>
       </Button>
     );

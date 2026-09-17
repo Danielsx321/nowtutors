@@ -41,7 +41,8 @@ export function FoundationsSection({ surface }: { surface: Surface }) {
   return (
     <Section id="foundations" title="Tokens" surface={surface}>
       <Demo label="Surfaces" surface={surface}>
-        <Swatch token="surface" role="page canvas" className="bg-surface" surface={surface} />
+        <Swatch token="ground" role="page canvas" className="bg-ground" surface={surface} />
+        <Swatch token="surface" role="older name for the canvas" className="bg-surface" surface={surface} />
         <Swatch token="surface-raised" role="cards, panels" className="bg-surface-raised" surface={surface} />
         <Swatch token="surface-muted" role="grouped areas" className="bg-surface-muted" surface={surface} />
         <Swatch token="surface-inverse" role="footer, tooltip" className="bg-surface-inverse" surface={surface} />
@@ -50,8 +51,12 @@ export function FoundationsSection({ surface }: { surface: Surface }) {
       <Demo label="Text and actions" surface={surface}>
         <Swatch token="text" role="body, headings" className="bg-text" surface={surface} />
         <Swatch token="text-muted" role="secondary" className="bg-text-muted" surface={surface} />
-        <Swatch token="primary" role="primary button" className="bg-primary" surface={surface} />
-        <Swatch token="accent" role="links, focus, small accents (teal)" className="bg-accent" surface={surface} />
+        <Swatch token="primary" role="teal button, active nav" className="bg-primary" surface={surface} />
+        <Swatch token="highlight" role="yellow second button" className="bg-highlight" surface={surface} />
+        <Swatch token="ink" role="neutral solid button" className="bg-ink" surface={surface} />
+        <Swatch token="spark" role="orange marks only (globe dots)" className="bg-spark" surface={surface} />
+        <Swatch token="spark-text" role="orange that can carry text" className="bg-spark-text" surface={surface} />
+        <Swatch token="accent" role="links, focus (teal)" className="bg-accent" surface={surface} />
         <Swatch token="border" role="hairlines" className="bg-border" surface={surface} />
         <Swatch token="border-strong" role="inputs" className="bg-border-strong" surface={surface} />
       </Demo>
@@ -82,6 +87,39 @@ export function FoundationsSection({ surface }: { surface: Surface }) {
             Inside a dark island
           </button>
         </div>
+      </Demo>
+
+      <Demo label="Shape: cards 22px, the panels around them 26px, photo insets 15px, inputs 14px, buttons and chips full" surface={surface}>
+        {[
+          ["rounded-panel", "panel 26px"],
+          ["rounded-card", "card 22px"],
+          ["rounded-photo", "photo 15px"],
+          ["rounded-lg", "input 14px"],
+          ["rounded-full", "button, chip"],
+        ].map(([cls, label]) => (
+          <div key={cls} className="w-28 space-y-1.5">
+            <div className={cn("h-14 w-full border border-border bg-surface-raised", cls)} />
+            <p className="text-caption text-text-muted">{label}</p>
+          </div>
+        ))}
+      </Demo>
+
+      <Demo
+        label="Banned tells (DESIGN.md v2). Written out, not drawn: the point is that none of them appear anywhere in the app"
+        surface={surface}
+        className="flex-col items-start gap-1.5"
+      >
+        {[
+          "Decorative gradients: background glows behind a hero, gradient headline text, gradient fills on cards. The token test fails on any gradient outside the globe fallback and the skeleton shimmer.",
+          "Tinted tiles behind icons. Icons are plain lines, stroke 1.8, in teal or the current text colour.",
+          "Coloured side stripes on cards, and multicolour rules under a section.",
+          "Orange as text or as a large fill. Orange is a mark: globe dots, a small badge. Readable orange is spark-text.",
+          "More than one loud fill in the same view. Teal leads, yellow answers it, green means live and nothing else.",
+        ].map((line) => (
+          <p key={line} className="text-small text-text-muted">
+            {line}
+          </p>
+        ))}
       </Demo>
 
       <Demo label={`Contrast, ${surface} theme: every sanctioned pair and its ratio (test floor 4.5:1 text, 3:1 controls)`} surface={surface} className="items-stretch">

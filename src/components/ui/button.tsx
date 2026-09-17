@@ -5,10 +5,18 @@ import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 
 /**
- * Buttons are pills (DESIGN.md, "Shape"). `primary` is the ink fill and the
- * default action everywhere; `live` is the green fill and is reserved for
- * live actions ("Request now", "Go live", "Join"): it is the product's one
- * loud colour and must stay rare.
+ * Buttons are pills (DESIGN.md v2, "Buttons"). Roles, not colours:
+ *
+ * - `primary` — teal fill. The main action on a screen, and the only teal fill.
+ * - `highlight` — yellow fill. The second action beside a primary one
+ *   ("Book for later" next to "Find a live tutor").
+ * - `ink` — near-black fill. A neutral action inside a card, where teal would
+ *   compete with the page's own primary.
+ * - `outline` — a bordered button on the surface it sits on.
+ * - `ghost` — text only, for toolbars and menus.
+ * - `live` — green fill, reserved for live actions ("Request now", "Go live",
+ *   "Join"). The product's one loud colour: it stays rare.
+ * - `danger` — destructive only.
  */
 const buttonVariants = cva(
   // base
@@ -17,21 +25,24 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: "bg-primary text-on-primary hover:bg-primary/85",
-        secondary:
+        highlight: "bg-highlight text-on-highlight hover:brightness-95",
+        ink: "bg-ink text-on-ink hover:bg-ink/85",
+        outline:
           "border border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
         ghost: "text-text hover:bg-surface-muted",
         live: "bg-live text-on-live hover:brightness-95",
         danger: "bg-danger text-on-danger hover:brightness-95",
-        /** @deprecated alias of `live`. REMOVE IN PART 6. */
-        ink: "bg-live text-on-live hover:brightness-95",
-        /** @deprecated white ghost for the old ink header, gone with it. REMOVE IN PART 6. */
+        /** @deprecated renamed to `outline`. REMOVE IN PART G. */
+        secondary:
+          "border border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
+        /** @deprecated white ghost for the old ink header, gone with it. REMOVE IN PART G. */
         "ink-ghost": "text-text-on-inverse hover:bg-text-on-inverse/10",
       },
       size: {
-        sm: "h-9 px-4 text-small [&_svg]:size-4",
-        md: "h-11 px-5 text-body [&_svg]:size-5",
-        lg: "h-12 px-7 text-body-lg [&_svg]:size-5",
-        icon: "size-11 [&_svg]:size-5",
+        sm: "h-[38px] px-4 text-small [&_svg]:size-4",
+        md: "h-[46px] px-5 text-body [&_svg]:size-5",
+        lg: "h-[54px] px-7 text-body-lg [&_svg]:size-5",
+        icon: "size-[46px] [&_svg]:size-5",
       },
     },
     defaultVariants: { variant: "primary", size: "md" },

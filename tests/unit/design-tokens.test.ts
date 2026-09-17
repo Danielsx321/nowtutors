@@ -52,9 +52,56 @@ describe("design tokens: contrast floors (SPEC §10.3)", () => {
     expect(bad).toEqual([]);
   });
 
-  it("has no yellow signal role any more (Noora, 2026-09-16: green is live now)", () => {
+  // Yellow came back in v2 as `highlight`, the secondary button fill. It is
+  // still not a signal: green alone means live (Noora, 2026-09-16).
+  it("has no yellow signal role any more (green is live now)", () => {
     expect(Object.keys(tokens)).not.toContain("signal");
     expect(css).not.toMatch(/--signal\b/);
+  });
+});
+
+/**
+ * v2 bans the tells that made the mockups look templated (DESIGN.md, "Banned
+ * tells"). Two of them are cheap to catch mechanically.
+ */
+describe("design tokens: banned tells (DESIGN.md v2)", () => {
+  /** Gradients allowed on purpose, with the reason. */
+  const GRADIENT_ALLOWED = new Set([
+    // The globe's fallback sphere, drawn before WebGL is ready or when it is
+    // unavailable. A sphere without a gradient is a flat disc.
+    "src/components/features/home/globe.tsx",
+    // The skeleton shimmer sweep, which is motion, not decoration.
+    "src/components/ui/skeleton.tsx",
+  ]);
+
+  it("uses no CSS gradient in src/ outside the allowlist", () => {
+    const hits: string[] = [];
+    for (const file of walk(join(ROOT, "src"))) {
+      const rel = relative(ROOT, file);
+      if (GRADIENT_ALLOWED.has(rel)) continue;
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          if (/(linear|radial|conic)-gradient\(|\bbg-gradient-to-\b/.test(line)) {
+            hits.push(`${rel}:${i + 1}: ${line.trim()}`);
+          }
+        });
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it("never draws the orange spark as text (spark-text is the readable one)", () => {
+    const hits: string[] = [];
+    for (const file of walk(join(ROOT, "src"))) {
+      const rel = relative(ROOT, file);
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          // `text-spark-text` is fine; `text-spark` on its own is not.
+          if (/\btext-spark(?!-text)\b/.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
+        });
+    }
+    expect(hits).toEqual([]);
   });
 });
 
