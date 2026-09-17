@@ -4,8 +4,8 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-17)
 
-**LIVE-GLOBE REBUILD Part B (site header and full footer) is BUILT on `design-v2-site-shell`, PR open, not
-merged. No migration, no prod step.** `SiteShell` (header + main + footer) now wraps every public-facing page:
+**LIVE-GLOBE REBUILD Part B (site header and full footer) is MERGED via PR #86 (`b4a1e74`), deployed. No
+migration, no prod step.** `SiteShell` (header + main + footer) now wraps every public-facing page:
 the public routes, log in, sign up, forgot and reset password, onboarding, suspended,
 `/tutor/pending-approval` and a new 404. `SiteHeader` is the mockup's pill nav (Find tutors, Live now, Teach)
 with the current page as a teal pill, Log in and Sign up signed out, the avatar and a link to the role home
@@ -18,8 +18,8 @@ group to escape the tutor app shell (guards unchanged). `PublicHeader` and `Publ
 binding interleaved (`invalid input value for enum tutor_approval_status: "f"`) and `/` hung for two minutes
 once the footer read the count on the same render; the condition is built per query now (DECISIONS item 6).
 Gates: typecheck and lint clean, 713 unit, 99 DOM (13 new), build passed; seven public routes checked in a
-browser at 1440 and 360, header and footer on every one, no overflow, 404 returning 404. **Next:** Daniels
-merges, then Part C (Home and Browse split).
+browser at 1440 and 360, header and footer on every one, no overflow, 404 returning 404. **Next:** Part C (Home and
+Browse split, and the globe) starts from `main`.
 
 **LIVE-GLOBE REBUILD Part A (foundation v2) is MERGED via PR #84 (`33a7e49`), deployed. No
 migration, no prod step.** The canvas is a warm off-white (`ground` `#F1F1EF`, `#0E0F12` in rooms) with white
