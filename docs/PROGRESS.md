@@ -4,6 +4,22 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-17)
 
+**LIVE-GLOBE REBUILD Part A (foundation v2) is BUILT on `design-v2-foundation`, PR open, not merged. No
+migration, no prod step.** The canvas is a warm off-white (`ground` `#F1F1EF`, `#0E0F12` in rooms) with white
+cards on it. New roles: `ground`, `highlight` (yellow), `ink` (neutral solid), `spark` (orange marks) and
+`spark-text` (the readable orange). `primary` is now the brand teal, and in a room it inverts to a light pill.
+Button variants are `primary` / `highlight` / `ink` / `outline` / `ghost` / `live` / `danger`, at 38 / 46 / 54px,
+with `secondary` a deprecated alias of `outline`. Radii: cards 22, panels and modals 26, photo insets 15,
+inputs 14. `Card interactive` lifts 3px on hover under `motion-safe:`. Two v2 rules are enforced by the token
+test: no CSS gradient in `src/` outside a named allowlist, and no `text-spark`. `DESIGN.md` is rewritten for v2;
+SPEC §2 carries `cobe` (approved, installed in Part C where the globe is built) and §10.1/§10.3 carry the new
+tokens, shape and banned tells. Two plan colours failed the contrast floor on the new ground and were corrected
+(DECISIONS "Live-globe rebuild Part A", items 2 and 3). Gates: typecheck and lint clean, 713 unit (8 new), 86
+DOM, build passed; kitchen sink checked at 1440 and 360 in both themes, no page overflow, every sanctioned pair
+clearing its floor on screen. The rest of the app still wears Part 1 to 4 styling until Parts B to H convert it.
+**Next:** Daniels merges, then Part B (site header and full footer on every public page). Plan: workspace
+`plans/2026-09-17-nowtutors-live-globe-rebuild.md`.
+
 **DESIGN OVERHAUL Part 4 (live moments) is MERGED via PR #82 (`f643587`), deployed. No migration, no prod
 step.** Rooms are dark. The instant room opens on a lobby (device check, mic meter, speaker test, Join disabled
 until it passes), then the tutor's video in a spotlight with the student as a small tile, a labelled control bar,

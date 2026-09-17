@@ -16,7 +16,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       type={type}
       aria-invalid={invalid || undefined}
       className={cn(
-        "focus-ring h-11 w-full rounded-md border bg-surface-raised px-3 text-body text-text transition-colors",
+        "focus-ring h-11 w-full rounded-lg border bg-surface-raised px-3 text-body text-text transition-colors",
         "placeholder:text-text-muted",
         "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60",
         invalid

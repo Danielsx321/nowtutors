@@ -111,7 +111,7 @@ export function DatePicker({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "focus-ring flex h-11 w-full items-center gap-2 rounded-md border bg-surface-raised px-3 text-body transition-colors",
+          "focus-ring flex h-11 w-full items-center gap-2 rounded-lg border bg-surface-raised px-3 text-body transition-colors",
           "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60",
           invalid ? "border-danger" : "border-border hover:border-border-strong",
           value ? "text-text" : "text-text-muted",

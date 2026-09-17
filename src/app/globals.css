@@ -15,21 +15,34 @@
    sanctioned pair clears its WCAG floor.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --surface: #FFFFFF;
+  /* `ground` is the page canvas (v2: a warm off-white, not white, so white
+     cards read as cards). `surface` is kept as the older name for the same
+     colour so every existing `bg-surface` stays correct; new code uses
+     `bg-ground` for the canvas and `bg-surface-raised` for cards. */
+  --ground: #F1F1EF;
+  --surface: #F1F1EF;
   --surface-raised: #FFFFFF;
-  --surface-muted: #F4F5F7;
+  --surface-muted: #E9E9E5;
   --surface-inverse: #15171C;
-  --text: #15171C;
-  --text-muted: #5A6070;
+  --text: #111214;
+  --text-muted: #63676E;
   --text-on-inverse: #FFFFFF;
-  --primary: #15171C;
+  --primary: #0B3A47;
   --on-primary: #FFFFFF;
+  --highlight: #F6C544;
+  --on-highlight: #111214;
+  --ink: #111214;
+  --on-ink: #FFFFFF;
+  /* `spark` is orange for marks only (globe dots, small badges). Text and
+     icons that must be readable use `spark-text`, which clears 4.5:1. */
+  --spark: #E8843A;
+  --spark-text: #A85416;
   --accent: #0B3A47;
   --live: #1E7A46;
   --on-live: #FFFFFF;
   --live-surface: #E6F7EC;
-  --border: #E4E6EA;
-  --border-strong: #8A909C;
+  --border: #E2E2DF;
+  --border-strong: #767C88;
   --focus: #0B3A47;
   --danger: #B3261E;
   --on-danger: #FFFFFF;
@@ -46,29 +59,40 @@
 }
 
 .theme-dark {
-  --surface: #111216;
-  --surface-raised: #1B1D23;
-  --surface-muted: #1B1D23;
+  /* Room values re-checked against the session-room mockup: #0E0F12 stage,
+     #16181D bars and cards. */
+  --ground: #0E0F12;
+  --surface: #0E0F12;
+  --surface-raised: #16181D;
+  --surface-muted: #16181D;
   --surface-inverse: #15171C;
   --text: #F2F3F5;
   --text-muted: #A4A9B4;
   --text-on-inverse: #FFFFFF;
+  /* In a room the loud action stays a light fill: teal on near-black is too
+     dim to carry a button (1.5:1 against the stage). */
   --primary: #F2F3F5;
-  --on-primary: #15171C;
+  --on-primary: #0E0F12;
+  --highlight: #F6C544;
+  --on-highlight: #111214;
+  --ink: #F2F3F5;
+  --on-ink: #0E0F12;
+  --spark: #E8843A;
+  --spark-text: #F0A868;
   --accent: #7FC4D1;
   --live: #5FD68A;
-  --on-live: #111216;
-  --live-surface: #1B1D23;
+  --on-live: #0E0F12;
+  --live-surface: #16181D;
   --border: #2A2E37;
-  --border-strong: #6B7280;
+  --border-strong: #767C88;
   --focus: #7FC4D1;
   --danger: #FF8A80;
-  --on-danger: #111216;
-  --danger-surface: #1B1D23;
+  --on-danger: #0E0F12;
+  --danger-surface: #16181D;
   --warning: #FFC857;
-  --warning-surface: #1B1D23;
+  --warning-surface: #16181D;
   --success: #5FD68A;
-  --success-surface: #1B1D23;
+  --success-surface: #16181D;
 
   --scrim: rgb(0 0 0 / 0.7);
 
@@ -108,20 +132,25 @@
   --text-caption: 12px;
   --text-caption--line-height: 16px;
 
-  /* Radii, derived from one base. Controls `md`, cards `xl` (20px outer with
-     a 14px photo inset), chips and primary buttons `full`. */
+  /* Radii. v2 is rounder: cards 22px, the panels that hold them 26px, photo
+     insets 15px, inputs and controls 14px, chips and buttons `full`. */
   --radius: 0.75rem;
   --radius-sm: calc(var(--radius) - 6px); /* 6px */
   --radius-md: calc(var(--radius) - 2px); /* 10px */
-  --radius-lg: calc(var(--radius) + 2px); /* 14px, photo insets */
-  --radius-xl: calc(var(--radius) + 8px); /* 20px, cards */
+  --radius-lg: calc(var(--radius) + 2px); /* 14px, inputs and controls */
+  --radius-photo: 15px; /* photo insets inside a card */
+  --radius-xl: calc(var(--radius) + 8px); /* 20px, kept for older call sites */
+  --radius-card: 22px;
+  --radius-panel: 26px;
   --radius-full: 9999px;
 
   /* Elevation. Cards have no shadow at rest (they separate by border); these
-     are for things that float: popovers, drawers, modals. */
+     are for things that float: popovers, drawers, modals. `lift` is the one
+     hover state a card is allowed, paired with a 3px rise. */
   --shadow-sm: 0 1px 2px 0 rgb(21 23 28 / 0.06);
   --shadow-md: 0 4px 12px -2px rgb(21 23 28 / 0.1);
   --shadow-lg: 0 12px 32px -8px rgb(21 23 28 / 0.18);
+  --shadow-lift: 0 10px 28px -12px rgb(17 18 20 / 0.22);
 
   /* Layout */
   --container-page: 1200px;
@@ -133,6 +162,7 @@
 /* Role → utility mapping. `inline` so the utilities read the variable at use
    time and pick up the `.theme-dark` override. */
 @theme inline {
+  --color-ground: var(--ground);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-surface-muted: var(--surface-muted);
@@ -142,6 +172,12 @@
   --color-text-on-inverse: var(--text-on-inverse);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
+  --color-highlight: var(--highlight);
+  --color-on-highlight: var(--on-highlight);
+  --color-ink: var(--ink);
+  --color-on-ink: var(--on-ink);
+  --color-spark: var(--spark);
+  --color-spark-text: var(--spark-text);
   --color-accent: var(--accent);
   --color-live: var(--live);
   --color-on-live: var(--on-live);
@@ -196,7 +232,7 @@
    Base
    ───────────────────────────────────────────────────────────────────────── */
 body {
-  background-color: var(--surface);
+  background-color: var(--ground);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-body);

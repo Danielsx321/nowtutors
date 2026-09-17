@@ -4,7 +4,15 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Demo, Section, type Surface } from "./kit";
 
-const variants = ["primary", "secondary", "ghost", "live", "danger"] as const;
+const variants = [
+  "primary",
+  "highlight",
+  "ink",
+  "outline",
+  "ghost",
+  "live",
+  "danger",
+] as const;
 const sizes = ["sm", "md", "lg"] as const;
 
 export function ButtonsSection({ surface }: { surface: Surface }) {
@@ -33,7 +41,7 @@ export function ButtonsSection({ surface }: { surface: Surface }) {
         <Button>
           <Plus /> New booking
         </Button>
-        <Button variant="secondary">
+        <Button variant="outline">
           <Plus /> Add subject
         </Button>
       </Demo>

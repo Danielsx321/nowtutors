@@ -19,7 +19,7 @@ export const SelectTrigger = React.forwardRef<
     ref={ref}
     aria-invalid={invalid || undefined}
     className={cn(
-      "focus-ring flex h-11 w-full items-center justify-between gap-2 rounded-md border bg-surface-raised px-3 text-body text-text transition-colors",
+      "focus-ring flex h-11 w-full items-center justify-between gap-2 rounded-lg border bg-surface-raised px-3 text-body text-text transition-colors",
       "data-[placeholder]:text-text-muted",
       "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60",
       invalid ? "border-danger" : "border-border hover:border-border-strong",
