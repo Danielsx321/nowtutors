@@ -259,18 +259,42 @@ export interface LiveStrip {
  * The home hero's "N tutors live now" and its faces (research report 01: the
  * one thing no competitor can show). Real numbers only; zero renders zero.
  */
-export async function getLiveStrip(limit = 6): Promise<LiveStrip> {
-  const base = and(
+/**
+ * The "is this tutor actually bookable" condition, built fresh per call.
+ *
+ * It must NOT be hoisted into a shared constant: drizzle's `and(...)` returns
+ * one SQL object carrying its own parameter list, and handing the same instance
+ * to two queries that run concurrently interleaves their binding. That showed
+ * up as `invalid input value for enum tutor_approval_status: "f"` (the boolean
+ * from the second condition landing in the first query's $1) once the site
+ * footer started reading the live count on the same render as the page.
+ */
+function liveAndBookable() {
+  return and(
     eq(tutorProfiles.approvalStatus, "approved"),
     eq(profiles.isSuspended, false),
   );
+}
+
+/** Just the number of tutors live right now: the site footer's line. */
+export async function getLiveTutorCount(): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(liveTutors)
+    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+    .where(liveAndBookable());
+  return row?.n ?? 0;
+}
+
+export async function getLiveStrip(limit = 6): Promise<LiveStrip> {
   const [countRows, faces] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(liveTutors)
       .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
       .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
-      .where(base),
+      .where(liveAndBookable()),
     db
       .select({
         userId: tutorProfiles.userId,
@@ -282,7 +306,7 @@ export async function getLiveStrip(limit = 6): Promise<LiveStrip> {
       .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
       .innerJoin(publicProfiles, eq(publicProfiles.id, tutorProfiles.userId))
       .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
-      .where(base)
+      .where(liveAndBookable())
       .orderBy(sql`(${liveTutors.liveMode} = 'broadcast')`, desc(tutorProfiles.completedSessions))
       .limit(limit),
   ]);

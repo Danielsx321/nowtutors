@@ -1,18 +1,22 @@
-import { Wordmark } from "@/components/layout/wordmark";
+import { SiteShell } from "@/components/layout/site-shell";
 
 /**
- * Public auth shell: a centred raised card on the muted canvas (SPEC §6, §10). Auth
- * pages are public; per-page server logic redirects an already-signed-in user.
+ * Auth shell: the same header and footer as the rest of the site, with the form
+ * on a raised card in the middle. Signing in used to happen on a bare page with
+ * a wordmark and no way back into the site; now log in, sign up and the
+ * password pages carry the whole shell (SPEC §10.3, approved mockup "Log in").
+ *
+ * Auth pages are public; per-page server logic redirects an already-signed-in
+ * user.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-surface-muted">
-      <header className="w-full px-4 py-6 md:px-6">
-        <Wordmark href="/" size="sm" />
-      </header>
-      <main className="flex flex-1 items-center justify-center px-4 pb-16">
-        <div className="w-full max-w-md rounded-xl border border-border bg-surface-raised p-6 md:p-8">{children}</div>
-      </main>
-    </div>
+    <SiteShell>
+      <div className="flex items-center justify-center px-4 py-14 md:py-20">
+        <div className="w-full max-w-md rounded-panel border border-border bg-surface-raised p-6 md:p-8">
+          {children}
+        </div>
+      </div>
+    </SiteShell>
   );
 }
