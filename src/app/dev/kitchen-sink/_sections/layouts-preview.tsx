@@ -2,8 +2,8 @@
 
 import { CalendarDays, Wallet } from "lucide-react";
 import { Section, Demo, type Surface } from "./kit";
-import { PublicHeader } from "@/components/layout/public-header";
-import { PublicFooter } from "@/components/layout/public-footer";
+import { SiteHeader } from "@/components/layout/site-header";
+import { SiteFooter } from "@/components/layout/site-footer";
 import { SidebarNav } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { StatCard } from "@/components/ui/stat-card";
@@ -11,25 +11,26 @@ import { Wordmark } from "@/components/layout/wordmark";
 import { studentNav } from "@/components/layout/nav-config";
 
 /**
- * Framed previews of the two layouts. The real header, footer, sidebar nav and
- * topbar are reused as-is; Part 2 of the design overhaul rebuilds them, so
- * until then they render through the compatibility aliases.
+ * Framed previews of the two shells. The real header, footer, sidebar nav and
+ * topbar are reused as-is. The site footer normally reads the live count on the
+ * server; here it is passed a fixed number so the preview has something to
+ * show.
  */
 export function LayoutsPreviewSection({ surface }: { surface: Surface }) {
   return (
     <Section id="layouts" title="Layouts" surface={surface}>
-      <Demo label="Public shell (header + footer): rebuilt in Part 2" surface={surface} className="items-stretch">
+      <Demo label="Site shell: header and full footer, on every public-facing page" surface={surface} className="items-stretch">
         <div className="w-full overflow-hidden rounded-lg border border-border">
-          <PublicHeader />
-          <div className="bg-surface px-6 py-12 text-center">
+          <SiteHeader viewer={null} />
+          <div className="bg-ground px-6 py-12 text-center">
             <p className="font-display text-h2 font-semibold text-text">Learn anything, live.</p>
             <p className="mt-2 text-body text-text-muted">Public page content sits here.</p>
           </div>
-          <PublicFooter />
+          <SiteFooter liveCount={3} />
         </div>
       </Demo>
 
-      <Demo label="Authenticated shell: rebuilt in Part 2" surface={surface} className="items-stretch">
+      <Demo label="Authenticated shell (signed-in pages keep their own chrome)" surface={surface} className="items-stretch">
         <div className="flex w-full overflow-hidden rounded-lg border border-border">
           <div className="hidden w-56 shrink-0 flex-col gap-4 bg-surface-inverse p-4 sm:flex">
             <span className="px-2">

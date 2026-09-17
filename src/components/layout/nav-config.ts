@@ -41,6 +41,18 @@ export const publicNav: { label: string; href: string }[] = [
   { label: "Live now", href: "/live" },
 ];
 
+/**
+ * The pill nav in the site header (DESIGN.md v2). "Teach" points at signup,
+ * which is where a tutor starts (answered with the rebuild plan's open
+ * questions, 2026-09-17). "How it works" joins this list in Part C, with the
+ * home section it scrolls to: §10.3 means a nav item waits for its target.
+ */
+export const siteNav: { label: string; href: string }[] = [
+  { label: "Find tutors", href: "/tutors" },
+  { label: "Live now", href: "/live" },
+  { label: "Teach", href: "/signup" },
+];
+
 /** Order is the design overhaul's: the things a student does most, first. */
 export const studentNav: NavItem[] = [
   { label: "Home", href: "/dashboard", icon: Home },
