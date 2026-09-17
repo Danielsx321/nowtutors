@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-17)
 
-**LIVE-GLOBE REBUILD Part A (foundation v2) is BUILT on `design-v2-foundation`, PR open, not merged. No
+**LIVE-GLOBE REBUILD Part A (foundation v2) is MERGED via PR #84 (`33a7e49`), deployed. No
 migration, no prod step.** The canvas is a warm off-white (`ground` `#F1F1EF`, `#0E0F12` in rooms) with white
 cards on it. New roles: `ground`, `highlight` (yellow), `ink` (neutral solid), `spark` (orange marks) and
 `spark-text` (the readable orange). `primary` is now the brand teal, and in a room it inverts to a light pill.
@@ -17,7 +17,7 @@ tokens, shape and banned tells. Two plan colours failed the contrast floor on th
 (DECISIONS "Live-globe rebuild Part A", items 2 and 3). Gates: typecheck and lint clean, 713 unit (8 new), 86
 DOM, build passed; kitchen sink checked at 1440 and 360 in both themes, no page overflow, every sanctioned pair
 clearing its floor on screen. The rest of the app still wears Part 1 to 4 styling until Parts B to H convert it.
-**Next:** Daniels merges, then Part B (site header and full footer on every public page). Plan: workspace
+**Next:** Part B (site header and full footer on every public page) starts from `main`. Plan: workspace
 `plans/2026-09-17-nowtutors-live-globe-rebuild.md`.
 
 **DESIGN OVERHAUL Part 4 (live moments) is MERGED via PR #82 (`f643587`), deployed. No migration, no prod
