@@ -2,9 +2,9 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-16)
+## Current state (2026-09-17)
 
-**DESIGN OVERHAUL Part 4 (live moments) is BUILT on `design-part4-live`, PR open, not merged. No migration, no prod
+**DESIGN OVERHAUL Part 4 (live moments) is MERGED via PR #82 (`f643587`), deployed. No migration, no prod
 step.** Rooms are dark. The instant room opens on a lobby (device check, mic meter, speaker test, Join disabled
 until it passes), then the tutor's video in a spotlight with the student as a small tile, a labelled control bar,
 connection warnings from the SDK's own events, and time-left warnings at 5, 2 and 1 minutes; a proper end screen.
@@ -13,8 +13,12 @@ student's wait is `waiting-for-tutor.tsx` with two ways forward. `/live` has 16:
 subject filter; `/live/[id]` is a dark band with an ended card that offers a 1:1; the host has a live status bar and
 an End broadcast confirm. **Screen share, in-session chat and tutor notes moved to their own phase (Daniels).**
 DECISIONS "Design overhaul Part 4". Gates: typecheck and lint clean, 684 unit, 86 DOM (17 new), build passed.
-**Not yet run:** a two-person session on the test project and E2E 5 and 7 (RUNBOOK). **Next:** Daniels runs those,
-merges; then Part 5 (tutor surfaces) from `main`.
+E2E: `broadcast-two-viewers` passed on the Part 4 branch. `presence-ungraceful-exit` failed (the tutor test
+sign-in stays on `/login` for 15 s), and it fails **identically on pre-Part-4 `main`**, so it is pre-existing and
+not a design regression; its own investigation is open. **Not yet run:** a two-person session on the test project.
+**Next:** Parts 5 and 6 of the old plan are superseded by the live-globe rebuild (workspace
+`plans/2026-09-17-nowtutors-live-globe-rebuild.md`), which restyles the whole app in the direction Daniels
+approved on 2026-09-17; it starts from `main` with Part A (foundation v2 tokens).
 
 **DESIGN OVERHAUL Part 3 (public and student) is MERGED via PR #80 (`aca6172`), deployed. No migration, no prod
 step.** `/` stays one page (Daniels): a hero with the real live count and faces above the filter
