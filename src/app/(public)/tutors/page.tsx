@@ -9,7 +9,8 @@ import {
   SearchParamError,
   type TutorQuery,
 } from "@/lib/tutors/filters";
-import { browseHref, toSearchParams } from "@/lib/tutors/browse-url";
+import { redirect } from "next/navigation";
+import { browseHref, matchSubject, toSearchParams } from "@/lib/tutors/browse-url";
 import { browseTutors, countBrowseTutors, getSubjectTutorCounts } from "@/db/queries/tutors";
 import { getViewer } from "@/lib/auth/guards";
 import { getUsdPerCredit } from "@/lib/settings";
@@ -43,6 +44,29 @@ const PROMISE_AFTER = 3;
  */
 export default async function BrowsePage({ searchParams }: { searchParams: SearchParams }) {
   const params = toSearchParams(await searchParams);
+
+  // `?q=` is free text from the app's topbar search (Part E). It resolves to a
+  // subject here, on the server, the same way the search pill does in the
+  // browser: a match becomes `?subject=`, and a miss is said out loud.
+  let searchMiss: string | null = null;
+  const q = params.get("q")?.trim();
+  if (params.has("q")) {
+    params.delete("q");
+    if (q) {
+      const active = await db
+        .select({ slug: subjectsTable.slug, name: subjectsTable.name })
+        .from(subjectsTable)
+        .where(eq(subjectsTable.isActive, true));
+      const match = matchSubject(q, active);
+      if (match) {
+        params.delete("subject");
+        params.delete("cursor");
+        params.append("subject", match.slug);
+        redirect(browseHref(params));
+      }
+      searchMiss = q;
+    }
+  }
 
   // A present-but-invalid filter is rejected loudly, not silently dropped (§3.3).
   let query: TutorQuery;
@@ -106,7 +130,7 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
           Who do you want to learn with?
         </h1>
 
-        <SubjectSearch subjects={subjectRows} />
+        <SubjectSearch subjects={subjectRows} initialMiss={searchMiss} />
 
         <div className="mb-[22px] mt-6">
           <TutorFilterChips subjects={subjectRows} chipSubjects={chipSubjects} resultCount={total} />

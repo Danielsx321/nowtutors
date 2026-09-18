@@ -1,8 +1,9 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { profiles, tutorProfiles } from "@/db/schema";
+import { bookings, profiles, tutorProfiles } from "@/db/schema";
 import { liveTutors, publicProfiles } from "@/db/schema/views";
+import { bucketByMonth, minutesToHours, type MonthBucket } from "@/lib/dashboard/months";
 
 /**
  * Read-only aggregates for the home page and, from Part E on, the dashboards
@@ -74,4 +75,125 @@ export async function getHomeProof(): Promise<HomeProof> {
     tutors: Number(row?.tutors ?? 0),
     subjects: Number(row?.subjects ?? 0),
   };
+}
+
+/**
+ * Hours learned per month for a student (Part E): completed sessions of both
+ * kinds, scheduled and instant, bucketed by when they started in the
+ * student's timezone. `value` is hours to one decimal, `count` is sessions.
+ * The oldest month is fetched with a day of slack either side of UTC so the
+ * timezone bucketing, not the query, decides the edges.
+ */
+export async function getLearnerHoursByMonth(
+  studentId: string,
+  timeZone: string,
+  months = 5,
+  now = new Date(),
+): Promise<MonthBucket[]> {
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
+  const rows = await db
+    .select({
+      startedAt: bookings.startedAt,
+      scheduledStartAt: bookings.scheduledStartAt,
+      durationMinutes: bookings.durationMinutes,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(bookings.status, "completed"),
+        // An ISO string with a cast: a raw Date in a hand-written `sql` fragment
+        // isn't serialised by the driver (the integration test caught it).
+        sql`coalesce(${bookings.startedAt}, ${bookings.scheduledStartAt}) >= ${since.toISOString()}::timestamptz`,
+      ),
+    );
+  const buckets = bucketByMonth(
+    rows.map((r) => ({ at: r.startedAt ?? r.scheduledStartAt, value: r.durationMinutes ?? 0 })),
+    timeZone,
+    now,
+    months,
+  );
+  return buckets.map((b) => ({ ...b, value: minutesToHours(b.value) }));
+}
+
+export interface StudentTutor {
+  userId: string;
+  slug: string;
+  name: string;
+  avatarUrl: string | null;
+  /** In `live_tutors` for instant sessions AND taking requests: "Request" makes sense. */
+  instantNow: boolean;
+  /** In `live_tutors` at all (instant or broadcasting): the green dot. */
+  liveNow: boolean;
+  subject: string | null;
+  /** Completed sessions with this student. */
+  sessions: number;
+}
+
+/**
+ * "Your tutors" (Part E; sidebar and dashboard right column): tutors this
+ * student has booked (completed, confirmed or in progress) or saved, that are
+ * still approved and not suspended. Live tutors first, then by sessions
+ * together, then most recent. One query; conditions are inline, not shared.
+ */
+export async function getStudentTutors(studentId: string, limit = 4): Promise<StudentTutor[]> {
+  const rows = await db.execute<{
+    user_id: string;
+    slug: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    accepts_instant: boolean;
+    live_mode: string | null;
+    live_user: string | null;
+    subject: string | null;
+    sessions: number;
+  }>(sql`
+    with mine as (
+      select b.tutor_id,
+             count(*) filter (where b.status = 'completed')::int as sessions,
+             max(coalesce(b.started_at, b.scheduled_start_at)) as last_at
+        from bookings b
+       where b.student_id = ${studentId}
+         and b.status in ('completed', 'confirmed', 'in_progress')
+       group by b.tutor_id
+      union all
+      select f.tutor_id, 0, f.created_at
+        from favourites f
+       where f.student_id = ${studentId}
+    )
+    select tp.user_id, tp.slug, pp.display_name, pp.avatar_url, tp.accepts_instant,
+           lt.live_mode, lt.user_id as live_user,
+           (select s.name from tutor_subjects ts join subjects s on s.id = ts.subject_id
+             where ts.tutor_id = tp.user_id order by s.sort_order limit 1) as subject,
+           sum(m.sessions)::int as sessions
+      from mine m
+      join tutor_profiles tp on tp.user_id = m.tutor_id
+      join public_profiles pp on pp.id = tp.user_id
+      join profiles p on p.id = tp.user_id
+      left join live_tutors lt on lt.user_id = tp.user_id
+     where tp.approval_status = 'approved' and not p.is_suspended
+     group by tp.user_id, tp.slug, pp.display_name, pp.avatar_url, tp.accepts_instant, lt.live_mode, lt.user_id
+     order by (lt.user_id is not null) desc, sum(m.sessions) desc, max(m.last_at) desc nulls last
+     limit ${limit}
+  `);
+  return Array.from(rows as Iterable<{
+    user_id: string;
+    slug: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    accepts_instant: boolean;
+    live_mode: string | null;
+    live_user: string | null;
+    subject: string | null;
+    sessions: number;
+  }>).map((r) => ({
+    userId: r.user_id,
+    slug: r.slug,
+    name: r.display_name ?? "Tutor",
+    avatarUrl: r.avatar_url,
+    liveNow: r.live_user != null,
+    instantNow: r.live_user != null && r.live_mode !== "broadcast" && r.accepts_instant,
+    subject: r.subject,
+    sessions: Number(r.sessions ?? 0),
+  }));
 }

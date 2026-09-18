@@ -18,7 +18,7 @@ describe("shouldRedirectToBrowse (Part C: old /?filter links forward to /tutors)
     expect(shouldRedirectToBrowse(p("utm_source=x&ref=y"))).toBeNull();
   });
 
-  it.each(["subject", "lang", "price", "live", "sort", "minRating", "cursor"])(
+  it.each(["subject", "lang", "price", "live", "sort", "minRating", "cursor", "q"])(
     "forwards when %s is present",
     (key) => {
       expect(shouldRedirectToBrowse(p(`${key}=x`))).toBe(`/tutors?${key}=x`);

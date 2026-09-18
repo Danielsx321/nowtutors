@@ -234,6 +234,8 @@ export interface BookingListItem {
   otherPartyId: string;
   otherPartyName: string | null;
   otherPartyAvatarUrl: string | null;
+  /** What the student asked for help with, if anything: the session card's title (Part E). */
+  notes: string | null;
 }
 
 /**
@@ -263,6 +265,7 @@ export async function getBookingsForParticipant(
       otherPartyName: other.displayName,
       otherPartyFullName: other.fullName,
       otherPartyAvatarUrl: other.avatarUrl,
+      notes: bookings.studentNotes,
     })
     .from(bookings)
     .leftJoin(subjects, eq(subjects.id, bookings.subjectId))
@@ -281,6 +284,7 @@ export async function getBookingsForParticipant(
     otherPartyId: r.otherPartyId,
     otherPartyName: r.otherPartyName ?? r.otherPartyFullName ?? null,
     otherPartyAvatarUrl: r.otherPartyAvatarUrl,
+    notes: r.notes,
   }));
 }
 
@@ -423,6 +427,7 @@ export async function getBookingDetailForParticipant(
   return {
     id: row.id,
     status: row.status,
+    notes: row.studentNotes,
     bookingType: row.type,
     studentId: row.studentId,
     tutorId: row.tutorId,

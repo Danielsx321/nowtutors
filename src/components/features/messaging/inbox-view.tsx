@@ -26,8 +26,10 @@ export async function InboxView({
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 py-6">
-      <h1 className="text-h2 font-bold text-gray-700">Messages</h1>
+    <div className="mx-auto max-w-4xl space-y-4 py-2">
+      <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">
+        Messages
+      </h1>
       <ConversationList
         items={items}
         basePath={basePath}
