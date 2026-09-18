@@ -4,8 +4,9 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-18)
 
-**LIVE-GLOBE REBUILD Part E (app shell v2 and student dashboard) is IN REVIEW on branch
-`design-v2-shell-student`. No migration, no new dependency.** All three roles get the new shell: white 250px
+**LIVE-GLOBE REBUILD Part E (app shell v2 and student dashboard) is MERGED via PR #92 (`ea956f8`), deployed
+(promoted by hand: Vercel staged the production build instead of assigning the domain). No migration, no new
+dependency.** All three roles get the new shell: white 250px
 sidebar at `lg` (Overview, the role's people section, Account with Log out), icon rail `md` to `lg`, bottom bar
 below `md`, teal active pill, orange unread counts, and a topbar with a search pill (students), the Messages
 circle and the avatar with the name. The student dashboard follows the mockup with real data: teal banner with
@@ -15,9 +16,10 @@ Request or Book again) and the bookings table across the full width. Topbar sear
 which resolves to a subject. New: `src/components/features/dashboard/*`, `src/lib/dashboard/{months,when}.ts`,
 `getLearnerHoursByMonth`, `getStudentTutors`, a kitchen-sink Dashboard section. Gates: typecheck and lint
 clean, 759 unit (14 new), 114 DOM (7 new), 3 new integration tests passing on the test database (one caught
-a real bug), build passed; the dashboard layout checked in the kitchen sink at 1440 and 360. **Next:** Daniels
-merges, then Claude checks `/dashboard` on production through Daniels' signed-in student Chrome session, then
-the docs PR, then Part F.
+a real bug), build passed; the dashboard layout checked in the kitchen sink at 1440 and 360. Checked on
+production as a signed-in student (empty account): every block shows its empty state, no page errors. **Next:**
+Part F (tutor dashboard and tutor surfaces) starts from `main`. Check Vercel's production domain auto-assign
+so merges go live without a manual promote.
 
 **LIVE-GLOBE REBUILD Part D (tutor card and profile v2) is MERGED via PR #90 (`7b6381b`), deployed.
 No migration, no prod step, no new dependency.** The card now follows the mockup: 10px-padded white card, 15px
