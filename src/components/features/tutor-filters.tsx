@@ -2,28 +2,18 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Drawer,
-  DrawerBody,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PRICE_BANDS, PRICE_BAND_KEYS } from "@/lib/tutors/filters";
 import { LANGUAGES } from "@/lib/geo/languages";
+import { matchSubject, type Subject } from "@/lib/tutors/browse-url";
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "relevance", label: "Relevance" },
@@ -32,13 +22,10 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "most_sessions", label: "Most sessions" },
 ];
 
-export interface Subject {
-  slug: string;
-  name: string;
-}
+export type { Subject };
 
 /** The URL-backed filter state and its setters. Filters live in the query string so links are shareable (SPEC §7.2). */
-function useFilterParams(onNavigate?: () => void) {
+function useFilterParams() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -48,195 +35,295 @@ function useFilterParams(onNavigate?: () => void) {
       params.delete("cursor"); // any filter change resets pagination
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-      onNavigate?.();
     },
-    [router, pathname, onNavigate],
+    [router, pathname],
   );
 
+  const next = () => new URLSearchParams(searchParams);
+
   const toggleMulti = (key: string, value: string) => {
-    const params = new URLSearchParams(searchParams);
+    const params = next();
     const all = params.getAll(key);
     params.delete(key);
-    const next = all.includes(value) ? all.filter((v) => v !== value) : [...all, value];
-    next.forEach((v) => params.append(key, v));
+    const updated = all.includes(value) ? all.filter((v) => v !== value) : [...all, value];
+    updated.forEach((v) => params.append(key, v));
     push(params);
   };
 
   const setSingle = (key: string, value: string | null) => {
-    const params = new URLSearchParams(searchParams);
+    const params = next();
     if (value == null || params.get(key) === value) params.delete(key);
     else params.set(key, value);
     push(params);
   };
 
-  const selectedSubjects = searchParams.getAll("subject");
-  const selectedLangs = searchParams.getAll("lang");
-  const priceBand = searchParams.get("price");
-  const liveNow = searchParams.get("live") === "1";
-  const sort = searchParams.get("sort") ?? "relevance";
-  const hasFilters =
-    selectedSubjects.length > 0 || selectedLangs.length > 0 || !!priceBand || liveNow || sort !== "relevance";
+  /** Set a key outright (no toggling off), or remove it with null. */
+  const setValue = (key: string, value: string | null) => {
+    const params = next();
+    if (value == null) params.delete(key);
+    else params.set(key, value);
+    push(params);
+  };
 
-  return { push, toggleMulti, setSingle, selectedSubjects, selectedLangs, priceBand, liveNow, sort, hasFilters };
-}
+  const clear = (key: string) => {
+    const params = next();
+    params.delete(key);
+    push(params);
+  };
 
-function SortSelect({ id, sort, onChange, className }: { id: string; sort: string; onChange: (v: string) => void; className?: string }) {
-  return (
-    <Select value={sort} onValueChange={onChange}>
-      <SelectTrigger id={id} aria-label="Sort tutors" className={className}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {SORT_OPTIONS.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+  return {
+    push,
+    next,
+    toggleMulti,
+    setSingle,
+    setValue,
+    clear,
+    selectedSubjects: searchParams.getAll("subject"),
+    selectedLangs: searchParams.getAll("lang"),
+    priceBand: searchParams.get("price"),
+    liveNow: searchParams.get("live") === "1",
+    sort: searchParams.get("sort") ?? "relevance",
+  };
 }
 
 /**
- * The filter groups: price, subjects, language. On `md` and up they sit in the
- * left rail; on phones they open in a sheet from the bar, where `withSort` adds
- * the sort select (the bar has no room for it there).
+ * The search pill on browse (pages.html, Browse). Tutors are found by subject,
+ * so the pill searches subjects: the browser suggests names from the real list
+ * as you type, and Search picks the best match and filters by it (`?subject=`),
+ * keeping the other filters. Text that matches no subject says so instead of
+ * returning a silently empty grid.
  */
-export function TutorFilters({
-  subjects,
-  onNavigate,
-  withSort = false,
-}: {
-  subjects: Subject[];
-  onNavigate?: () => void;
-  withSort?: boolean;
-}) {
-  const f = useFilterParams(onNavigate);
+export function SubjectSearch({ subjects }: { subjects: Subject[] }) {
+  const f = useFilterParams();
+  const selectedName =
+    f.selectedSubjects.length === 1
+      ? (subjects.find((s) => s.slug === f.selectedSubjects[0])?.name ?? "")
+      : "";
+  const [text, setText] = React.useState(selectedName);
+  const [miss, setMiss] = React.useState<string | null>(null);
+  const listId = React.useId();
+
+  React.useEffect(() => setText(selectedName), [selectedName]);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const params = f.next();
+    params.delete("subject");
+    if (!text.trim()) {
+      setMiss(null);
+      f.push(params);
+      return;
+    }
+    const match = matchSubject(text, subjects);
+    if (!match) {
+      setMiss(text.trim());
+      return;
+    }
+    setMiss(null);
+    setText(match.name);
+    params.append("subject", match.slug);
+    f.push(params);
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-h3 font-semibold text-text">Filters</h2>
-        {f.hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => f.push(new URLSearchParams())}>
-            Clear all
-          </Button>
-        )}
-      </div>
-
-      {withSort && (
-        <div className="space-y-1.5">
-          <Label htmlFor="sort-sheet">Sort</Label>
-          <SortSelect id="sort-sheet" sort={f.sort} onChange={(v) => f.setSingle("sort", v)} />
-        </div>
-      )}
-
-      <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-text">Price per hour</legend>
-        {PRICE_BAND_KEYS.map((key) => (
-          <label key={key} className="flex cursor-pointer items-center gap-2 text-body text-text">
-            <Checkbox
-              checked={f.priceBand === key}
-              onCheckedChange={() => f.setSingle("price", f.priceBand === key ? null : key)}
-            />
-            {PRICE_BANDS[key].label}
-          </label>
-        ))}
-      </fieldset>
-
-      <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-text">Subjects</legend>
-        <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+    <form role="search" onSubmit={onSubmit} className="max-w-[720px]">
+      <div className="flex items-center gap-2 rounded-full border border-border bg-surface-raised py-1.5 pl-5 pr-1.5 focus-within:border-primary">
+        <Search className="size-5 shrink-0 text-text-muted" aria-hidden />
+        <label htmlFor="subject-search" className="sr-only">
+          Search subjects
+        </label>
+        <input
+          id="subject-search"
+          list={listId}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setMiss(null);
+          }}
+          placeholder="Search a subject, like Maths or IELTS"
+          autoComplete="off"
+          aria-describedby={miss ? "subject-search-miss" : undefined}
+          className="min-w-0 flex-1 bg-transparent text-body-lg font-medium text-text outline-none placeholder:font-normal placeholder:text-text-muted"
+        />
+        <datalist id={listId}>
           {subjects.map((s) => (
-            <label key={s.slug} className="flex cursor-pointer items-center gap-2 text-body text-text">
-              <Checkbox
-                checked={f.selectedSubjects.includes(s.slug)}
-                onCheckedChange={() => f.toggleMulti("subject", s.slug)}
-              />
-              <span className="line-clamp-1">{s.name}</span>
-            </label>
+            <option key={s.slug} value={s.name} />
           ))}
-        </div>
-      </fieldset>
+        </datalist>
+        <Button type="submit" size="sm">
+          Search
+        </Button>
+      </div>
+      {miss && (
+        <p id="subject-search-miss" role="status" className="mt-2 pl-5 text-small text-text-muted">
+          No subject matches &ldquo;{miss}&rdquo;. Try a broader word, or pick a subject below.
+        </p>
+      )}
+    </form>
+  );
+}
 
-      <fieldset className="space-y-2">
-        <legend className="text-small font-medium text-text">Language</legend>
-        {LANGUAGES.map((lang) => (
-          <label key={lang} className="flex cursor-pointer items-center gap-2 text-body text-text">
-            <Checkbox
-              checked={f.selectedLangs.includes(lang)}
-              onCheckedChange={() => f.toggleMulti("lang", lang)}
-            />
-            {lang}
-          </label>
-        ))}
-      </fieldset>
-    </div>
+const chip =
+  "focus-ring inline-flex h-[38px] shrink-0 items-center gap-[7px] rounded-full border px-3.5 text-small font-medium transition-colors";
+const chipOff = "border-border-strong/40 bg-surface-raised text-text hover:bg-surface-muted";
+const chipOn = "border-ink bg-ink text-on-ink";
+
+function DropdownChip({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className={cn(chip, active ? chipOn : chipOff)}>
+        {label}
+        <ChevronDown className="size-4" aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">{children}</DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 /**
- * The bar above the results, at every width (research report 01, finding 8):
- * the "Live now" chip first, because it is the product's signature filter, then
- * the result count across all pages, then sort on `md` and up or a Filters
- * sheet on phones.
+ * The chip row above the results (pages.html, Browse; research report 01,
+ * finding 8): "Live now" first, because it is the product's signature filter;
+ * then All subjects and the most-taught subjects as chips; Price and Language
+ * as dropdown chips; then the result count across all pages and the sort.
+ * Every filter the old side rail had is here, so there is no rail and no
+ * phone-only sheet: on a phone the chips scroll sideways.
  */
-export function TutorFiltersBar({
+export function TutorFilterChips({
   subjects,
+  chipSubjects,
   resultCount,
 }: {
+  /** Every active subject, to name a selected one that isn't a chip. */
   subjects: Subject[];
+  /** The few subjects shown as chips (the most-taught ones). */
+  chipSubjects: Subject[];
   resultCount: number;
 }) {
-  const [open, setOpen] = React.useState(false);
   const f = useFilterParams();
+
+  // A selected subject always shows as an "on" chip, even if it isn't one of the top few.
+  const shown = [...chipSubjects];
+  for (const slug of f.selectedSubjects) {
+    if (!shown.some((s) => s.slug === slug)) {
+      const s = subjects.find((x) => x.slug === slug);
+      shown.push(s ?? { slug, name: slug });
+    }
+  }
+
+  const priceLabel = f.priceBand && f.priceBand in PRICE_BANDS
+    ? PRICE_BANDS[f.priceBand as keyof typeof PRICE_BANDS].label
+    : "Price";
+  const langLabel =
+    f.selectedLangs.length === 0
+      ? "Language"
+      : f.selectedLangs.length === 1
+        ? f.selectedLangs[0]!
+        : `${f.selectedLangs.length} languages`;
+  const sortLabel = SORT_OPTIONS.find((o) => o.value === f.sort)?.label ?? "Relevance";
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        aria-pressed={f.liveNow}
-        onClick={() => f.setSingle("live", f.liveNow ? null : "1")}
-        className={cn(
-          "focus-ring inline-flex h-9 items-center gap-2 rounded-full border px-4 text-small font-semibold transition-colors",
-          f.liveNow
-            ? "border-live bg-live-surface text-live"
-            : "border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
-        )}
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div
+        role="group"
+        aria-label="Filters"
+        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0"
       >
-        <span
-          aria-hidden
-          className={cn("size-2 rounded-full", f.liveNow ? "animate-pulse-live bg-live" : "bg-live")}
-        />
-        Live now
-      </button>
+        <button
+          type="button"
+          aria-pressed={f.liveNow}
+          onClick={() => f.setSingle("live", f.liveNow ? null : "1")}
+          className={cn(
+            chip,
+            f.liveNow
+              ? "border-live bg-live-surface text-live"
+              : "border-live bg-surface-raised text-live hover:bg-live-surface",
+          )}
+        >
+          <span aria-hidden className={cn("size-[7px] rounded-full bg-live", f.liveNow && "animate-pulse-live")} />
+          Live now
+        </button>
 
-      <p data-numeric className="text-small text-text-muted" aria-live="polite">
-        {resultCount.toLocaleString()} {resultCount === 1 ? "tutor" : "tutors"}
-      </p>
+        <button
+          type="button"
+          aria-pressed={f.selectedSubjects.length === 0}
+          onClick={() => f.clear("subject")}
+          className={cn(chip, f.selectedSubjects.length === 0 ? chipOn : chipOff)}
+        >
+          All subjects
+        </button>
+        {shown.map((s) => {
+          const on = f.selectedSubjects.includes(s.slug);
+          return (
+            <button
+              key={s.slug}
+              type="button"
+              aria-pressed={on}
+              onClick={() => f.toggleMulti("subject", s.slug)}
+              className={cn(chip, on ? chipOn : chipOff)}
+            >
+              {s.name}
+            </button>
+          );
+        })}
 
-      <div className="ml-auto flex items-center gap-2">
-        <SortSelect
-          id="sort"
-          sort={f.sort}
-          onChange={(v) => f.setSingle("sort", v)}
-          className="hidden h-9 w-52 md:flex"
-        />
-        <Drawer open={open} onOpenChange={setOpen}>
-          <DrawerTrigger asChild>
-            <Button variant="secondary" size="sm" className="md:hidden">
-              <SlidersHorizontal aria-hidden />
-              Filters
-            </Button>
-          </DrawerTrigger>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>Filters</DrawerTitle>
-            </DrawerHeader>
-            <DrawerBody>
-              <TutorFilters subjects={subjects} withSort onNavigate={() => setOpen(false)} />
-            </DrawerBody>
-          </DrawerContent>
-        </Drawer>
+        <DropdownChip label={priceLabel} active={!!f.priceBand}>
+          {PRICE_BAND_KEYS.map((key) => (
+            <DropdownMenuCheckboxItem
+              key={key}
+              checked={f.priceBand === key}
+              onCheckedChange={() => f.setSingle("price", f.priceBand === key ? null : key)}
+            >
+              {PRICE_BANDS[key].label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownChip>
+
+        <DropdownChip label={langLabel} active={f.selectedLangs.length > 0}>
+          {LANGUAGES.map((lang) => (
+            <DropdownMenuCheckboxItem
+              key={lang}
+              checked={f.selectedLangs.includes(lang)}
+              onCheckedChange={() => f.toggleMulti("lang", lang)}
+            >
+              {lang}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownChip>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-3 whitespace-nowrap lg:ml-auto">
+        <p data-numeric className="text-small text-text-muted" aria-live="polite">
+          {resultCount.toLocaleString()} {resultCount === 1 ? "tutor" : "tutors"}
+        </p>
+        <span aria-hidden className="text-text-muted">·</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={`Sort tutors: ${sortLabel}`}
+            className="focus-ring inline-flex items-center gap-1 rounded-full text-small text-text-muted hover:text-text"
+          >
+            Sort: <span className="font-medium text-text">{sortLabel}</span>
+            <ChevronDown className="size-4" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {SORT_OPTIONS.map((o) => (
+              <DropdownMenuCheckboxItem
+                key={o.value}
+                checked={f.sort === o.value}
+                onCheckedChange={() => f.setValue("sort", o.value === "relevance" ? null : o.value)}
+              >
+                {o.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

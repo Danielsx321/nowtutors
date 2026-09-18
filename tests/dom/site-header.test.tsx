@@ -46,6 +46,15 @@ describe("SiteHeader", () => {
     expect(within(nav).getByRole("link", { name: "Live now" }).getAttribute("aria-current")).toBeNull();
   });
 
+  it("links How it works to the home section and never marks an anchor as current", () => {
+    pathname.current = "/";
+    render(<SiteHeader viewer={null} />);
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const how = within(nav).getByRole("link", { name: "How it works" });
+    expect(how.getAttribute("href")).toBe("/#how");
+    expect(how.getAttribute("aria-current")).toBeNull();
+  });
+
   it("stays marked on a child route", () => {
     pathname.current = "/tutors/liam-bennett";
     render(<SiteHeader viewer={null} />);

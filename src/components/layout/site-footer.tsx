@@ -23,6 +23,7 @@ const columns = [
     links: [
       { label: "Find tutors", href: "/tutors" },
       { label: "Live now", href: "/live" },
+      { label: "How it works", href: "/#how" },
     ],
   },
   {

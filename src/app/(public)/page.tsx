@@ -1,218 +1,124 @@
-import type * as React from "react";
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
-import { SearchX, ShieldCheck } from "lucide-react";
-import { db } from "@/db";
-import { subjects as subjectsTable } from "@/db/schema";
-import {
-  parseTutorSearchParams,
-  SearchParamError,
-  type TutorQuery,
-} from "@/lib/tutors/filters";
-import {
-  browseTutors,
-  countBrowseTutors,
-  getLiveStrip,
-  getSubjectTutorCounts,
-} from "@/db/queries/tutors";
-import { getViewer } from "@/lib/auth/guards";
+import { permanentRedirect } from "next/navigation";
+import { browseTutors, getLiveTutorCount, type TutorCardData } from "@/db/queries/tutors";
+import { getHomeProof, getLiveTutorCountries } from "@/db/queries/dashboard-stats";
+import { parseTutorSearchParams } from "@/lib/tutors/filters";
+import { shouldRedirectToBrowse, toSearchParams } from "@/lib/tutors/browse-url";
+import { countryName, toGlobeMarkers } from "@/lib/geo/country-centroids";
+import { getViewer, homeFor } from "@/lib/auth/guards";
 import { getUsdPerCredit } from "@/lib/settings";
-import { TRUST_GUARANTEE, TRUST_GUARANTEE_CONFIRMED, TRUST_PAYMENT } from "@/lib/copy/trust";
-import { TutorCard } from "@/components/features/tutor-card";
-import { TutorFilters, TutorFiltersBar } from "@/components/features/tutor-filters";
-import { Hero } from "@/components/features/home/hero";
-import { SubjectTiles } from "@/components/features/home/subject-tiles";
-import { HowItWorks, TutorBand } from "@/components/features/home/how-it-works";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { TutorCard } from "@/components/features/tutor-card";
 import type { FavouriteMode } from "@/components/features/favourite-heart";
+import { Hero, type FloatingTutor } from "@/components/features/home/hero";
+import { AppFan } from "@/components/features/home/app-fan";
+import { SectionHeading } from "@/components/features/home/section-heading";
+import { Steps } from "@/components/features/home/steps";
+import { ProofWall } from "@/components/features/home/proof-wall";
+import { ClosingBlock } from "@/components/features/home/closing-block";
 
-export const dynamic = "force-dynamic"; // reads cookies (viewer) + live-derived data
+export const dynamic = "force-dynamic"; // live counts, globe dots and the viewer change per request
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-function toParams(sp: Record<string, string | string[] | undefined>) {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(sp)) {
-    if (Array.isArray(v)) v.forEach((x) => params.append(k, x));
-    else if (v != null) params.append(k, v);
-  }
-  return params;
-}
-
-/** Query keys that change the result set. Anything else (`_t` cache-busters) doesn't count as filtering. */
-const RESULT_KEYS = ["subject", "lang", "price", "live", "sort", "minRating", "cursor"];
+const HOME_CARDS = 4;
 
 /**
- * `/` is the browse experience (SPEC §7.2, parity with the Bubble index), and
- * since design overhaul Part 3 it is also the home page: a hero that sells
- * "live right now" sits above the filters and grid, and subject tiles, how it
- * works and the tutor band sit below (DECISIONS, Part 3: one page, not a
- * separate landing page). The hero and the sections below only show on the
- * unfiltered first page, so filtering doesn't push results down.
- * `/tutors` redirects here. Anonymous browsing works.
+ * `/` is the home landing (live-globe rebuild Part C, SPEC §6/§7.2; pages.html,
+ * Home). Browse moved to `/tutors`. This reverses the 2026-09-16 one-page
+ * decision because Daniels approved separate Home and Browse pages on
+ * 2026-09-17 (DECISIONS).
+ *
+ * Old shared links like `/?subject=algebra` were browse links, so any
+ * result-changing key forwards to `/tutors` with the query intact.
+ *
+ * Every number on the page is real: the live count, the globe's dots, the
+ * tutors under "ready this minute" (or "Popular tutors" when nobody is live),
+ * and the proof wall.
  */
-export default async function BrowsePage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
-  const sp = await searchParams;
-  const params = toParams(sp);
-
-  // A present-but-invalid filter is rejected loudly, not silently dropped (§3.3).
-  // A shared URL with a bad param shows this error rather than wrong results.
-  let query: TutorQuery;
-  try {
-    query = parseTutorSearchParams(params);
-  } catch (e) {
-    if (e instanceof SearchParamError) {
-      return (
-        <div className="mx-auto w-full max-w-[1200px] px-4 py-8 md:px-6">
-          <Alert variant="danger" title="That link has an invalid filter">
-            <p>{e.message}</p>
-            <div className="mt-3">
-              <Button asChild variant="secondary">
-                <Link href="/">Clear filters</Link>
-              </Button>
-            </div>
-          </Alert>
-        </div>
-      );
-    }
-    throw e;
-  }
-
-  const isLanding = !RESULT_KEYS.some((k) => params.has(k));
+export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
+  const params = toSearchParams(await searchParams);
+  const target = shouldRedirectToBrowse(params);
+  if (target) permanentRedirect(target);
 
   const viewer = await getViewer();
-  const [subjectRows, { cards, nextCursor }, total, usdPerCredit, live, subjectCounts] =
-    await Promise.all([
-      db
-        .select({ slug: subjectsTable.slug, name: subjectsTable.name })
-        .from(subjectsTable)
-        .where(eq(subjectsTable.isActive, true))
-        .orderBy(asc(subjectsTable.sortOrder)),
-      browseTutors(query, { viewerId: viewer?.userId ?? null }),
-      countBrowseTutors(query),
-      getUsdPerCredit(),
-      isLanding ? getLiveStrip(6) : Promise.resolve(null),
-      isLanding ? getSubjectTutorCounts() : Promise.resolve([]),
-    ]);
+  const viewerId = viewer?.userId ?? null;
+
+  const [liveCount, countries, live, proof, usdPerCredit] = await Promise.all([
+    getLiveTutorCount().catch(() => 0),
+    getLiveTutorCountries().catch(() => [] as string[]),
+    browseTutors(parseTutorSearchParams(new URLSearchParams("live=1")), { viewerId }),
+    getHomeProof(),
+    getUsdPerCredit(),
+  ]);
+
+  const anyLiveCards = live.cards.length > 0;
+  const cards: TutorCardData[] = anyLiveCards
+    ? live.cards.slice(0, HOME_CARDS)
+    : (
+        await browseTutors(parseTutorSearchParams(new URLSearchParams("sort=most_sessions")), {
+          viewerId,
+        })
+      ).cards.slice(0, HOME_CARDS);
+
+  const floating: FloatingTutor[] = live.cards
+    .filter((t) => t.avatarUrl)
+    .slice(0, 2)
+    .map((t) => ({
+      userId: t.userId,
+      slug: t.slug,
+      name: t.displayName ?? "Tutor",
+      avatarUrl: t.avatarUrl!,
+      detail: [t.subjects[0], countryName(t.country)].filter(Boolean).join(" · "),
+    }));
 
   const favouriteMode: FavouriteMode = !viewer
     ? "anon"
     : viewer.role === "student"
       ? "student"
       : "hidden";
-  const currentQs = params.toString();
-  const loginHref = `/login?next=${encodeURIComponent(currentQs ? `/?${currentQs}` : "/")}`;
-
-  const nextParams = new URLSearchParams(params);
-  if (nextCursor) nextParams.set("cursor", nextCursor);
-
-  const cardProps = { favouriteMode, loginHref, usdPerCredit };
-  // The guarantee sits in the grid after the sixth tutor, where a student is
-  // deciding (research report 01, "risk reversal"), only once it's agreed.
-  const guaranteeAfter = TRUST_GUARANTEE_CONFIRMED && cards.length > 6 ? 6 : -1;
+  const cardProps = { favouriteMode, loginHref: "/login?next=/", usdPerCredit };
+  const viewerHome = viewer?.role ? homeFor[viewer.role] : null;
 
   return (
     <>
-      {isLanding && live && <Hero live={live} />}
+      <Hero liveCount={liveCount} markers={toGlobeMarkers(countries)} floating={floating} />
+      <AppFan />
 
-      <div className="mx-auto w-full max-w-[1200px] space-y-12 px-4 py-8 md:px-6">
-        <section id="tutors" aria-labelledby="tutors-title" className="scroll-mt-20 space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            {isLanding ? (
-              <h2 id="tutors-title" className="text-h1 font-bold text-text">
-                Browse tutors
-              </h2>
-            ) : (
-              <h1 id="tutors-title" className="text-h1 font-bold text-text">
-                Find a tutor
-              </h1>
-            )}
-            <p className="inline-flex items-center gap-1.5 text-small text-text-muted">
-              <ShieldCheck className="size-4 text-accent" aria-hidden />
-              {TRUST_PAYMENT}
-            </p>
-          </div>
-
-          <TutorFiltersBar subjects={subjectRows} resultCount={total} />
-
-          <div className="grid gap-8 md:grid-cols-[240px_1fr]">
-            <aside className="hidden md:block">
-              <div className="sticky top-20 rounded-xl border border-border bg-surface-raised p-5">
-                <TutorFilters subjects={subjectRows} />
-              </div>
-            </aside>
-
-            <div>
-              {cards.length === 0 ? (
-                <EmptyState
-                  icon={<SearchX className="size-6" />}
-                  title="No tutors match your filters"
-                  description="Try removing a filter or widening your price range."
-                  action={
-                    <Button asChild variant="secondary">
-                      <Link href="/">Clear filters</Link>
-                    </Button>
-                  }
-                />
-              ) : (
-                <>
-                  <ul className="hidden gap-4 md:grid md:grid-cols-2 lg:grid-cols-3">
-                    {cards.map((tutor, i) => (
-                      <GridItem key={tutor.userId} showGuarantee={i === guaranteeAfter}>
-                        <TutorCard tutor={tutor} {...cardProps} />
-                      </GridItem>
-                    ))}
-                  </ul>
-                  <ul className="grid gap-3 md:hidden">
-                    {cards.map((tutor, i) => (
-                      <GridItem key={tutor.userId} showGuarantee={i === guaranteeAfter}>
-                        <TutorCard tutor={tutor} {...cardProps} variant="row" />
-                      </GridItem>
-                    ))}
-                  </ul>
-                  {nextCursor && (
-                    <div className="mt-8 flex justify-center">
-                      <Button asChild variant="secondary">
-                        <Link href={`/?${nextParams.toString()}#tutors`}>Next page</Link>
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+      {cards.length > 0 && (
+        <section aria-labelledby="home-tutors-title" className="px-4 pb-[clamp(64px,9vw,120px)] md:px-6">
+          <div className="mx-auto max-w-[var(--container-page)]">
+            <SectionHeading
+              id="home-tutors-title"
+              kicker={anyLiveCards ? "Live right now" : "Most sessions taught"}
+              title={anyLiveCards ? "Tutors ready this minute" : "Popular tutors"}
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link href={anyLiveCards ? "/tutors?live=1" : "/tutors"}>See all tutors</Link>
+                </Button>
+              }
+            />
+            <ul className="hidden gap-[18px] md:grid md:grid-cols-2 lg:grid-cols-4">
+              {cards.map((tutor) => (
+                <li key={tutor.userId}>
+                  <TutorCard tutor={tutor} {...cardProps} />
+                </li>
+              ))}
+            </ul>
+            <ul className="grid gap-3 md:hidden">
+              {cards.map((tutor) => (
+                <li key={tutor.userId}>
+                  <TutorCard tutor={tutor} {...cardProps} variant="row" />
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
-
-        {isLanding && (
-          <>
-            <SubjectTiles subjects={subjectCounts} />
-            <HowItWorks />
-            <TutorBand />
-          </>
-        )}
-      </div>
-    </>
-  );
-}
-
-/** A grid cell, with the guarantee card placed before it when due. */
-function GridItem({ showGuarantee, children }: { showGuarantee: boolean; children: React.ReactNode }) {
-  return (
-    <>
-      {showGuarantee && (
-        <li className="flex flex-col justify-center gap-2 rounded-xl bg-surface-muted p-6">
-          <ShieldCheck className="size-6 text-accent" aria-hidden />
-          <p className="font-display text-h3 font-semibold text-text">{TRUST_GUARANTEE}</p>
-          <p className="text-small text-text-muted">{TRUST_PAYMENT}.</p>
-        </li>
       )}
-      <li className="list-none">{children}</li>
+
+      <Steps />
+      <ProofWall proof={proof} />
+      <ClosingBlock viewerHome={viewerHome} />
     </>
   );
 }

@@ -75,7 +75,7 @@ export function WaitingForTutor({
   const fallbacks = (
     <div className="flex flex-col gap-2">
       <Button asChild variant="live">
-        <Link href="/?live=1#tutors">Try another live tutor</Link>
+        <Link href="/tutors?live=1">Try another live tutor</Link>
       </Button>
       {onBookTime && (
         <Button variant="secondary" onClick={onBookTime}>

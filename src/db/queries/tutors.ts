@@ -248,17 +248,6 @@ export async function countBrowseTutors(query: TutorQuery): Promise<number> {
   return row?.n ?? 0;
 }
 
-export interface LiveStrip {
-  /** Every approved, non-suspended tutor in `live_tutors`, both modes. */
-  count: number;
-  /** Up to `limit` of them for the face strip, instant-available first. */
-  faces: { userId: string; slug: string; displayName: string | null; avatarUrl: string | null }[];
-}
-
-/**
- * The home hero's "N tutors live now" and its faces (research report 01: the
- * one thing no competitor can show). Real numbers only; zero renders zero.
- */
 /**
  * The "is this tutor actually bookable" condition, built fresh per call.
  *
@@ -276,7 +265,7 @@ function liveAndBookable() {
   );
 }
 
-/** Just the number of tutors live right now: the site footer's line. */
+/** Just the number of tutors live right now: the site footer's line and the home hero's pill. */
 export async function getLiveTutorCount(): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
@@ -287,39 +276,13 @@ export async function getLiveTutorCount(): Promise<number> {
   return row?.n ?? 0;
 }
 
-export async function getLiveStrip(limit = 6): Promise<LiveStrip> {
-  const [countRows, faces] = await Promise.all([
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(liveTutors)
-      .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
-      .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
-      .where(liveAndBookable()),
-    db
-      .select({
-        userId: tutorProfiles.userId,
-        slug: tutorProfiles.slug,
-        displayName: publicProfiles.displayName,
-        avatarUrl: publicProfiles.avatarUrl,
-      })
-      .from(liveTutors)
-      .innerJoin(tutorProfiles, eq(tutorProfiles.userId, liveTutors.userId))
-      .innerJoin(publicProfiles, eq(publicProfiles.id, tutorProfiles.userId))
-      .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
-      .where(liveAndBookable())
-      .orderBy(sql`(${liveTutors.liveMode} = 'broadcast')`, desc(tutorProfiles.completedSessions))
-      .limit(limit),
-  ]);
-  return { count: countRows[0]?.n ?? 0, faces };
-}
-
 export interface SubjectCount {
   slug: string;
   name: string;
   tutors: number;
 }
 
-/** Active subjects that at least one bookable tutor teaches, with the count, for the subject tiles. */
+/** Active subjects that at least one bookable tutor teaches, with the count, most-taught first: the subject chips on browse. */
 export async function getSubjectTutorCounts(): Promise<SubjectCount[]> {
   const rows = await db.execute<{ slug: string; name: string; tutors: number }>(sql`
     select s.slug, s.name, count(distinct tp.user_id)::int as tutors
