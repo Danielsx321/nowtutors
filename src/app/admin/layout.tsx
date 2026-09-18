@@ -14,7 +14,11 @@ export default async function AdminLayout({
   const { user } = await requireRole("admin");
   const identity = await getShellIdentity(user.id);
   return (
-    <AppShell role="admin" userName={identity.displayName ?? user.email ?? undefined}>
+    <AppShell
+      role="admin"
+      userName={identity.displayName ?? user.email ?? undefined}
+      avatarUrl={identity.avatarUrl}
+    >
       {children}
     </AppShell>
   );

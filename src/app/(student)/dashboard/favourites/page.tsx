@@ -25,9 +25,9 @@ export default async function FavouritesPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl py-8">
+    <div className="mx-auto max-w-4xl py-2">
       <div className="mb-6 space-y-1">
-        <h1 className="font-display text-h1 font-bold text-text">Saved tutors</h1>
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Saved tutors</h1>
         <p className="text-body text-text-muted">
           {cards.length === 0
             ? "Tutors you save appear here."
@@ -42,7 +42,7 @@ export default async function FavouritesPage() {
           description="Tap the heart on any tutor to save them here for later."
           action={
             <Button asChild>
-              <Link href="/">Browse tutors</Link>
+              <Link href="/tutors">Browse tutors</Link>
             </Button>
           }
         />

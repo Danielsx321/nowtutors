@@ -93,17 +93,26 @@ function useFilterParams() {
  * keeping the other filters. Text that matches no subject says so instead of
  * returning a silently empty grid.
  */
-export function SubjectSearch({ subjects }: { subjects: Subject[] }) {
+export function SubjectSearch({
+  subjects,
+  initialMiss = null,
+}: {
+  subjects: Subject[];
+  /** Text from a `?q=` search that matched no subject, shown on arrival. */
+  initialMiss?: string | null;
+}) {
   const f = useFilterParams();
   const selectedName =
     f.selectedSubjects.length === 1
       ? (subjects.find((s) => s.slug === f.selectedSubjects[0])?.name ?? "")
       : "";
-  const [text, setText] = React.useState(selectedName);
-  const [miss, setMiss] = React.useState<string | null>(null);
+  const [text, setText] = React.useState(initialMiss ?? selectedName);
+  const [miss, setMiss] = React.useState<string | null>(initialMiss);
   const listId = React.useId();
 
-  React.useEffect(() => setText(selectedName), [selectedName]);
+  React.useEffect(() => {
+    if (!initialMiss) setText(selectedName);
+  }, [selectedName, initialMiss]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();

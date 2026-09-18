@@ -14,6 +14,7 @@ import { LiveMomentsSection } from "./_sections/live-moments";
 import { AuthSection } from "./_sections/auth";
 import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
+import { DashboardSection } from "./_sections/dashboard";
 
 const sections = [
   { id: "foundations", label: "Tokens" },
@@ -27,6 +28,7 @@ const sections = [
   { id: "auth", label: "Auth" },
   { id: "overlays", label: "Overlays" },
   { id: "layouts", label: "Layouts" },
+  { id: "dashboard", label: "Dashboard" },
 ];
 
 export default function KitchenSink() {
@@ -92,6 +94,7 @@ export default function KitchenSink() {
         <AuthSection surface={surface} />
         <OverlaysSection surface={surface} />
         <LayoutsPreviewSection surface={surface} />
+        <DashboardSection surface={surface} />
       </main>
     </div>
   );

@@ -10,7 +10,7 @@
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
 /** Query keys that change the browse result set. `_t` cache-busters and the like don't count. */
-export const RESULT_KEYS = ["subject", "lang", "price", "live", "sort", "minRating", "cursor"] as const;
+export const RESULT_KEYS = ["subject", "lang", "price", "live", "sort", "minRating", "cursor", "q"] as const;
 
 /** A Next.js `searchParams` object as `URLSearchParams`, keeping repeated keys. */
 export function toSearchParams(sp: RawSearchParams): URLSearchParams {

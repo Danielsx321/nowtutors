@@ -71,7 +71,7 @@ export default async function LiveNowPage({
           description="Tutors go live whenever they're ready to teach. You can still book a session or message a tutor."
           action={
             <Button asChild>
-              <Link href="/">Browse tutors</Link>
+              <Link href="/tutors">Browse tutors</Link>
             </Button>
           }
         />

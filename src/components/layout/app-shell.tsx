@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sidebar, SidebarNav } from "@/components/layout/sidebar";
+import { Sidebar, SidebarAccount, SidebarNav, type SidebarPeople } from "@/components/layout/sidebar";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { Topbar } from "@/components/layout/topbar";
 import { Wordmark } from "@/components/layout/wordmark";
@@ -16,7 +16,6 @@ import {
   accountLinksByRole,
   messagesHrefByRole,
   navByRole,
-  roleHome,
   type Role,
 } from "@/components/layout/nav-config";
 import { UnreadCountProvider } from "@/components/features/messaging/unread-context";
@@ -29,23 +28,35 @@ export interface AppShellProps {
   showCredits?: boolean;
   credits?: number;
   userName?: string;
+  avatarUrl?: string | null;
   /** Tutors only: state for the topbar's go-live switch (SPEC §7.5). */
   goLive?: { initialLive: boolean; broadcastHref: string | null };
+  /** The sidebar's people section, read by the role's layout (student: your tutors). */
+  people?: SidebarPeople | null;
 }
 
+/** The topbar search per role (Part E: students only; Parts F and G add theirs). */
+const searchByRole: Record<Role, { action: string; placeholder: string } | null> = {
+  student: { action: "/tutors", placeholder: "Search tutors or subjects…" },
+  tutor: null,
+  admin: null,
+};
+
 /**
- * The authenticated shell: a light canvas with a sidebar at `md+` (an icon rail
- * between `md` and `lg`, full width at `lg`), a bottom bar below `md`, and the
- * topbar above the content. This replaces the ink frame (ink shell → white
- * panel → ink cards) the design overhaul retired.
+ * The authenticated shell (v2, live-globe rebuild Part E; pages.html
+ * dashboards): the ground canvas, a white sidebar at `md+` (an icon rail
+ * between `md` and `lg`, the full 250px sidebar at `lg`), a bottom bar below
+ * `md`, and the topbar above the content. The optional right column and the
+ * full-width table row are page layout, not shell, so each dashboard composes
+ * them with `DashboardColumns`.
  *
  * It is still where the presence heartbeat is mounted (SPEC §7.5): the one
  * client component every authenticated area shares, so `usePresence()` runs
  * exactly once per area and never on a public page.
  *
  * The drawer serves two triggers: the topbar's menu button and the bottom
- * bar's More. It holds the full nav, so the four bottom-bar destinations never
- * have to be the whole story.
+ * bar's More. It holds the full nav and the account section, so the four
+ * bottom-bar destinations never have to be the whole story.
  */
 export function AppShell({
   role,
@@ -54,18 +65,21 @@ export function AppShell({
   showCredits,
   credits,
   userName,
+  avatarUrl,
   goLive,
+  people,
 }: AppShellProps) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const items = navByRole[role];
   const messagesHref = messagesHrefByRole[role];
+  const accountLinks = accountLinksByRole[role];
 
   usePresence();
 
   return (
     <UnreadCountProvider enabled={!!messagesHref}>
-      <div className="flex min-h-screen bg-surface">
-        <Sidebar items={items} roleLabel={roleHome[role]} />
+      <div className="flex min-h-screen bg-ground">
+        <Sidebar items={items} messagesHref={messagesHref} people={people} accountLinks={accountLinks} />
 
         <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
           <DrawerContent>
@@ -76,8 +90,9 @@ export function AppShell({
                 </span>
               </DrawerTitle>
             </DrawerHeader>
-            <DrawerBody>
-              <SidebarNav items={items} onNavigate={() => setMenuOpen(false)} />
+            <DrawerBody className="flex flex-col gap-6">
+              <SidebarNav items={items} messagesHref={messagesHref} onNavigate={() => setMenuOpen(false)} />
+              <SidebarAccount links={accountLinks} onNavigate={() => setMenuOpen(false)} />
             </DrawerBody>
           </DrawerContent>
         </Drawer>
@@ -89,13 +104,15 @@ export function AppShell({
             showCredits={showCredits}
             credits={credits}
             userName={userName}
+            avatarUrl={avatarUrl}
             messagesHref={messagesHref}
             goLive={goLive}
-            accountLinks={accountLinksByRole[role]}
+            accountLinks={accountLinks}
+            search={searchByRole[role]}
           />
-          {/* pb-16 clears the bottom bar so it never covers a composer or a
+          {/* pb-20 clears the bottom bar so it never covers a composer or a
               sticky Save; the bar is only there below `md`. */}
-          <main className="flex-1 p-4 pb-20 md:p-5 md:pb-5">
+          <main className="flex-1 px-4 pb-24 pt-1 md:px-[clamp(16px,2.4vw,30px)] md:pb-10">
             <div className="w-full">{children}</div>
           </main>
         </div>

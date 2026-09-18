@@ -40,6 +40,7 @@ export default async function TutorLayout({
     <AppShell
       role="tutor"
       userName={identity.displayName ?? user.email ?? undefined}
+      avatarUrl={identity.avatarUrl}
       goLive={{
         initialLive: (live?.isLive ?? false) && live?.liveMode === "instant",
         broadcastHref: broadcasting

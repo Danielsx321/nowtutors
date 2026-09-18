@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Heart,
   MoreHorizontal,
+  Search,
 } from "lucide-react";
 
 export interface NavItem {
@@ -55,13 +56,19 @@ export const siteNav: { label: string; href: string }[] = [
   { label: "Teach", href: "/signup" },
 ];
 
-/** Order is the design overhaul's: the things a student does most, first. */
+/**
+ * Order is the design overhaul's: the things a student does most, first. v2
+ * (Part E) adds Find tutors, since a student's next session starts there, and
+ * calls favourites "Saved tutors" as the mockup does. "Home" keeps its name:
+ * the bottom bar's test and the students who already know it read it.
+ */
 export const studentNav: NavItem[] = [
   { label: "Home", href: "/dashboard", icon: Home },
+  { label: "Find tutors", href: "/tutors", icon: Search },
   { label: "Bookings", href: "/dashboard/bookings", icon: CalendarDays },
   { label: "Messages", href: "/dashboard/messages", icon: MessageSquare },
   { label: "Wallet", href: "/dashboard/wallet", icon: Wallet },
-  { label: "Favourites", href: "/dashboard/favourites", icon: Heart },
+  { label: "Saved tutors", href: "/dashboard/favourites", icon: Heart },
 ];
 
 /**
@@ -148,3 +155,15 @@ export const messagesHrefByRole: Record<Role, string | undefined> = {
   tutor: "/tutor/messages",
   admin: undefined,
 };
+
+/**
+ * Is this nav item the current page? Exact match for role-root links (e.g.
+ * /tutor), prefix match otherwise, so /tutor doesn't light up on
+ * /tutor/bookings. Lives here, not in the sidebar, so the bottom bar can use it
+ * without importing the sidebar's Log out server action.
+ */
+export function itemIsActive(pathname: string, href: string) {
+  const segments = href.split("/").filter(Boolean);
+  if (segments.length <= 1) return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}

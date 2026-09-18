@@ -120,6 +120,12 @@ The page reads in this order, every role:
 
 Only real data. No invented awards, ratings, goals, streaks or follow buttons.
 
+Built in Part E (2026-09-18), in code:
+
+- **Shell** (`app-shell`, `sidebar`, `topbar`): white 250px sidebar at `lg` (Overview, the role's people section, Account with Log out in `spark-text`), an icon rail from `md` to `lg`, the bottom bar below `md`. Active item is a teal pill; Messages carries an orange count with ink digits. The topbar sits on the ground with no rule: a search pill (students search tutors), the Messages circle, the avatar with the name.
+- **Page layout** (`DashboardColumns`): main column and a 340px right column from `xl`, stacked below it, and a full-width row for tables.
+- **Pieces** (`src/components/features/dashboard/`): `Banner` (rings and pins, no gradient), `SummaryCard` (the whole card links; no "⋮" menu with nothing in it), `SessionCarousel`, `BarChart` (one scale, teal current bar, light teal others, `role="img"` with every value in the label), `PeopleList`, `BookingsTable`, `RailBox`.
+
 ## The live signal
 
 Two states, one colour family, mutually exclusive (SPEC §7.8: a broadcasting tutor can't take instant requests).

@@ -72,10 +72,10 @@ export default async function WalletPage({
   const usdPerCredit = basisUsdPerCredit(packages);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 py-8">
-      <h1 className="font-display text-h1 font-bold text-text">Wallet</h1>
+    <div className="mx-auto max-w-4xl space-y-8 py-2">
+      <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Wallet</h1>
 
-      <section aria-labelledby="balance-title" className="rounded-xl bg-surface-muted p-6">
+      <section aria-labelledby="balance-title" className="rounded-panel border border-border bg-surface-raised p-6">
         <h2 id="balance-title" className="text-small font-medium text-text-muted">
           Credit balance
         </h2>
@@ -139,7 +139,7 @@ export default async function WalletPage({
             })}
           </nav>
         </div>
-        <div className="rounded-xl border border-border bg-surface-raised">
+        <div className="rounded-card border border-border bg-surface-raised">
           <TransactionHistory transactions={history.transactions} timeZone={timeZone} />
         </div>
         {history.pageCount > 1 && (
