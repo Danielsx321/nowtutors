@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-18)
 
-**LIVE-GLOBE REBUILD Part D (tutor card and profile v2) is IN REVIEW on branch `design-v2-card-profile`.
+**LIVE-GLOBE REBUILD Part D (tutor card and profile v2) is MERGED via PR #90 (`7b6381b`), deployed.
 No migration, no prod step, no new dependency.** The card now follows the mockup: 10px-padded white card, 15px
 photo inset with the ring, live chip on a white pill, name and country by name, pitch, first subject as a
 tag, a stacked Rate ("45 cr" over "≈ $60"), and one action: teal Request now, outline Watch live or ink Book a
@@ -19,8 +19,8 @@ Gates: typecheck and lint clean, 745 unit (7 new), 107 DOM (2 new), build passed
 in a browser at 1440 and 360 (no overflow, no page errors), which caught and fixed "Experie…" truncation, a
 clipping Rate cell and a stray heart on phones. **Every Vercel preview returns 500** (production is fine):
 check the Preview environment variables in Vercel.
-**Next:** Daniels merges and checks the profile signed in (Start now and booking as a student), then the docs
-PR, then Part E (app shell v2 and student dashboard).
+**Next:** Daniels checks the profile signed in on production (Start now and booking as a student), and Part E
+(app shell v2 and student dashboard) starts from `main`.
 
 **LIVE-GLOBE REBUILD Part C (Home and Browse split, the globe) is MERGED via PR #88 (`f0275e8`), deployed.
 No migration, no prod step. One new dependency: `cobe` 2.0.1 (SPEC §2).** `/` is now the home landing and
