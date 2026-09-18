@@ -2,7 +2,27 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-17)
+## Current state (2026-09-18)
+
+**LIVE-GLOBE REBUILD Part C (Home and Browse split, the globe) is IN REVIEW on branch `design-v2-home-browse`.
+No migration, no prod step. One new dependency: `cobe` 2.0.1 (SPEC §2).** `/` is now the home landing and
+`/tutors` is browse. Old `/?subject=…`-style links (any of `subject`, `lang`, `price`, `live`, `sort`,
+`minRating`, `cursor`) 308 to `/tutors` with the same query. Home, in the mockup's order: hero with the real
+live count, a cobe globe with one orange dot per country where a tutor is live (static sphere with reduced
+motion or no WebGL), two floating live-tutor cards only when two or more live tutors have photos, the glass
+proof strip, the app-screens fan (`id="how"`), "Tutors ready this minute" (or "Popular tutors" when nobody
+is live), three steps, the proof wall from real counts (zero tiles dropped, no "photo-checked" until Part G),
+and the teal closing block. Browse: search pill over subjects, chip row (Live now first, All subjects, five
+most-taught subjects, Price and Language dropdowns) with count and sort, grid with the teal promise tile
+after the third card. No side rail, no phone filter sheet. "How it works" → `/#how` is in the header and
+footer. New: `dashboard-stats.ts` (`getLiveTutorCountries`, `getHomeProof`), `country-centroids.ts`,
+`browse-url.ts`. Removed: `getLiveStrip`, `subject-tiles.tsx`, `how-it-works.tsx`. Unsplash home photos in
+`public/images/home/` (DECISIONS Part C item 14). Gates: typecheck and lint clean, 738 unit (25 new), 105 DOM
+(6 new), build passed; `/` and `/tutors` checked in a browser at 1440 and 360 (no overflow, globe ready,
+search, no-match message, Live now chip, redirect and the `#how` anchor all exercised). The test database has
+no live tutors, so the globe's dots and the floating cards were covered by tests rather than seen; check them
+on the Vercel preview with a tutor live. **Next:** Daniels merges, then the docs PR marking Part C merged,
+then Part D (tutor card and profile v2).
 
 **LIVE-GLOBE REBUILD Part B (site header and full footer) is MERGED via PR #86 (`b4a1e74`), deployed. No
 migration, no prod step.** `SiteShell` (header + main + footer) now wraps every public-facing page:

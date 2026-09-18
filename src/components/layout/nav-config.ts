@@ -44,12 +44,14 @@ export const publicNav: { label: string; href: string }[] = [
 /**
  * The pill nav in the site header (DESIGN.md v2). "Teach" points at signup,
  * which is where a tutor starts (answered with the rebuild plan's open
- * questions, 2026-09-17). "How it works" joins this list in Part C, with the
- * home section it scrolls to: §10.3 means a nav item waits for its target.
+ * questions, 2026-09-17). "How it works" scrolls to the home page's app-screens
+ * section (`id="how"`), added with it in Part C: §10.3 means a nav item waits
+ * for its target.
  */
 export const siteNav: { label: string; href: string }[] = [
   { label: "Find tutors", href: "/tutors" },
   { label: "Live now", href: "/live" },
+  { label: "How it works", href: "/#how" },
   { label: "Teach", href: "/signup" },
 ];
 

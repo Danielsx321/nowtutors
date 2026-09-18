@@ -41,6 +41,8 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
   const [open, setOpen] = React.useState(false);
 
   const isActive = (href: string) => {
+    // An anchor into a page ("/#how") is a place on a page, never the page itself.
+    if (href.includes("#")) return false;
     const path = href.split(/[?#]/)[0] || "/";
     if (path === "/") return pathname === "/";
     return pathname === path || pathname.startsWith(`${path}/`);

@@ -149,7 +149,7 @@ Money confirms (withdraw, refund, reversal) use `AlertDialog` and restate the ex
 
 ## Motion
 
-150 to 220ms, ease-out, nothing longer than 2s, except the globe, which turns slowly and forever. Keyframes live in `globals.css` under the existing reduced-motion block. Everything animated has a static alternative: the live dot becomes a solid dot, the on-air ring a solid ring, the globe stops and the cards stop lifting.
+150 to 220ms, ease-out, nothing longer than 2s, except the globe, which turns slowly and forever. Keyframes live in `globals.css` under the existing reduced-motion block. Everything animated has a static alternative: the live dot becomes a solid dot, the on-air ring a solid ring, the globe is replaced by its static sphere (cobe is not even loaded), the hero's floating tutor cards stop drifting, and the cards stop lifting.
 
 ## Wordmark
 

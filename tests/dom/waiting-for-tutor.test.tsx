@@ -62,7 +62,7 @@ describe("WaitingForTutor", () => {
     expect(dialog.textContent).toMatch(/no answer/i);
     expect(dialog.textContent).toMatch(/nothing was charged/i);
     expect(screen.getByRole("link", { name: /try another live tutor/i }).getAttribute("href")).toBe(
-      "/?live=1#tutors",
+      "/tutors?live=1",
     );
     fireEvent.click(screen.getByRole("button", { name: /book a time with amina/i }));
     expect(onBookTime).toHaveBeenCalledTimes(1);

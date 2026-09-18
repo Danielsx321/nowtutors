@@ -338,6 +338,10 @@ table,
 .animate-pulse-live { animation: pulse-live 1.6s ease-in-out infinite; }
 .animate-on-air { animation: on-air 2s ease-in-out infinite; }
 
+/* The home hero's floating tutor cards bob gently over the globe. */
+@keyframes drift { 50% { translate: 0 -10px; } }
+.animate-drift { animation: drift 7s ease-in-out infinite; }
+
 /* ─────────────────────────────────────────────────────────────────────────
    Reduced motion — SPEC §10.3. Kill every animation/transition, including the
    Radix keyframes above. The live dot and on-air ring fall back to their

@@ -533,6 +533,15 @@ already-running script.
   script — an already-set value is left untouched. This is a local-machine
   quirk only; CI and Vercel are unaffected.
 
+- **A slow first load of `/` in dev is usually the readiness probe, not the page**
+  (2026-09-18, Part C). A tool that waits for the dev server by polling `HEAD /`
+  every two seconds starts a full home render per probe while the route is still
+  compiling. Against the Supabase test pooler that can open dozens of renders at
+  once and leave dropped connections behind (`read ETIMEDOUT`, statement
+  timeouts, `/` taking minutes). Wait for the first response, then load pages one
+  at a time; warm, `/` answers in about 1.5 s. If it's still hanging, restart the
+  dev server so the connection pool starts clean.
+
 ### Running the E2E suite
 
 `pnpm test:e2e` boots its **own production build** and serves it —
