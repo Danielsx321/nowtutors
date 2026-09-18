@@ -159,7 +159,7 @@ export default async function TutorProfilePage({
           <header className="grid gap-6 sm:grid-cols-[220px_1fr] sm:items-end">
             <div
               className={cn(
-                "w-44 overflow-hidden rounded-[24px] sm:w-full",
+                "relative w-44 rounded-[24px] sm:w-full",
                 canRequestNow && "ring-[3px] ring-live ring-offset-[3px] ring-offset-ground",
               )}
             >
@@ -170,10 +170,18 @@ export default async function TutorProfilePage({
                 className="aspect-square w-full rounded-[24px]"
                 initialsClassName="text-display"
               />
+              <div className="absolute right-3 top-3">
+                <FavouriteHeart
+                  tutorId={tutor.userId}
+                  initialFavourited={tutor.isFavourited}
+                  mode={favouriteMode}
+                  loginHref={loginHref}
+                />
+              </div>
             </div>
             <div className="min-w-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
+              {(canRequestNow || broadcasting) && (
+                <div className="mb-2.5 flex flex-wrap items-center gap-2">
                   {canRequestNow && <LiveChip />}
                   {broadcasting && (
                     <Link
@@ -185,15 +193,8 @@ export default async function TutorProfilePage({
                     </Link>
                   )}
                 </div>
-                <FavouriteHeart
-                  tutorId={tutor.userId}
-                  initialFavourited={tutor.isFavourited}
-                  mode={favouriteMode}
-                  loginHref={loginHref}
-                  className="border border-border"
-                />
-              </div>
-              <h1 className="mb-2 mt-2.5 font-display text-[clamp(38px,5vw,60px)] font-medium leading-none tracking-[-0.035em] text-text">
+              )}
+              <h1 className="mb-2 font-display text-[clamp(38px,5vw,60px)] font-medium leading-none tracking-[-0.035em] text-text">
                 {name}
               </h1>
               {tutor.headline && <p className="mb-2 text-body-lg text-text">{tutor.headline}</p>}
@@ -218,7 +219,19 @@ export default async function TutorProfilePage({
                 label: "Sessions",
                 value: tutor.completedSessions > 0 ? tutor.completedSessions.toLocaleString() : "New",
               },
-              { label: "Rate", value: rate("sm") },
+              {
+                label: "Rate",
+                value: (
+                  <Money
+                    credits={tutor.hourlyRateCredits}
+                    usdPerCredit={usdPerCredit ?? undefined}
+                    showUsd={usdPerCredit != null}
+                    per="hr"
+                    size="md"
+                    stacked
+                  />
+                ),
+              },
             ]}
           />
 

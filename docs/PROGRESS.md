@@ -15,8 +15,10 @@ buttons and the "N seconds to accept" line, Book a session with teal-outlined sl
 credits", Message, trust lines with icons). "Request now" moved from green to teal everywhere. `StatRow`,
 `Money stacked`, and `cn()` learning the v2 radii are shared changes. New: `week-availability.ts` (unit-tested).
 E2E strings kept: "Start now" heading, `#instant-duration`, `/^30 min/`, `/^request now/i`, `/^message$/i`.
-Gates: typecheck and lint clean, 745 unit (7 new), 107 DOM (2 new), build passed. The local test database was
-down during the browser check, so cards and the profile were checked on the Vercel preview instead.
+Gates: typecheck and lint clean, 745 unit (7 new), 107 DOM (2 new), build passed; browse and a profile checked
+in a browser at 1440 and 360 (no overflow, no page errors), which caught and fixed "Experie…" truncation, a
+clipping Rate cell and a stray heart on phones. **Every Vercel preview returns 500** (production is fine):
+check the Preview environment variables in Vercel.
 **Next:** Daniels merges and checks the profile signed in (Start now and booking as a student), then the docs
 PR, then Part E (app shell v2 and student dashboard).
 

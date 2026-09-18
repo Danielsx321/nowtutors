@@ -23,7 +23,8 @@ export function StatRow({ stats, size = "md", className, ...props }: StatRowProp
   return (
     <dl
       className={cn(
-        "grid auto-cols-fr grid-flow-col divide-x divide-border overflow-hidden rounded-lg border border-border",
+        // Cells share the width but never shrink below their content, so "Experience" never truncates in a narrow card.
+        "grid auto-cols-[minmax(max-content,1fr)] grid-flow-col divide-x divide-border overflow-hidden rounded-lg border border-border",
         className,
       )}
       {...props}
@@ -31,9 +32,9 @@ export function StatRow({ stats, size = "md", className, ...props }: StatRowProp
       {stats.map((s) => (
         <div
           key={s.label}
-          className={cn("flex min-w-0 flex-col", size === "sm" ? "px-3 py-2.5" : "px-4 py-3")}
+          className={cn("flex flex-col", size === "sm" ? "px-2.5 py-2.5" : "px-4 py-3")}
         >
-          <dt className={cn("truncate text-text-muted", size === "sm" ? "text-caption" : "text-small")}>
+          <dt className={cn("whitespace-nowrap text-text-muted", size === "sm" ? "text-caption" : "text-small")}>
             {s.label}
           </dt>
           <dd
