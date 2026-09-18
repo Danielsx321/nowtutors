@@ -117,6 +117,24 @@ describe("TutorCard, grid", () => {
     expect(within(noRate).getByLabelText("45 credits per hr")).toBeTruthy();
   });
 
+  it("v2: country by name, the first subject as a tag, and a teal Request now", () => {
+    const card = renderCard(tutor({ liveStatus: "online", subjects: ["Algebra", "Physics"] }));
+    expect(within(card).getByText("United Kingdom")).toBeTruthy();
+    expect(within(card).getByText("Algebra")).toBeTruthy();
+    expect(within(card).queryByText("Physics")).toBeNull();
+    const action = within(card).getByRole("link", { name: /^request now$/i });
+    expect(action.className).toMatch(/\bbg-primary\b/);
+    expect(action.className).not.toMatch(/\bbg-live\b/);
+  });
+
+  it("v2: the rate cell stacks credits over the dollar anchor", () => {
+    const card = renderCard(tutor(), { usdPerCredit: 1.5 });
+    const rate = within(card).getByLabelText("45 credits per hr, about $67.50");
+    expect(rate.textContent).toContain("45 cr");
+    expect(rate.textContent).toContain("≈ $67.50");
+    expect(rate.textContent).not.toContain("/ hr");
+  });
+
   it("the whole card links to the profile", () => {
     renderCard(tutor());
     expect(screen.getByRole("link", { name: "Liam Bennett" }).getAttribute("href")).toBe("/tutors/liam");

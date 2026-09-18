@@ -14,8 +14,10 @@ import { Spinner } from "@/components/ui/spinner";
  *   compete with the page's own primary.
  * - `outline` — a bordered button on the surface it sits on.
  * - `ghost` — text only, for toolbars and menus.
- * - `live` — green fill, reserved for live actions ("Request now", "Go live",
- *   "Join"). The product's one loud colour: it stays rare.
+ * - `live` — green fill, reserved for going on air ("Go live", "Join"). The
+ *   product's one loud colour: it stays rare. "Request now" is `primary` from
+ *   the live-globe rebuild on (Part D, as mocked): the green is the tutor's
+ *   ring and chip, not the student's button.
  * - `danger` — destructive only.
  */
 const buttonVariants = cva(

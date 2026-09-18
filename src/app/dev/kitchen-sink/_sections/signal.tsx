@@ -63,7 +63,7 @@ export function SignalSection({ surface }: { surface: Surface }) {
         <OnAirRing active={false}>
           <Avatar size="lg" name="Amara Okafor" />
         </OnAirRing>
-        <Button variant="live">Request now</Button>
+        <Button variant="primary">Request now</Button>
       </Demo>
 
       <Demo label="StatRow: proof on the person (Experience, Sessions, Rate). New tutors say New." surface={surface} className="items-stretch">

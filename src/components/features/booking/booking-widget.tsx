@@ -33,10 +33,10 @@ interface BookingWidgetProps {
   walletBalance: number;
   loginHref: string;
   /**
-   * How loud the booking action is. `secondary` when a live "Start now" action
+   * How loud the booking action is. `outline` when a live "Start now" action
    * sits above it on the profile, so the page has one primary action.
    */
-  emphasis?: "primary" | "secondary";
+  emphasis?: "primary" | "outline";
 }
 
 /**
@@ -143,10 +143,10 @@ export function BookingWidget({
               onClick={() => setDuration(d)}
               aria-pressed={d === duration}
               className={cn(
-                "focus-ring flex-1 rounded-md border px-3 py-2 text-small font-medium transition-colors",
+                "focus-ring flex-1 rounded-lg border px-3 py-2.5 text-small font-medium transition-colors",
                 d === duration
-                  ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
-                  : "border-border bg-surface-raised text-text hover:border-border",
+                  ? "border-primary text-primary ring-1 ring-inset ring-primary"
+                  : "border-border bg-surface-raised text-text hover:border-border-strong",
               )}
             >
               {d} min
@@ -174,9 +174,9 @@ export function BookingWidget({
       <div className="space-y-1.5">
         <Label>Pick a time</Label>
         <p className="text-caption text-text-muted">
-          Times shown in your timezone ({viewerTimeZone}). Tutor’s timezone: {tutorTimeZone}.
+          Times in your timezone ({viewerTimeZone}). Tutor’s timezone: {tutorTimeZone}.
         </p>
-        <div className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-border p-3">
+        <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-border p-3">
           {dayGroups.length === 0 && (
             <p className="py-4 text-center text-small text-text-muted">
               No {duration}-minute slots available.
@@ -195,10 +195,10 @@ export function BookingWidget({
                     onClick={() => setSelectedSlot(slot.iso)}
                     aria-pressed={slot.iso === selectedSlot}
                     className={cn(
-                      "focus-ring rounded-md border px-2.5 py-1.5 text-small transition-colors",
+                      "focus-ring rounded-[10px] border px-2.5 py-1.5 text-small transition-colors",
                       slot.iso === selectedSlot
-                        ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
-                        : "border-border bg-surface-raised text-text hover:border-accent",
+                        ? "border-primary font-medium text-primary ring-1 ring-inset ring-primary"
+                        : "border-border bg-surface-raised text-text hover:border-primary",
                     )}
                   >
                     {slot.time}
@@ -222,7 +222,7 @@ export function BookingWidget({
         />
       </div>
 
-      <div className="flex items-center justify-between rounded-md bg-surface-muted px-3 py-2">
+      <div className="flex items-center justify-between rounded-lg bg-surface-muted px-3 py-2">
         <span className="text-small text-text-muted">Price</span>
         <span data-numeric className="text-body font-semibold text-text">{price} credits</span>
       </div>
@@ -245,7 +245,9 @@ export function BookingWidget({
         disabled={!selectedSlot || !subjectId || submitting || !canAfford}
         loading={submitting}
       >
-        {selectedSlot ? `Book for ${price} credits` : "Select a time"}
+        {selectedSlot
+          ? `Book ${slotTime(selectedSlot, viewerTimeZone)} for ${price} credits`
+          : "Select a time"}
       </Button>
     </div>
   );
@@ -292,4 +294,9 @@ function groupByDay(isoSlots: string[], timeZone: string): DayGroup[] {
     group.slots.push({ iso, time: timeFmt.format(d) });
   }
   return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** "10:30 AM" in the viewer's zone, for the confirm button. */
+function slotTime(iso: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 }

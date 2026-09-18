@@ -31,7 +31,7 @@ Two themes, same roles. Light on `:root`; dark under `.theme-dark`. The dark sco
 | `spark` | `#E8843A` | `#E8843A` | Orange, for **marks only**: globe dots, a small badge, the log-out glyph. Never text, never a large fill. |
 | `spark-text` | `#A85416` | `#F0A868` | The readable orange, for the rare orange word or icon. 4.71:1 on ground. |
 | `accent` | `#0B3A47` | `#7FC4D1` | The brand teal as links, selected states and the focus ring. |
-| `live` | `#1E7A46` | `#5FD68A` | The live signal: "Live now" and "LIVE" as text, the dot, the on-air ring, the "Request now" fill. Never on the teal accent (2.3:1). |
+| `live` | `#1E7A46` | `#5FD68A` | The live signal: "Live now" and "LIVE" as text, the dot, the on-air ring, the "Go live" and "Join" fills. Never on the teal accent (2.3:1). |
 | `on-live` | `#FFFFFF` | `#0E0F12` | Text on `live`. |
 | `live-surface` | `#E6F7EC` | `#16181D` | The live chip's background. `live` on it: 4.81:1. |
 | `border` | `#E2E2DF` | `#2A2E37` | Hairlines and card borders. Decorative, no floor. |
@@ -79,14 +79,16 @@ Spacing on the 4px grid. Comfortable density on marketplace pages (card padding 
 | `ink` | near-black | A neutral action inside a card, where teal would compete with the page's primary. |
 | `outline` | bordered | Everything else that isn't the point of the screen. |
 | `ghost` | none | Toolbars, menus, table rows. |
-| `live` | green | Live actions only ("Request now", "Go live", "Join"). Rare by design. |
+| `live` | green | Going on air only ("Go live", "Join", "Try another live tutor"). Rare by design. "Request now" is `primary` from Part D: the green belongs to the tutor (ring, chip), not the student's button. |
 | `danger` | red | Destructive only. |
 
 `secondary` is a deprecated alias of `outline` and goes in Part G.
 
 ## Cards
 
-The tutor card is the product. Its anatomy, in order: photo inset with the on-air ring when the tutor takes instant requests; live chip top-left only when live or broadcasting (an offline tutor shows **no** status text: absence is the signal); favourite top-right; name in the display face; country; headline; the proof row (`StatRow`: Experience, Sessions, Rate with the "≈ $" anchor); one call to action. `live` "Request now" for instant-available, a "Watch live" link for broadcasting, `ink` "Book a session" otherwise.
+The tutor card is the product. Its anatomy, in order (v2, Part D, as mocked in `pages.html`): a white card with 10px padding and a 22px radius; the photo inset at 15px (`rounded-photo`) with the on-air ring when the tutor takes instant requests; the live chip on the photo, top-left, on a white pill, only when live or broadcasting (an offline tutor shows **no** status text: absence is the signal); favourite top-right; name in the display face with the country, by name, on the same line; the one-line pitch; the first subject as a tag; the proof row (`StatRow`: Experience, Sessions, Rate, with the rate stacked as "45 cr" over "≈ $60"); one full-width action. `primary` (teal) "Request now" for instant-available, `outline` "Watch live" for broadcasting, `ink` "Book a session" otherwise. The card rises 3px with `shadow-lift` on hover, never under reduced motion. Below `md` the `row` variant keeps the same states in a horizontal card.
+
+The profile follows the same parts at a larger size: a square photo at 24px radius (ring outside a ground-coloured gap when instant-available), the name at display size, a meta line (country, languages, two subject tags), the proof row on white, then white blocks (About, Subjects, This week, Background) and a 26px sticky panel.
 
 Two variants: `grid` (photo on top, `md` and up) and `row` (88px photo beside the text, phones and short lists). The whole card links to the profile through a stretched link on the name; the chip, heart and action sit above it. In a grid the ring is static (`OnAirRing still`): many pulsing rings at once is noise.
 
@@ -122,7 +124,7 @@ Only real data. No invented awards, ratings, goals, streaks or follow buttons.
 
 Two states, one colour family, mutually exclusive (SPEC §7.8: a broadcasting tutor can't take instant requests).
 
-- **Instant-available** ("Live now"): the green `OnAirRing` around the photo, plus a `LiveChip` reading "Live now", plus the `live` "Request now" button.
+- **Instant-available** ("Live now"): the green `OnAirRing` around the photo, plus a `LiveChip` reading "Live now", plus the teal `primary` "Request now" button.
 - **Broadcasting** ("LIVE"): a `LiveChip` reading "LIVE" with the viewer count. No ring; the ring means "start in 60 seconds", not "watch".
 
 The chip is always text. A dot on its own is decoration, never the indicator. No red for live, anywhere.
