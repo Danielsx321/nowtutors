@@ -542,6 +542,14 @@ already-running script.
   at a time; warm, `/` answers in about 1.5 s. If it's still hanging, restart the
   dev server so the connection pool starts clean.
 
+- **A merge that doesn't show up on production may be "Staged", not failed**
+  (2026-09-18, Part E). The Vercel deployment page shows Environment
+  "Production · Staged" and lists only the generated domains, not
+  `nowtutors-brown.vercel.app`. Fix: the deployment's ⋯ menu → Promote to
+  Production. To stop it recurring, check that production domains are
+  auto-assigned (Settings → Environments → Production). Quick test of which
+  build is live: `/tutors?q=maths` redirects on Part E and later.
+
 ### Running the E2E suite
 
 `pnpm test:e2e` boots its **own production build** and serves it —
