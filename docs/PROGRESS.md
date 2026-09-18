@@ -4,6 +4,22 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-18)
 
+**LIVE-GLOBE REBUILD Part D (tutor card and profile v2) is IN REVIEW on branch `design-v2-card-profile`.
+No migration, no prod step, no new dependency.** The card now follows the mockup: 10px-padded white card, 15px
+photo inset with the ring, live chip on a white pill, name and country by name, pitch, first subject as a
+tag, a stacked Rate ("45 cr" over "≈ $60"), and one action: teal Request now, outline Watch live or ink Book a
+session. The profile has a 24px square photo (ring outside a ground gap when instant-available), the name at
+display size, a meta line (country, languages, two subject tags), the proof row on white, white blocks
+(About, Subjects, This week, Background) and a 26px sticky panel (Rate, Start now with two-line duration
+buttons and the "N seconds to accept" line, Book a session with teal-outlined slots and "Book 10:30 AM for 45
+credits", Message, trust lines with icons). "Request now" moved from green to teal everywhere. `StatRow`,
+`Money stacked`, and `cn()` learning the v2 radii are shared changes. New: `week-availability.ts` (unit-tested).
+E2E strings kept: "Start now" heading, `#instant-duration`, `/^30 min/`, `/^request now/i`, `/^message$/i`.
+Gates: typecheck and lint clean, 745 unit (7 new), 107 DOM (2 new), build passed. The local test database was
+down during the browser check, so cards and the profile were checked on the Vercel preview instead.
+**Next:** Daniels merges and checks the profile signed in (Start now and booking as a student), then the docs
+PR, then Part E (app shell v2 and student dashboard).
+
 **LIVE-GLOBE REBUILD Part C (Home and Browse split, the globe) is MERGED via PR #88 (`f0275e8`), deployed.
 No migration, no prod step. One new dependency: `cobe` 2.0.1 (SPEC §2).** `/` is now the home landing and
 `/tutors` is browse. Old `/?subject=…`-style links (any of `subject`, `lang`, `price`, `live`, `sort`,

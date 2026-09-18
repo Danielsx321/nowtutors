@@ -12,6 +12,12 @@ export interface MoneyProps extends React.HTMLAttributes<HTMLSpanElement> {
   size?: "sm" | "md" | "lg";
   /** Prefix a sign: "+20 cr" / "−20 cr" for transaction lists. */
   signed?: boolean;
+  /**
+   * For narrow cells (the card's Rate): "45 cr" on one line and the "≈ $" anchor
+   * on the next, with the `per` unit in the accessible label only, since the
+   * cell's own label already says Rate.
+   */
+  stacked?: boolean;
 }
 
 const sizes = {
@@ -42,6 +48,7 @@ export function Money({
   per,
   size = "md",
   signed,
+  stacked,
   className,
   ...props
 }: MoneyProps) {
@@ -52,6 +59,25 @@ export function Money({
   const label = `${sign}${abs.toLocaleString()} ${abs === 1 ? "credit" : "credits"}${
     per ? ` per ${per}` : ""
   }${usd != null ? `, about ${formatUsd(usd)}` : ""}`;
+  if (stacked) {
+    return (
+      <span data-numeric aria-label={label} className={cn("flex flex-col text-text", className)} {...props}>
+        <span aria-hidden className="whitespace-nowrap">
+          <span className={cn("font-display", s.amount)}>
+            {sign}
+            {abs.toLocaleString()}
+          </span>{" "}
+          <span className={cn("text-text-muted", s.rest)}>cr</span>
+        </span>
+        {usd != null && (
+          <span aria-hidden className={cn("whitespace-nowrap text-text-muted", s.rest)}>
+            ≈ {formatUsd(usd)}
+          </span>
+        )}
+      </span>
+    );
+  }
+
   return (
     <span
       data-numeric

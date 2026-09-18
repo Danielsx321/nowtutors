@@ -104,7 +104,7 @@ export function InstantRequestWidget({
   if (mode === "anon") {
     return (
       <div className="space-y-2">
-        <Button asChild variant="live" className="w-full">
+        <Button asChild variant="primary" className="w-full">
           <Link href={loginHref}>Sign in to start now</Link>
         </Button>
         <p className="text-small text-text-muted">
@@ -147,7 +147,7 @@ export function InstantRequestWidget({
       <div className="space-y-1.5">
         <Label htmlFor="instant-duration">Session length</Label>
         <div
-          className="grid grid-cols-2 gap-2"
+          className="grid grid-cols-3 gap-1.5"
           id="instant-duration"
           role="group"
           aria-label="Session length"
@@ -161,20 +161,18 @@ export function InstantRequestWidget({
                 onClick={() => setDuration(d)}
                 aria-pressed={d === duration}
                 className={cn(
-                  "focus-ring rounded-md border px-3 py-2 text-small font-medium transition-colors",
+                  "focus-ring flex flex-col items-center rounded-lg border px-1 py-2.5 text-small font-medium transition-colors",
                   d === duration
-                    ? "border-accent bg-surface-muted text-accent ring-1 ring-accent"
-                    : "border-border bg-surface-raised text-text hover:border-border",
+                    ? "border-primary text-primary ring-1 ring-inset ring-primary"
+                    : "border-border bg-surface-raised text-text hover:border-border-strong",
                 )}
               >
                 {d} min
                 <span
-                  className={cn(
-                    "ml-1.5 font-normal",
-                    d === duration ? "text-accent" : "text-text-muted",
-                  )}
+                  data-numeric
+                  className={cn("text-caption font-normal", d === duration ? "text-primary" : "text-text-muted")}
                 >
-                  · {p} credits
+                  {p} cr
                 </span>
               </button>
             );
@@ -225,7 +223,7 @@ export function InstantRequestWidget({
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Button
-        variant="live"
+        variant="primary"
         className="w-full"
         onClick={onRequest}
         disabled={submitting || !canAfford}
@@ -233,6 +231,9 @@ export function InstantRequestWidget({
       >
         Request now · {price} credits
       </Button>
+      <p className="text-small text-text-muted">
+        {firstName(tutorName)} has {ttlSeconds} seconds to accept. You&apos;re only charged if they do.
+      </p>
 
       <Modal open={open} onOpenChange={(next) => !next && closeWaiting()}>
         <ModalContent size="sm">
@@ -254,4 +255,9 @@ export function InstantRequestWidget({
       </Modal>
     </div>
   );
+}
+
+/** "Sofia Marchetti" → "Sofia", for the one-line promise under the button. */
+function firstName(name: string) {
+  return name.trim().split(/\s+/)[0] || name;
 }

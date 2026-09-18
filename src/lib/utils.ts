@@ -23,6 +23,10 @@ const twMerge = extendTailwindMerge({
           ],
         },
       ],
+      // The v2 radii (DESIGN.md, "Shape"). Unregistered, `cn("rounded-lg",
+      // "rounded-photo")` kept both and the winner was whichever Tailwind
+      // happened to emit last.
+      rounded: [{ rounded: ["photo", "card", "panel"] }],
     },
   },
 });
