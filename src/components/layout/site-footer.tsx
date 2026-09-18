@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/layout/wordmark";
 
 export interface SiteFooterProps {
-  /** Tutors live right now, from `getLiveStrip`. Rendered server-side. */
+  /** Tutors live right now, from `getLiveTutorCount`. Read on the server. */
   liveCount: number;
   /** Where the signed-in viewer's home is, if there is one. */
   viewerHome?: string | null;
