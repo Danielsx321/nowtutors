@@ -4,7 +4,7 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-18)
 
-**LIVE-GLOBE REBUILD Part C (Home and Browse split, the globe) is IN REVIEW on branch `design-v2-home-browse`.
+**LIVE-GLOBE REBUILD Part C (Home and Browse split, the globe) is MERGED via PR #88 (`f0275e8`), deployed.
 No migration, no prod step. One new dependency: `cobe` 2.0.1 (SPEC §2).** `/` is now the home landing and
 `/tutors` is browse. Old `/?subject=…`-style links (any of `subject`, `lang`, `price`, `live`, `sort`,
 `minRating`, `cursor`) 308 to `/tutors` with the same query. Home, in the mockup's order: hero with the real
@@ -21,8 +21,7 @@ footer. New: `dashboard-stats.ts` (`getLiveTutorCountries`, `getHomeProof`), `co
 (6 new), build passed; `/` and `/tutors` checked in a browser at 1440 and 360 (no overflow, globe ready,
 search, no-match message, Live now chip, redirect and the `#how` anchor all exercised). The test database has
 no live tutors, so the globe's dots and the floating cards were covered by tests rather than seen; check them
-on the Vercel preview with a tutor live. **Next:** Daniels merges, then the docs PR marking Part C merged,
-then Part D (tutor card and profile v2).
+on production with a tutor live. **Next:** Part D (tutor card and profile v2) starts from `main`.
 
 **LIVE-GLOBE REBUILD Part B (site header and full footer) is MERGED via PR #86 (`b4a1e74`), deployed. No
 migration, no prod step.** `SiteShell` (header + main + footer) now wraps every public-facing page:
