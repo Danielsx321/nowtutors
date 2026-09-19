@@ -51,7 +51,7 @@ export default async function TutorProfileEditPage() {
 
   const defaults: TutorProfileEditValues = {
     fullName: me?.displayName ?? me?.fullName ?? "",
-    avatarUrl: me?.avatarUrl ?? undefined,
+    avatarUrl: me?.avatarUrl ?? "",
     headline: tp.headline ?? "",
     about: tp.about ?? "",
     subjects: ownSubjects.map((s) => ({

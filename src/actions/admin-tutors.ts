@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { tutorProfiles, auditLog } from "@/db/schema";
+import { tutorProfiles, auditLog, profiles } from "@/db/schema";
+import { approvalBlocker, approvalBlockerMessage } from "@/lib/tutors/approval";
 import { requireRole } from "@/lib/auth/guards";
 
 export type AdminActionResult = { error: string } | { ok: true };
@@ -39,11 +40,17 @@ export async function approveTutor(input: {
   if (!parsed.success) return { error: "Invalid tutor." };
 
   const [before] = await db
-    .select({ status: tutorProfiles.approvalStatus })
+    .select({ status: tutorProfiles.approvalStatus, avatarUrl: profiles.avatarUrl })
     .from(tutorProfiles)
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
     .where(eq(tutorProfiles.userId, parsed.data.tutorId))
     .limit(1);
   if (!before) return { error: "Tutor not found." };
+
+  // The photo rule (Part G): refused here, on the server, whatever the queue
+  // showed. Nothing is written, so there is nothing to audit.
+  const blocker = approvalBlocker(before);
+  if (blocker) return { error: approvalBlockerMessage(blocker) };
 
   const now = new Date();
   await db.transaction(async (tx) => {
@@ -62,7 +69,7 @@ export async function approveTutor(input: {
       action: "tutor.approve",
       targetType: "tutor_profile",
       targetId: parsed.data.tutorId,
-      payload: { from: before.status, to: "approved" },
+      payload: { from: before.status, to: "approved", photo: true },
     });
   });
 
@@ -85,11 +92,17 @@ export async function rejectTutor(input: {
   }
 
   const [before] = await db
-    .select({ status: tutorProfiles.approvalStatus })
+    .select({ status: tutorProfiles.approvalStatus, avatarUrl: profiles.avatarUrl })
     .from(tutorProfiles)
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
     .where(eq(tutorProfiles.userId, parsed.data.tutorId))
     .limit(1);
   if (!before) return { error: "Tutor not found." };
+
+  // The photo rule (Part G): refused here, on the server, whatever the queue
+  // showed. Nothing is written, so there is nothing to audit.
+  const blocker = approvalBlocker(before);
+  if (blocker) return { error: approvalBlockerMessage(blocker) };
 
   await db.transaction(async (tx) => {
     await tx

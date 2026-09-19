@@ -216,7 +216,7 @@ export function Lobby({
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 {problemCopy(check.state, needsCamera)}
               </p>
-              <Button size="sm" variant="secondary" onClick={() => setAttempt((n) => n + 1)}>
+              <Button size="sm" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </Button>
             </div>

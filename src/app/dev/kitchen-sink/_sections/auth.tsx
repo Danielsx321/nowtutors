@@ -55,7 +55,7 @@ export function AuthSection({ surface }: { surface: Surface }) {
       <Demo label="Admin queue — re-review flag" surface={surface} className="!block">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Edited since review</Badge>
-          <Badge variant="purple">3</Badge>
+          <Badge variant="accent">3</Badge>
           <span className="text-caption text-text-muted">
             approved tutors stay live and bookable while flagged (§4.1)
           </span>

@@ -94,7 +94,7 @@ export function EndSessionButton({
 
           <ModalFooter>
             <Button
-              variant="secondary"
+              variant="outline"
               onClick={() => setOpen(false)}
               disabled={pending}
             >

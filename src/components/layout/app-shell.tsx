@@ -36,11 +36,12 @@ export interface AppShellProps {
   people?: SidebarPeople | null;
 }
 
-/** The topbar search per role (Part E: students only; Parts F and G add theirs). */
+/** The topbar search per role (students search tutors, admins search users; tutors have none yet). */
 const searchByRole: Record<Role, { action: string; placeholder: string } | null> = {
   student: { action: "/tutors", placeholder: "Search tutors or subjects…" },
   tutor: null,
-  admin: null,
+  // Part G: admins search people; /admin/users matches name or email.
+  admin: { action: "/admin/users", placeholder: "Search users by name or email…" },
 };
 
 /**

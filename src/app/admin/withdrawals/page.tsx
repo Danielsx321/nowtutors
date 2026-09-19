@@ -72,8 +72,8 @@ export default async function AdminWithdrawalsPage({
   return (
     <div className="w-full space-y-6 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Withdrawals</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Withdrawals</h1>
+        <p className="mt-1 text-body text-text-muted">
           Approve, pay in PayPal, then mark paid with the transaction ID.
         </p>
       </div>
@@ -94,8 +94,8 @@ export default async function AdminWithdrawalsPage({
             className={cn(
               "focus-ring rounded-full border px-3 py-1 text-small font-medium",
               t === status
-                ? "border-purple-500 bg-purple-100 text-purple-700"
-                : "border-gray-200 text-gray-700 hover:bg-gray-50",
+                ? "border-ink bg-ink text-on-ink"
+                : "border-border text-text hover:bg-surface-muted",
             )}
           >
             {withdrawalStatusLabel(t)} ({counts[t]})

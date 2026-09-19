@@ -3,7 +3,7 @@ import type { WithdrawalStatus } from "@/lib/withdrawals/withdrawals";
 
 const VARIANT = {
   requested: "warning",
-  approved: "purple",
+  approved: "accent",
   paid: "success",
   rejected: "danger",
   cancelled: "neutral",

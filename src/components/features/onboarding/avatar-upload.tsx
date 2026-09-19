@@ -69,7 +69,7 @@ export function AvatarUpload({
         />
         <Button
           type="button"
-          variant="secondary"
+          variant="outline"
           size="sm"
           loading={busy}
           onClick={() => inputRef.current?.click()}

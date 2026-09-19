@@ -38,27 +38,27 @@ function CancelCard({ bookingId, refundCredits }: { bookingId: string; refundCre
         <CardTitle>Cancel and refund</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-small text-gray-500">
+        <p className="text-small text-text-muted">
           The student gets {refundCredits ? `${refundCredits} credits` : "what they paid"} back as credits. Held tutor
           earnings are cancelled, released earnings still in the tutor&apos;s wallet are taken back, and anything
           already paid out stays with the tutor.
         </p>
         <fieldset className="space-y-1.5">
-          <legend className="text-small font-medium text-gray-700">Who is the cancellation on?</legend>
+          <legend className="text-small font-medium text-text">Who is the cancellation on?</legend>
           {(
             [
               ["cancelled_by_tutor", "The tutor"],
               ["cancelled_by_student", "The student"],
             ] as const
           ).map(([value, label]) => (
-            <label key={value} className="flex items-center gap-2 text-small text-gray-700">
+            <label key={value} className="flex items-center gap-2 text-small text-text">
               <input
                 type="radio"
                 name={`who-${bookingId}`}
                 value={value}
                 checked={who === value}
                 onChange={() => setWho(value)}
-                className="focus-ring size-4 accent-purple-500"
+                className="focus-ring size-4 accent-primary"
               />
               {label}
             </label>
@@ -86,7 +86,7 @@ function CancelCard({ bookingId, refundCredits }: { bookingId: string; refundCre
             >
               Yes, cancel and refund
             </Button>
-            <Button variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
               Back
             </Button>
           </div>
@@ -112,7 +112,7 @@ function CompleteCard({ bookingId, statusLabel }: { bookingId: string; statusLab
         <CardTitle>Mark completed</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-small text-gray-500">
+        <p className="text-small text-text-muted">
           Currently &quot;{statusLabel}&quot;. Completing it pays the tutor through the normal hold. Use it for a stuck
           session, or a tutor no-show when the tutor has shown they were there.
         </p>
@@ -137,12 +137,12 @@ function CompleteCard({ bookingId, statusLabel }: { bookingId: string; statusLab
             >
               Yes, mark completed
             </Button>
-            <Button variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
               Back
             </Button>
           </div>
         ) : (
-          <Button variant="secondary" onClick={() => setConfirming(true)}>
+          <Button variant="outline" onClick={() => setConfirming(true)}>
             Mark completed
           </Button>
         )}

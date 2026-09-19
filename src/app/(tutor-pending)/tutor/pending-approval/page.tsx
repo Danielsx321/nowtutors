@@ -52,7 +52,7 @@ export default async function PendingApprovalPage() {
         }
         action={
           <form action={signOut}>
-            <Button type="submit" variant="secondary">
+            <Button type="submit" variant="outline">
               Log out
             </Button>
           </form>

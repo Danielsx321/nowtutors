@@ -133,13 +133,14 @@ export function TutorProfileEditor({
       )}
 
       <div className="space-y-1.5">
-        <Label>Profile photo</Label>
+        <Label required>Profile photo</Label>
         <AvatarUpload
           userId={userId}
           name={fullName}
-          value={avatarUrl}
-          onChange={(url) => setValue("avatarUrl", url)}
+          value={avatarUrl || undefined}
+          onChange={(url) => setValue("avatarUrl", url ?? "", { shouldValidate: true })}
         />
+        <FieldError>{errors.avatarUrl?.message}</FieldError>
       </div>
 
       <div className="space-y-1.5">
@@ -287,7 +288,7 @@ export function TutorProfileEditor({
               userId,
               slug: preview.slug,
               displayName: fullName?.trim() || "Your name",
-              avatarUrl: avatarUrl ?? null,
+              avatarUrl: avatarUrl || null,
               country: preview.country,
               headline: headline?.trim() || null,
               ratingAvg: 0,

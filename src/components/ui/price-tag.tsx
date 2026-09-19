@@ -6,8 +6,6 @@ export interface PriceTagProps extends React.HTMLAttributes<HTMLSpanElement> {
   unit?: string; // e.g. "hr", "min", "session"
   usd?: number; // optional secondary USD label
   size?: "sm" | "md" | "lg";
-  /** @deprecated kept rendering for the old dark cards. REMOVE IN PART 6. */
-  surface?: "light" | "ink";
 }
 
 const sizeMap = {
@@ -26,13 +24,12 @@ export function PriceTag({
   unit,
   usd,
   size = "md",
-  surface = "light",
   className,
   ...props
 }: PriceTagProps) {
   const s = sizeMap[size];
-  const amountColor = surface === "ink" ? "text-text-on-inverse" : "text-text";
-  const unitColor = surface === "ink" ? "text-text-on-inverse/70" : "text-text-muted";
+  const amountColor = "text-text";
+  const unitColor = "text-text-muted";
   return (
     <span
       data-numeric

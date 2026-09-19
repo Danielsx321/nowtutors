@@ -78,7 +78,7 @@ export function WaitingForTutor({
         <Link href="/tutors?live=1">Try another live tutor</Link>
       </Button>
       {onBookTime && (
-        <Button variant="secondary" onClick={onBookTime}>
+        <Button variant="outline" onClick={onBookTime}>
           Book a time with {tutorName}
         </Button>
       )}

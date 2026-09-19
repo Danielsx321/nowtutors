@@ -14,7 +14,6 @@ import {
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LivePill } from "@/components/ui/live-pill";
 import { Avatar } from "@/components/ui/avatar";
 import { RatingStars } from "@/components/ui/rating-stars";
 import { SubjectChip } from "@/components/ui/subject-chip";
@@ -129,7 +128,6 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
         <Badge variant="warning">Warning</Badge>
         <Badge variant="danger">Danger</Badge>
         <Badge variant="solid">Solid</Badge>
-        <LivePill />
       </Demo>
 
       <Demo label="Avatar (image, initials fallback, broken src)" surface={surface}>

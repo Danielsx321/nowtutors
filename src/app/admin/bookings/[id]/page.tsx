@@ -22,9 +22,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap justify-between gap-2 border-b border-gray-200 py-2 last:border-0">
-      <dt className="text-small text-gray-500">{label}</dt>
-      <dd className="text-right text-small text-gray-700">{children}</dd>
+    <div className="flex flex-wrap justify-between gap-2 border-b border-border py-2 last:border-0">
+      <dt className="text-small text-text-muted">{label}</dt>
+      <dd className="text-right text-small text-text">{children}</dd>
     </div>
   );
 }
@@ -54,11 +54,11 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
   return (
     <div className="w-full space-y-6 py-2">
       <div className="space-y-2">
-        <Link href="/admin/bookings" className="focus-ring text-small font-medium text-purple-700">
+        <Link href="/admin/bookings" className="focus-ring text-small font-medium text-accent">
           All bookings
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-h1 font-bold text-gray-700">
+          <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">
             {detail.studentName} with {detail.tutorName}
           </h1>
           <Badge variant={meta.variant}>{meta.label}</Badge>
@@ -86,12 +86,12 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
               <Fact label="Length">{detail.durationMinutes ?? "?"} min</Fact>
               {detail.subjectName && <Fact label="Subject">{detail.subjectName}</Fact>}
               <Fact label="Student">
-                <Link href={`/admin/users/${detail.studentId}`} className="focus-ring text-purple-700">
+                <Link href={`/admin/users/${detail.studentId}`} className="focus-ring text-accent">
                   {detail.studentEmail}
                 </Link>
               </Fact>
               <Fact label="Tutor">
-                <Link href={`/admin/users/${detail.tutorId}`} className="focus-ring text-purple-700">
+                <Link href={`/admin/users/${detail.tutorId}`} className="focus-ring text-accent">
                   {detail.tutorEmail}
                 </Link>
               </Fact>
@@ -116,7 +116,7 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
                 <Fact label="PayPal payment">
                   <Link
                     href={`/admin/payments?ref=${encodeURIComponent(detail.payment.providerOrderId)}`}
-                    className="focus-ring text-purple-700"
+                    className="focus-ring text-accent"
                   >
                     ${detail.payment.amountUsd} ({detail.payment.status})
                   </Link>
@@ -145,14 +145,14 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
           {detail.ledger.length === 0 ? (
             <EmptyState title="No ledger rows" description="Nothing has moved credits for this booking." />
           ) : (
-            <ul className="divide-y divide-gray-200">
+            <ul className="divide-y divide-border">
               {detail.ledger.map((l) => (
                 <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-small">
-                  <span className="text-gray-700">
+                  <span className="text-text">
                     {creditTransactionLabel(l.type as CreditTransactionType)} ·{" "}
                     {l.userId === detail.studentId ? "student" : l.userId === detail.tutorId ? "tutor" : "other"}
                   </span>
-                  <span className="text-gray-500">
+                  <span className="text-text-muted">
                     {formatCreditDelta(l.delta)} → {l.balanceAfter} · {fmt.format(l.createdAt)}
                   </span>
                 </li>

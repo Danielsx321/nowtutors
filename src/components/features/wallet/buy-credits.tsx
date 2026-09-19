@@ -326,7 +326,7 @@ export function BuyCredits({ packages, paypalClientId }: BuyCreditsProps) {
 /** Kept so a future non-SDK fallback has an obvious home. */
 export function BuyCreditsUnavailable() {
   return (
-    <Button disabled variant="secondary">
+    <Button disabled variant="outline">
       Buy credits
     </Button>
   );

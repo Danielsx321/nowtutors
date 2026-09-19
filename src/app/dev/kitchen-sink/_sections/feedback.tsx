@@ -34,17 +34,17 @@ export function FeedbackSection({ surface }: { surface: Surface }) {
       </Demo>
 
       <Demo label="Toast (click to fire)" surface={surface}>
-        <Button variant="secondary" onClick={() => toast.success("Session booked", { description: "Tomorrow at 3:00 PM" })}>
+        <Button variant="outline" onClick={() => toast.success("Session booked", { description: "Tomorrow at 3:00 PM" })}>
           Success
         </Button>
-        <Button variant="secondary" onClick={() => toast.error("Something went wrong")}>
+        <Button variant="outline" onClick={() => toast.error("Something went wrong")}>
           Error
         </Button>
-        <Button variant="secondary" onClick={() => toast.warning("Your tutor is running late")}>
+        <Button variant="outline" onClick={() => toast.warning("Your tutor is running late")}>
           Warning
         </Button>
         <Button
-          variant="secondary"
+          variant="outline"
           onClick={() =>
             toast("New message", {
               description: "From your Physics tutor",
@@ -59,7 +59,7 @@ export function FeedbackSection({ surface }: { surface: Surface }) {
       <Demo label="Tooltip" surface={surface}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="secondary" size="icon" aria-label="Info">
+            <Button variant="outline" size="icon" aria-label="Info">
               <Info />
             </Button>
           </TooltipTrigger>

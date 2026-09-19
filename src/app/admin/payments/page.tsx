@@ -55,8 +55,8 @@ export default async function AdminPaymentsPage({
   return (
     <div className="w-full space-y-6 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Payments</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Payments</h1>
+        <p className="mt-1 text-body text-text-muted">
           Reconcile a PayPal transaction, and reverse credits after a refund made in PayPal.
         </p>
       </div>
@@ -81,7 +81,7 @@ export default async function AdminPaymentsPage({
             </div>
             <Button type="submit">Look up</Button>
           </form>
-          <p className="mt-2 text-small text-gray-500">
+          <p className="mt-2 text-small text-text-muted">
             Matched exactly against <code>provider_order_id</code> and{" "}
             <code>provider_capture_id</code>. A refund event carries only the
             capture id, so either works.

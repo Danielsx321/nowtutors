@@ -122,7 +122,7 @@ function SubjectRow({ subject }: { subject: ManagedSubject }) {
                 <Button
                   type="button"
                   size="sm"
-                  variant="secondary"
+                  variant="outline"
                   disabled={pending}
                   onClick={() => {
                     setName(subject.name);
@@ -133,9 +133,9 @@ function SubjectRow({ subject }: { subject: ManagedSubject }) {
                 </Button>
               </form>
             ) : (
-              <p className="text-body font-bold text-gray-700">{subject.name}</p>
+              <p className="text-body font-bold text-text">{subject.name}</p>
             )}
-            <p className="text-caption text-gray-500">
+            <p className="text-caption text-text-muted">
               <code>{subject.slug}</code> · {subject.tutorCount} tutors · {subject.studentCount} students ·{" "}
               {subject.bookingCount} bookings
             </p>
@@ -143,13 +143,13 @@ function SubjectRow({ subject }: { subject: ManagedSubject }) {
           <div className="flex flex-wrap items-center gap-2">
             {!subject.isActive && <Badge variant="warning">hidden</Badge>}
             {!editing && (
-              <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                 Rename
               </Button>
             )}
             <Button
               size="sm"
-              variant={subject.isActive ? "secondary" : "primary"}
+              variant={subject.isActive ? "outline" : "primary"}
               loading={pending && !editing}
               onClick={() =>
                 start(async () => {

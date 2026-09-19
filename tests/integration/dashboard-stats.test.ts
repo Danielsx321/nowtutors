@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import {
+  getCapturedRevenueByMonth,
   getHomeProof,
   getLearnerHoursByMonth,
   getLiveTutorCountries,
@@ -95,6 +96,15 @@ describe("dashboard-stats (test database)", () => {
     for (const s of students) {
       expect(typeof s.name).toBe("string");
       expect(s.sessions).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("getCapturedRevenueByMonth returns five months of dollar totals", async () => {
+    const months = await getCapturedRevenueByMonth("Africa/Lagos", 5);
+    expect(months).toHaveLength(5);
+    for (const m of months) {
+      expect(m.value).toBeGreaterThanOrEqual(0);
+      expect(Math.round(m.value * 100)).toBe(m.value * 100);
     }
   });
 });

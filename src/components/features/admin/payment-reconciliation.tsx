@@ -45,8 +45,8 @@ function bookingStatusVariant(status: string) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-small text-gray-500">{label}</dt>
-      <dd className="break-words font-medium text-gray-700">{children ?? "—"}</dd>
+      <dt className="text-small text-text-muted">{label}</dt>
+      <dd className="break-words font-medium text-text">{children ?? "—"}</dd>
     </div>
   );
 }
@@ -106,7 +106,7 @@ export function PaymentReconciliation({
           <CardTitle>Payment</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(payment.status)}>{payment.status}</Badge>
-            <Badge variant="purple">{payment.purpose}</Badge>
+            <Badge variant="accent">{payment.purpose}</Badge>
             {payment.creditsRetained && (
               <Badge variant="warning">credits retained</Badge>
             )}
@@ -137,7 +137,7 @@ export function PaymentReconciliation({
             <Field label="Buyer">
               {payment.buyerName ?? "—"}
               {payment.buyerEmail && (
-                <span className="block text-small font-normal text-gray-500">
+                <span className="block text-small font-normal text-text-muted">
                   {payment.buyerEmail}
                 </span>
               )}
@@ -168,14 +168,14 @@ export function PaymentReconciliation({
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>Ledger rows</CardTitle>
-          <span className="text-small text-gray-500">
+          <span className="text-small text-text-muted">
             {payment.ledger.length} row{payment.ledger.length === 1 ? "" : "s"} · net{" "}
             <span className="tabular-nums">{formatCreditDelta(ledgerNet || 0)}</span>
           </span>
         </CardHeader>
         <CardContent className="space-y-3">
           {payment.ledger.length === 0 ? (
-            <p className="text-body text-gray-500">
+            <p className="text-body text-text-muted">
               No ledger rows reference this payment. Expected for a{" "}
               <code>created</code> or <code>failed</code> payment — and for a{" "}
               <code>captured</code> one it means the credit never landed.
@@ -194,16 +194,16 @@ export function PaymentReconciliation({
               <TableBody>
                 {payment.ledger.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap text-gray-500">
+                    <TableCell className="whitespace-nowrap text-text-muted">
                       <Stamp at={row.createdAt} timeZone={timeZone} />
                     </TableCell>
                     <TableCell>
                       {creditTransactionLabel(row.type)}
-                      <span className="block text-small text-gray-500">
+                      <span className="block text-small text-text-muted">
                         <code>{row.type}</code>
                       </span>
                     </TableCell>
-                    <TableCell className="text-small text-gray-500">
+                    <TableCell className="text-small text-text-muted">
                       {row.referenceType ?? "—"}
                       <span className="block break-all">
                         <code>{row.referenceId ?? "—"}</code>
@@ -212,7 +212,7 @@ export function PaymentReconciliation({
                     <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                       {formatCreditDelta(row.delta)}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-500">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-text-muted">
                       {row.balanceAfter}
                     </TableCell>
                   </TableRow>
@@ -221,14 +221,14 @@ export function PaymentReconciliation({
             </Table>
           )}
           {payment.purpose === "booking" && payment.ledger.length === 2 && (
-            <p className="text-small text-gray-500">
+            <p className="text-small text-text-muted">
               A settled direct-pay is two rows — the <code>purchase</code> mint
               and the <code>booking_debit</code> spend — netting to zero. The
               student never held these credits (§7.6).
             </p>
           )}
           {payment.creditsRetained && (
-            <p className="text-small text-gray-500">
+            <p className="text-small text-text-muted">
               One row, not two: the <code>purchase</code> mint with no{" "}
               <code>booking_debit</code> beside it. The spend is written only
               when the booking confirms, so its absence is the record that this
@@ -250,7 +250,7 @@ export function PaymentReconciliation({
           </CardHeader>
           <CardContent className="space-y-4">
             {payment.creditsRetained && payment.booking && (
-              <p className="text-small text-gray-500">
+              <p className="text-small text-text-muted">
                 This booking is <code>{payment.booking.status}</code> and will
                 stay that way — settlement does not retry a confirm, and a
                 replayed capture will not debit for it.
@@ -279,7 +279,7 @@ export function PaymentReconciliation({
                 </Field>
               </dl>
             ) : (
-              <p className="text-body text-gray-500">
+              <p className="text-body text-text-muted">
                 This payment references booking{" "}
                 <code>{payment.bookingId}</code>, but no such booking row exists.
               </p>
@@ -294,12 +294,12 @@ export function PaymentReconciliation({
         </CardHeader>
         <CardContent>
           {payment.rawPayload == null ? (
-            <p className="text-body text-gray-500">
+            <p className="text-body text-text-muted">
               No payload stored. Set on capture and on webhook events; absent
               means neither has run for this payment.
             </p>
           ) : (
-            <pre className="max-h-[32rem] overflow-auto rounded-md bg-gray-50 p-4 text-small leading-relaxed text-gray-700">
+            <pre className="max-h-[32rem] overflow-auto rounded-md bg-surface-muted p-4 text-small leading-relaxed text-text">
               <code>{JSON.stringify(payment.rawPayload, null, 2)}</code>
             </pre>
           )}

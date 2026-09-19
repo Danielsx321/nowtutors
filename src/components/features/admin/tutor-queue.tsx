@@ -1,5 +1,6 @@
 "use client";
 
+import { approvalBlocker, approvalBlockerMessage } from "@/lib/tutors/approval";
 import * as React from "react";
 import Link from "next/link";
 import { Check, X, ExternalLink } from "lucide-react";
@@ -42,22 +43,22 @@ function Detail({ tutor }: { tutor: QueueTutor }) {
       <div className="flex items-start gap-3">
         <Avatar src={tutor.avatarUrl} name={tutor.displayName ?? "Tutor"} size="lg" />
         <div className="min-w-0 flex-1">
-          <p className="text-body-lg font-bold text-gray-700">
+          <p className="text-body-lg font-bold text-text">
             {tutor.displayName ?? "Unnamed"}
           </p>
-          <p className="text-small text-gray-500">{tutor.email}</p>
+          <p className="text-small text-text-muted">{tutor.email}</p>
           {tutor.country && (
-            <p className="text-small text-gray-500">{tutor.country}</p>
+            <p className="text-small text-text-muted">{tutor.country}</p>
           )}
         </div>
         <PriceTag credits={tutor.hourlyRateCredits} unit="hr" size="sm" />
       </div>
 
       {tutor.headline && (
-        <p className="text-body font-medium text-gray-700">{tutor.headline}</p>
+        <p className="text-body font-medium text-text">{tutor.headline}</p>
       )}
       {tutor.about && (
-        <p className="whitespace-pre-line text-small text-gray-700">{tutor.about}</p>
+        <p className="whitespace-pre-line text-small text-text">{tutor.about}</p>
       )}
 
       {tutor.subjects.length > 0 && (
@@ -65,7 +66,7 @@ function Detail({ tutor }: { tutor: QueueTutor }) {
           {tutor.subjects.map((s) => (
             <SubjectChip key={s.slug} className="text-caption">
               {s.name}
-              {s.level && <span className="text-gray-500">· {s.level}</span>}
+              {s.level && <span className="text-text-muted">· {s.level}</span>}
             </SubjectChip>
           ))}
         </div>
@@ -74,31 +75,31 @@ function Detail({ tutor }: { tutor: QueueTutor }) {
       <dl className="grid gap-x-4 gap-y-1 text-small sm:grid-cols-2">
         {tutor.languages.length > 0 && (
           <div className="flex gap-2">
-            <dt className="text-gray-500">Languages</dt>
-            <dd className="text-gray-700">{tutor.languages.join(", ")}</dd>
+            <dt className="text-text-muted">Languages</dt>
+            <dd className="text-text">{tutor.languages.join(", ")}</dd>
           </div>
         )}
         {tutor.education && (
           <div className="flex gap-2">
-            <dt className="text-gray-500">Education</dt>
-            <dd className="text-gray-700">{tutor.education}</dd>
+            <dt className="text-text-muted">Education</dt>
+            <dd className="text-text">{tutor.education}</dd>
           </div>
         )}
         {tutor.yearsExperience != null && (
           <div className="flex gap-2">
-            <dt className="text-gray-500">Experience</dt>
-            <dd className="text-gray-700">{tutor.yearsExperience} years</dd>
+            <dt className="text-text-muted">Experience</dt>
+            <dd className="text-text">{tutor.yearsExperience} years</dd>
           </div>
         )}
         {tutor.introVideoUrl && (
           <div className="flex gap-2">
-            <dt className="text-gray-500">Intro video</dt>
+            <dt className="text-text-muted">Intro video</dt>
             <dd>
               <Link
                 href={tutor.introVideoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="focus-ring inline-flex items-center gap-1 rounded-sm text-purple-500 hover:underline"
+                className="focus-ring inline-flex items-center gap-1 rounded-sm text-accent hover:underline"
               >
                 Watch <ExternalLink className="size-3.5" aria-hidden />
               </Link>
@@ -116,6 +117,8 @@ export function PendingCard({ tutor }: { tutor: QueueTutor }) {
   const [error, setError] = React.useState<string | null>(null);
   const [pending, start] = React.useTransition();
 
+  // The photo rule (Part G). The action refuses anyway; this says why up front.
+  const blocker = approvalBlocker(tutor);
   return (
     <Card>
       <CardContent className="space-y-4 p-5">
@@ -139,9 +142,13 @@ export function PendingCard({ tutor }: { tutor: QueueTutor }) {
           </div>
         )}
 
+        {blocker && (
+          <p className="text-small font-medium text-spark-text">{approvalBlockerMessage(blocker)}</p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             loading={pending}
+            disabled={!!blocker}
             onClick={() =>
               start(async () => {
                 setError(null);
@@ -168,7 +175,7 @@ export function PendingCard({ tutor }: { tutor: QueueTutor }) {
               Confirm rejection
             </Button>
           ) : (
-            <Button variant="secondary" onClick={() => setShowReject(true)}>
+            <Button variant="outline" onClick={() => setShowReject(true)}>
               <X aria-hidden />
               Reject
             </Button>
@@ -188,7 +195,7 @@ export function ChangedCard({ tutor }: { tutor: QueueTutor }) {
       <CardContent className="space-y-4 p-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Edited since review</Badge>
-          <span className="text-caption text-gray-500">
+          <span className="text-caption text-text-muted">
             changed{" "}
             {tutor.profileChangedAt
               ? new Date(tutor.profileChangedAt).toLocaleString()
@@ -216,7 +223,7 @@ export function ChangedCard({ tutor }: { tutor: QueueTutor }) {
             <Check aria-hidden />
             Mark reviewed
           </Button>
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline">
             <Link href={`/tutors/${tutor.slug}`} target="_blank">
               View public page
             </Link>

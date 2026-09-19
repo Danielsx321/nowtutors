@@ -52,7 +52,7 @@ export function TutorForm({
     resolver: zodResolver(tutorOnboardingSchema),
     defaultValues: {
       fullName: "",
-      avatarUrl: undefined,
+      avatarUrl: "",
       headline: "",
       about: "",
       subjects: [],
@@ -106,13 +106,14 @@ export function TutorForm({
       {formError && <Alert variant="danger">{formError}</Alert>}
 
       <div className="space-y-1.5">
-        <Label>Profile photo</Label>
+        <Label required>Profile photo</Label>
         <AvatarUpload
           userId={userId}
           name={fullName}
-          value={avatarUrl}
-          onChange={(url) => setValue("avatarUrl", url)}
+          value={avatarUrl || undefined}
+          onChange={(url) => setValue("avatarUrl", url ?? "", { shouldValidate: true })}
         />
+        <FieldError>{errors.avatarUrl?.message}</FieldError>
       </div>
 
       <div className="space-y-1.5">
