@@ -4,6 +4,12 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**HOTFIX IN REVIEW (`hotfix-db-transactions`): every database transaction failed on production after PR #100**
+(`max_pipeline: 0` stops postgres.js reserving a connection for `sql.begin`). Now `max_pipeline: 1`, plus an
+integration test through the app's real client that fails on the bug. Merge first, before anything else.
+**Still open after it:** pages can hang under a burst of ~10+ simultaneous loads (54/60 hung with depth 1);
+needs a different fix, next PR.
+
 **LIVE-GLOBE Part I, PR 1 IN REVIEW (`design-v2-acceptance-tables`).** Every table on `DataTable` (old
 `ui/table` deleted); typed confirmations for suspensions and 500+ credit adjustments, server-checked; availability
 Save sticky on phones. Checked in a browser at 1440 and 375 (admin tables, no page overflow; Save bar holds its

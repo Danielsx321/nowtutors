@@ -5031,3 +5031,11 @@ Asked for by Daniels after seeing Part F live: every signed-in page should share
 4. **Availability Save sticks on phones (deferred from Part F).** Below `md` the Save bar sits just above the bottom nav with the saved or error message inside it, so the result shows where the tutor tapped. Measured at 375x812: the button stays at the same place while the page scrolls, 25px above the nav.
 5. **`DataTable` fixes found by the phone check:** the scroll box is now `relative` (the sr-only caption is absolutely positioned and escaped the clip, making `/admin/audit` 809px wide on a 375px phone) and the root grid column is `minmax(0,1fr)`. All three admin tables: no page overflow at 1440 or 375.
 
+## HOTFIX: database transactions failed on production after PR #100 (`hotfix-db-transactions`, 2026-09-19)
+
+1. **What broke:** PR #100 set postgres.js `max_pipeline: 0`. With 0, postgres.js never calls the `onexecute` hook that reserves a connection for `sql.begin` (it sits behind `sent.length < max_pipeline` in `connection.js`), so every `db.transaction` failed with `UNSAFE_TRANSACTION`. That is every write that needs a transaction: accepting sessions, payments, withdrawals, messages, earnings. Live from the PR #100 deploy until this fix.
+2. **How it was missed:** the integration helpers build their own `max: 1` client, and postgres.js skips this check when `max` is 1, so 113/113 passed. The full E2E run caught it (the release-earnings cron in the withdrawal spec).
+3. **Fix:** `max_pipeline: 1`. Transactions work (checked against the test project with 0, 1 and 100).
+5. **This does NOT keep the page-hang fix.** A 20-wide burst, 3 rounds, against a build with `max_pipeline: 1`: 54 of 60 requests hung (no transaction errors, no statement timeouts). Depth 1 still lets two queries share a connection, which is enough for the transaction pooler to strand one. So after this hotfix the site is back to how it ran before 2026-09-19 for load (hangs under a burst) with transactions working. The hang needs a different fix (for example the session pooler, or a client that doesn't pipeline); tracked as the next PR.
+4. **Guard:** `tests/integration/db-client.test.ts` runs a transaction, a savepoint and a burst of 30 queries plus 10 transactions through the app's real client. It fails with `max_pipeline: 0` (verified) and passes with 1.
+
