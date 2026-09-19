@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookings, profiles, tutorProfiles } from "@/db/schema";
+import { bookings, profiles, tutorEarnings, tutorProfiles } from "@/db/schema";
 import { liveTutors, publicProfiles } from "@/db/schema/views";
 import { bucketByMonth, minutesToHours, type MonthBucket } from "@/lib/dashboard/months";
 
@@ -195,5 +195,172 @@ export async function getStudentTutors(studentId: string, limit = 4): Promise<St
     instantNow: r.live_user != null && r.live_mode !== "broadcast" && r.accepts_instant,
     subject: r.subject,
     sessions: Number(r.sessions ?? 0),
+  }));
+}
+
+/**
+ * Hours taught per month for a tutor (Part F): completed sessions of both
+ * kinds by the month they started, in the tutor's timezone. `value` is hours
+ * to one decimal, `count` is sessions. Same shape as the student's chart.
+ */
+export async function getTutorHoursByMonth(
+  tutorId: string,
+  timeZone: string,
+  months = 5,
+  now = new Date(),
+): Promise<MonthBucket[]> {
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
+  const rows = await db
+    .select({
+      startedAt: bookings.startedAt,
+      scheduledStartAt: bookings.scheduledStartAt,
+      durationMinutes: bookings.durationMinutes,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.tutorId, tutorId),
+        eq(bookings.status, "completed"),
+        sql`coalesce(${bookings.startedAt}, ${bookings.scheduledStartAt}) >= ${since.toISOString()}::timestamptz`,
+      ),
+    );
+  const buckets = bucketByMonth(
+    rows.map((r) => ({ at: r.startedAt ?? r.scheduledStartAt, value: r.durationMinutes ?? 0 })),
+    timeZone,
+    now,
+    months,
+  );
+  return buckets.map((b) => ({ ...b, value: minutesToHours(b.value) }));
+}
+
+/**
+ * Credits earned per month (Part F), from the earnings ledger: net credits of
+ * every earning that wasn't reversed, by the month it was recorded (the
+ * session's completion), in the tutor's timezone. Held, available and
+ * withdrawn all count: they are the same money at different stages.
+ */
+export async function getTutorEarningsByMonth(
+  tutorId: string,
+  timeZone: string,
+  months = 5,
+  now = new Date(),
+): Promise<MonthBucket[]> {
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
+  const rows = await db
+    .select({ createdAt: tutorEarnings.createdAt, net: tutorEarnings.netCredits })
+    .from(tutorEarnings)
+    .where(
+      and(
+        eq(tutorEarnings.tutorId, tutorId),
+        sql`${tutorEarnings.status} <> 'reversed'`,
+        sql`${tutorEarnings.createdAt} >= ${since.toISOString()}::timestamptz`,
+      ),
+    );
+  return bucketByMonth(
+    rows.map((r) => ({ at: r.createdAt, value: r.net })),
+    timeZone,
+    now,
+    months,
+  );
+}
+
+export interface ProfileCompleteness {
+  hasPhoto: boolean;
+  subjects: number;
+  /** Active weekly availability rules. */
+  availabilityRules: number;
+  hasAbout: boolean;
+}
+
+/**
+ * What a tutor's profile still needs (Part F; the dashboard's checklist): a
+ * photo, subjects, weekly availability and an About. Facts, not a score.
+ */
+export async function getProfileCompleteness(tutorId: string): Promise<ProfileCompleteness> {
+  const rows = await db.execute<{ has_photo: boolean; subjects: number; rules: number; has_about: boolean }>(sql`
+    select
+      (p.avatar_url is not null and p.avatar_url <> '') as has_photo,
+      (select count(*) from tutor_subjects ts where ts.tutor_id = ${tutorId})::int as subjects,
+      (select count(*) from availability_rules ar where ar.tutor_id = ${tutorId} and ar.is_active)::int as rules,
+      (coalesce(length(trim(tp.about)), 0) > 0) as has_about
+    from profiles p
+    join tutor_profiles tp on tp.user_id = p.id
+    where p.id = ${tutorId}
+  `);
+  const r = Array.from(rows as Iterable<{ has_photo: boolean; subjects: number; rules: number; has_about: boolean }>)[0];
+  return {
+    hasPhoto: !!r?.has_photo,
+    subjects: Number(r?.subjects ?? 0),
+    availabilityRules: Number(r?.rules ?? 0),
+    hasAbout: !!r?.has_about,
+  };
+}
+
+export interface TutorStudent {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  subject: string | null;
+  /** Completed sessions with this tutor. */
+  sessions: number;
+  /** The existing conversation, if the student has written. Tutors can't start one. */
+  conversationId: string | null;
+}
+
+/**
+ * "Your students" / "Recent students" (Part F): students with a completed,
+ * confirmed or in-progress booking with this tutor, most recent first, with the
+ * subject of their latest booking and the conversation between them if one
+ * exists. Only a student can start a conversation (Phase 9), so there is no
+ * way to message someone who hasn't written first.
+ */
+export async function getTutorStudents(tutorId: string, limit = 4): Promise<TutorStudent[]> {
+  const rows = await db.execute<{
+    student_id: string;
+    name: string | null;
+    avatar_url: string | null;
+    subject: string | null;
+    sessions: number;
+    conversation_id: string | null;
+  }>(sql`
+    with mine as (
+      select b.student_id,
+             count(*) filter (where b.status = 'completed')::int as sessions,
+             max(coalesce(b.started_at, b.scheduled_start_at)) as last_at,
+             (array_agg(b.subject_id order by coalesce(b.started_at, b.scheduled_start_at) desc nulls last))[1] as subject_id
+        from bookings b
+       where b.tutor_id = ${tutorId}
+         and b.status in ('completed', 'confirmed', 'in_progress')
+       group by b.student_id
+    )
+    select m.student_id,
+           coalesce(p.display_name, p.full_name) as name,
+           p.avatar_url,
+           s.name as subject,
+           m.sessions,
+           (select c.id from conversations c
+             where (c.participant_a = m.student_id and c.participant_b = ${tutorId})
+                or (c.participant_b = m.student_id and c.participant_a = ${tutorId})
+             limit 1) as conversation_id
+      from mine m
+      join profiles p on p.id = m.student_id
+      left join subjects s on s.id = m.subject_id
+     order by m.last_at desc nulls last
+     limit ${limit}
+  `);
+  return Array.from(rows as Iterable<{
+    student_id: string;
+    name: string | null;
+    avatar_url: string | null;
+    subject: string | null;
+    sessions: number;
+    conversation_id: string | null;
+  }>).map((r) => ({
+    userId: r.student_id,
+    name: r.name ?? "Student",
+    avatarUrl: r.avatar_url,
+    subject: r.subject,
+    sessions: Number(r.sessions ?? 0),
+    conversationId: r.conversation_id,
   }));
 }

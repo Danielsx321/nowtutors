@@ -43,7 +43,7 @@ export default async function TutorBookingDetailPage({
         conversationId ? (
           <Link
             href={`/tutor/messages/${conversationId}`}
-            className="focus-ring inline-flex h-11 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-body font-medium text-gray-700 hover:bg-gray-50"
+            className="focus-ring inline-flex h-11 items-center gap-2 rounded-md border border-border bg-surface-raised px-4 text-body font-medium text-text hover:bg-surface-muted"
           >
             <MessageSquare className="size-5" aria-hidden />
             Open conversation

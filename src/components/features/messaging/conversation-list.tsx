@@ -35,7 +35,7 @@ export function ConversationList({
   }
 
   return (
-    <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+    <ul className="divide-y divide-border rounded-lg border border-border">
       {items.map((item) => (
         <li key={item.id}>
           <ConversationListItem item={item} basePath={basePath} timeZone={timeZone} />
@@ -58,29 +58,29 @@ function ConversationListItem({
   return (
     <Link
       href={`${basePath}/${item.id}`}
-      className="focus-ring flex items-center gap-3 px-4 py-3 hover:bg-gray-50"
+      className="focus-ring flex items-center gap-3 px-4 py-3 hover:bg-surface-muted"
     >
       <Avatar src={item.otherPartyAvatarUrl} name={item.otherPartyName} size="md" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-body text-gray-700", unread && "font-bold")}>
+          <span className={cn("truncate text-body text-text", unread && "font-bold")}>
             {item.otherPartyName}
           </span>
           {item.lastMessageAt && (
-            <span className="shrink-0 text-caption text-gray-500">
+            <span className="shrink-0 text-caption text-text-muted">
               {formatListTime(item.lastMessageAt, timeZone)}
             </span>
           )}
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className={cn("truncate text-small", unread ? "text-gray-700" : "text-gray-500")}>
+          <span className={cn("truncate text-small", unread ? "text-text" : "text-text-muted")}>
             {item.lastMessagePreview === null
               ? "No messages yet"
               : `${item.lastMessageFromMe ? "You: " : ""}${item.lastMessagePreview}`}
           </span>
           {unread && (
             <span
-              className="grid min-w-5 shrink-0 place-items-center rounded-full bg-purple-500 px-1.5 text-caption font-bold text-white"
+              className="grid min-w-5 shrink-0 place-items-center rounded-full bg-spark px-1.5 text-caption font-bold text-ink"
               aria-label={`${item.unreadCount} unread`}
             >
               {item.unreadCount > 99 ? "99+" : item.unreadCount}

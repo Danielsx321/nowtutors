@@ -2,7 +2,21 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-18)
+## Current state (2026-09-19)
+
+**LIVE-GLOBE REBUILD Part F (tutor dashboard and tutor surfaces) is IN REVIEW on branch `design-v2-tutor`.
+No migration, no new dependency.** `/tutor` follows the Part 0 mockup with real data: go-live banner (one
+shared state with the topbar switch), summary cards (next session, available to withdraw with the payout-rate
+dollar figure, taught this month), today's or upcoming sessions, profile checklist, earnings in three stages
+with Withdraw only on Available, credits earned per month, recent students (Message where a conversation
+exists) and the upcoming bookings table. Sidebar shows "Your students". Tutor pages, messaging, broadcasts and
+withdrawals moved onto v2 roles; the profile editor shows a live card preview; the withdrawal page masks the
+PayPal email. New: `go-live-context.tsx`, `go-live-banner.tsx`, `maskEmail`, `getTutorHoursByMonth`,
+`getTutorEarningsByMonth`, `getProfileCompleteness`, `getTutorStudents`. Gates: typecheck and lint clean,
+762 unit, 118 DOM (4 new), 4 integration tests on the test DB, build passed. **Next:** Daniels merges and
+promotes, then Claude checks `/tutor` on production if a tutor session is available in Chrome, then Part G.
+
+## State on 2026-09-18
 
 **LIVE-GLOBE REBUILD Part E (app shell v2 and student dashboard) is MERGED via PR #92 (`ea956f8`), deployed
 (promoted by hand: Vercel staged the production build instead of assigning the domain). No migration, no new

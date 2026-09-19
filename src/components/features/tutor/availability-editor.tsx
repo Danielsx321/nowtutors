@@ -143,19 +143,19 @@ export function AvailabilityEditor({
       </Alert>
 
       <section className="space-y-3">
-        <h2 className="text-h3 font-bold text-gray-700">Weekly hours</h2>
+        <h2 className="text-h3 font-bold text-text">Weekly hours</h2>
         <div className="space-y-3">
           {WEEKDAYS.map((name, day) => (
-            <div key={name} className="rounded-lg border border-gray-200 p-4">
+            <div key={name} className="rounded-lg border border-border p-4">
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-body font-medium text-gray-700">{name}</p>
+                <p className="text-body font-medium text-text">{name}</p>
                 <Button variant="ghost" size="sm" onClick={() => addWindow(day)}>
                   <Plus className="size-4" aria-hidden />
                   Add hours
                 </Button>
               </div>
               {week[day].length === 0 ? (
-                <p className="text-small text-gray-500">Unavailable</p>
+                <p className="text-small text-text-muted">Unavailable</p>
               ) : (
                 <div className="space-y-2">
                   {week[day].map((win, idx) => (
@@ -165,7 +165,7 @@ export function AvailabilityEditor({
                         onChange={(v) => setWindow(day, idx, { start: v })}
                         className="w-32"
                       />
-                      <span className="text-small text-gray-500">to</span>
+                      <span className="text-small text-text-muted">to</span>
                       <TimePicker
                         value={win.end}
                         onChange={(v) => setWindow(day, idx, { end: v })}
@@ -190,14 +190,14 @@ export function AvailabilityEditor({
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-h3 font-bold text-gray-700">Date exceptions</h2>
+          <h2 className="text-h3 font-bold text-text">Date exceptions</h2>
           <Button variant="secondary" size="sm" onClick={addException}>
             <Plus className="size-4" aria-hidden />
             Add exception
           </Button>
         </div>
         {exceptions.length === 0 ? (
-          <p className="text-small text-gray-500">
+          <p className="text-small text-text-muted">
             No exceptions. Add one to block a day off or set custom hours.
           </p>
         ) : (
@@ -205,9 +205,9 @@ export function AvailabilityEditor({
             {exceptions.map((x, idx) => (
               <div
                 key={idx}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 p-3"
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3"
               >
-                <CalendarX2 className="size-4 text-gray-400" aria-hidden />
+                <CalendarX2 className="size-4 text-text-muted" aria-hidden />
                 <Input
                   type="date"
                   value={x.date}
@@ -234,7 +234,7 @@ export function AvailabilityEditor({
                       onChange={(v) => setException(idx, { start: v })}
                       className="w-32"
                     />
-                    <span className="text-small text-gray-500">to</span>
+                    <span className="text-small text-text-muted">to</span>
                     <TimePicker
                       value={x.end}
                       onChange={(v) => setException(idx, { end: v })}

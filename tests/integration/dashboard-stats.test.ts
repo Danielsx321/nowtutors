@@ -6,7 +6,11 @@ import {
   getHomeProof,
   getLearnerHoursByMonth,
   getLiveTutorCountries,
+  getProfileCompleteness,
   getStudentTutors,
+  getTutorEarningsByMonth,
+  getTutorHoursByMonth,
+  getTutorStudents,
 } from "@/db/queries/dashboard-stats";
 
 /**
@@ -66,5 +70,31 @@ describe("dashboard-stats (test database)", () => {
     expect(proof.sessionsTaught).toBeGreaterThanOrEqual(0);
     const countries = await getLiveTutorCountries();
     for (const c of countries) expect(typeof c).toBe("string");
+  });
+
+  it("the tutor queries run against a seeded tutor and return their declared shapes", async () => {
+    const [tutor] = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(eq(profiles.email, "tutor1@nowtutors.dev"))
+      .limit(1);
+    expect(tutor).toBeTruthy();
+
+    const hours = await getTutorHoursByMonth(tutor!.id, "Africa/Lagos", 5);
+    const earned = await getTutorEarningsByMonth(tutor!.id, "Africa/Lagos", 5);
+    expect(hours).toHaveLength(5);
+    expect(earned).toHaveLength(5);
+    for (const m of [...hours, ...earned]) expect(m.value).toBeGreaterThanOrEqual(0);
+
+    const profile = await getProfileCompleteness(tutor!.id);
+    expect(typeof profile.hasPhoto).toBe("boolean");
+    expect(profile.subjects).toBeGreaterThanOrEqual(0);
+    expect(profile.availabilityRules).toBeGreaterThanOrEqual(0);
+
+    const students = await getTutorStudents(tutor!.id, 10);
+    for (const s of students) {
+      expect(typeof s.name).toBe("string");
+      expect(s.sessions).toBeGreaterThanOrEqual(0);
+    }
   });
 });

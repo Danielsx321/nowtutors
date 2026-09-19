@@ -59,7 +59,7 @@ export function WithdrawalRequest({
           ? `Withdraw ${availableCredits.toLocaleString()} credits ($${availableUsd})`
           : "Request withdrawal"}
       </Button>
-      <p className="text-small text-gray-500">
+      <p className="text-small text-text-muted">
         A withdrawal always takes your whole available balance. The credits are
         held straight away and paid to your PayPal account by our team.
       </p>

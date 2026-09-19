@@ -5,6 +5,8 @@ import { getTutorLiveState } from "@/db/queries/presence";
 import { getOwnLiveBroadcastId } from "@/db/queries/broadcasts";
 import { getShellIdentity } from "@/db/queries/shell";
 import { IncomingRequests } from "@/components/features/tutor/incoming-requests";
+import { getTutorStudents } from "@/db/queries/dashboard-stats";
+import type { SidebarPeople } from "@/components/layout/sidebar";
 
 /**
  * Tutor area shell. SPEC §5/§6: guards role = tutor (Layer 2). Approval is NOT
@@ -29,18 +31,33 @@ export default async function TutorLayout({
   children: React.ReactNode;
 }) {
   const { user } = await requireRole("tutor", { requireApproval: false });
-  const [ttlSeconds, live, liveBroadcastId, identity] = await Promise.all([
+  const [ttlSeconds, live, liveBroadcastId, identity, students] = await Promise.all([
     getInstantRequestTtlSeconds(),
     getTutorLiveState(user.id),
     getOwnLiveBroadcastId(user.id),
     getShellIdentity(user.id),
+    getTutorStudents(user.id, 3).catch(() => []),
   ]);
+  // "Your students" in the sidebar (v2, Part F). A failure drops the section, not the page.
+  const people: SidebarPeople = {
+    heading: "Your students",
+    people: students.map((st) => ({
+      id: st.userId,
+      name: st.name,
+      avatarUrl: st.avatarUrl,
+      href: st.conversationId ? `/tutor/messages/${st.conversationId}` : "/tutor/bookings",
+      detail: [st.subject, st.sessions > 0 ? `${st.sessions} ${st.sessions === 1 ? "session" : "sessions"}` : "upcoming"]
+        .filter(Boolean)
+        .join(" · "),
+    })),
+  };
   const broadcasting = live?.liveMode === "broadcast";
   return (
     <AppShell
       role="tutor"
       userName={identity.displayName ?? user.email ?? undefined}
       avatarUrl={identity.avatarUrl}
+      people={people}
       goLive={{
         initialLive: (live?.isLive ?? false) && live?.liveMode === "instant",
         broadcastHref: broadcasting

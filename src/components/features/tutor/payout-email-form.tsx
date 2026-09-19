@@ -50,7 +50,7 @@ export function PayoutEmailForm({ email }: { email: string | null }) {
       <Button type="submit" loading={pending}>
         Save
       </Button>
-      <p className="text-small text-gray-500">
+      <p className="text-small text-text-muted">
         Withdrawals are paid to this address. Changing it doesn&apos;t affect a
         withdrawal you&apos;ve already requested.
       </p>

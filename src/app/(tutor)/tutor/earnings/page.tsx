@@ -25,10 +25,10 @@ export default async function TutorEarningsPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 py-8">
+    <div className="mx-auto max-w-4xl space-y-6 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Earnings</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Earnings</h1>
+        <p className="mt-1 text-body text-text-muted">
           What you&apos;ve earned per session, after the platform fee.
         </p>
       </div>

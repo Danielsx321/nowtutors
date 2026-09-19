@@ -16,6 +16,7 @@ import {
   usdToCents,
 } from "@/lib/withdrawals/payout-rate";
 import { withdrawalRefusalMessage } from "@/lib/withdrawals/withdrawals";
+import { maskEmail } from "@/lib/withdrawals/mask-email";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreditBalance } from "@/components/ui/credit-balance";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -81,18 +82,18 @@ export default async function TutorWithdrawalsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 py-8">
+    <div className="mx-auto max-w-4xl space-y-6 py-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-h1 font-bold text-gray-700">Withdrawals</h1>
-          <p className="mt-1 text-body text-gray-500">
+          <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Withdrawals</h1>
+          <p className="mt-1 text-body text-text-muted">
             Minimum withdrawal ${settings.minWithdrawalUsd.toFixed(2)}.
           </p>
         </div>
         <div className="text-right">
           <CreditBalance credits={balance} size="lg" />
           {availableUsd && (
-            <p className="mt-1 text-small text-gray-500">about ${availableUsd}</p>
+            <p className="mt-1 text-small text-text-muted">about ${availableUsd}</p>
           )}
         </div>
       </div>
@@ -102,17 +103,17 @@ export default async function TutorWithdrawalsPage() {
           <CardTitle>Request a withdrawal</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-body text-gray-700">
+          <p className="text-body text-text">
             Paid to{" "}
             {email ? (
-              <span className="font-medium">{email}</span>
+              <span className="font-medium" title="Your PayPal email, partly hidden">{maskEmail(email)}</span>
             ) : (
-              <span className="text-gray-500">no PayPal email yet</span>
+              <span className="text-text-muted">no PayPal email yet</span>
             )}{" "}
             ·{" "}
             <Link
               href="/tutor/settings"
-              className="focus-ring rounded-sm text-purple-500 hover:underline"
+              className="focus-ring rounded-sm text-accent hover:underline"
             >
               {email ? "Edit" : "Add one"}
             </Link>
@@ -156,7 +157,7 @@ export default async function TutorWithdrawalsPage() {
                     <TableCell>
                       <WithdrawalStatusBadge status={w.status} />
                     </TableCell>
-                    <TableCell className="text-small text-gray-500">
+                    <TableCell className="text-small text-text-muted">
                       {w.adminNote ?? ""}
                     </TableCell>
                   </TableRow>

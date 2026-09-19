@@ -19,10 +19,10 @@ export default async function TutorAvailabilityPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-2xl py-8">
+    <div className="mx-auto max-w-2xl py-2">
       <div className="mb-6 space-y-1">
-        <h1 className="text-h1 font-bold text-gray-700">Availability</h1>
-        <p className="text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Availability</h1>
+        <p className="text-body text-text-muted">
           Set the weekly hours students can book, plus any one-off exceptions.
         </p>
       </div>

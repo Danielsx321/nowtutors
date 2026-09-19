@@ -138,19 +138,19 @@ export function Composer({
   }
 
   return (
-    <div className="space-y-2 border-t border-gray-200 pt-3">
+    <div className="space-y-2 border-t border-border pt-3">
       {error && <Alert variant="danger">{error}</Alert>}
       {file && (
-        <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-small text-gray-700">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface-muted px-3 py-2 text-small text-text">
           {file.type === "application/pdf" ? (
-            <FileText className="size-4 shrink-0 text-gray-500" aria-hidden />
+            <FileText className="size-4 shrink-0 text-text-muted" aria-hidden />
           ) : (
-            <ImageIcon className="size-4 shrink-0 text-gray-500" aria-hidden />
+            <ImageIcon className="size-4 shrink-0 text-text-muted" aria-hidden />
           )}
           <span className="min-w-0 flex-1 truncate">{file.name}</span>
           <button
             type="button"
-            className="focus-ring rounded-sm text-gray-500 hover:text-gray-700"
+            className="focus-ring rounded-sm text-text-muted hover:text-text"
             aria-label={`Remove ${file.name}`}
             disabled={pending}
             onClick={() => {
@@ -206,7 +206,7 @@ export function Composer({
         </Button>
       </div>
       {trimmed.length >= COUNTER_FROM && (
-        <p className={tooLong ? "text-small text-red-500" : "text-small text-gray-500"}>
+        <p className={tooLong ? "text-small text-danger" : "text-small text-text-muted"}>
           {trimmed.length.toLocaleString("en-US")} / {MAX_BODY_CHARS.toLocaleString("en-US")}
         </p>
       )}
