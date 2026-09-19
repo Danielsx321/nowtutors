@@ -4,6 +4,20 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**LIVE-GLOBE REBUILD Part H (live moments touch-up) is IN REVIEW on branch `design-v2-live`.
+No migration, no new dependency, no behaviour change.** The instant-session room follows the session-room
+mockup: a top bar with the heading, a "Connected" chip (or who it's waiting for) and the clock as a pill with a
+thin progress line; a "Good / Fair / Weak connection" chip on the stage; a 26px stage with the student as a
+16:10 picture-in-picture from `md`; one dark rounded control bar with End session as a coral pill set apart.
+Lobby, error and ended states, the classroom frame, the broadcast host and viewer stages (audience count now a
+chip on the picture) and the `/live` pages (white cards, Browse chips) moved to v2 radii and surfaces. Lobby
+Join is live green; "Try another live tutor" is teal. Every Part 4 and E2E string kept. New:
+`room-chips.tsx`, `tests/dom/session-room-v2.test.tsx`. Gates: typecheck and lint clean, 770 unit, 132 DOM
+(8 new). Part G is merged (PR #96, `b4571c6`). **Next:** Daniels merges; a real two-person session on
+production is the check (rooms can't be opened without two signed-in people); then Part I.
+
+## Earlier on 2026-09-19 (Part G)
+
 **LIVE-GLOBE REBUILD Part G (admin dashboard, photo rule, cleanup) is IN REVIEW on branch `design-v2-admin`.
 No migration, no new dependency.** `/admin` follows the Part 0 mockup with real data (queue banner, wallet
 check, summary cards, approval queue photo cards, revenue per month, accounts, recent activity in plain words,

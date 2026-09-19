@@ -14,7 +14,8 @@ import {
 import { SessionTimer, type TimeStage } from "@/components/features/session/session-timer";
 import { EndSessionButton } from "@/components/features/session/end-session-button";
 import { ControlBar } from "@/components/features/session/control-bar";
-import { ConnectionBanner } from "@/components/features/session/connection-banner";
+import { ConnectionBanner, qualityLevel } from "@/components/features/session/connection-banner";
+import { PresenceChip, QualityChip } from "@/components/features/session/room-chips";
 import { Lobby } from "@/components/features/session/lobby";
 import { useTokenRenewal } from "@/hooks/use-token-renewal";
 import { getSessionState } from "@/actions/sessions";
@@ -35,6 +36,11 @@ import { getSessionState } from "@/actions/sessions";
  * bar, connection-quality warnings from the SDK's own events, and staged
  * time-left warnings. The join, renewal, end and teardown logic is unchanged.
  *
+ * **Live-globe Part H** matched it to the session-room mockup: a top bar with
+ * the title, a "Connected" chip and the clock pill; the connection chip on the
+ * stage; a 26px stage with the student as a 16:10 picture-in-picture; and the
+ * single dark control bar. Presentation only.
+ *
  * **The countdown is cosmetic and this component never decides the session is
  * over.** It ticks a deadline the server computed from `bookings.started_at`,
  * and asks the server what is true at exactly three moments: on mount, when the
@@ -51,6 +57,10 @@ import { getSessionState } from "@/actions/sessions";
 
 export interface SessionRoomProps {
   bookingId: string;
+  /** The room's heading: the subject, or "Tutoring session". */
+  title: string;
+  /** Under the heading: who with, and for how long. */
+  subtitle?: string;
   /** Labels and layout only — the publish decision comes from the token route. */
   viewerIsTutor: boolean;
   viewerName: string;
@@ -74,6 +84,8 @@ interface TokenErrorBody {
 
 export function SessionRoom({
   bookingId,
+  title,
+  subtitle,
   viewerIsTutor,
   viewerName,
   viewerAvatarUrl,
@@ -287,38 +299,53 @@ export function SessionRoom({
 
   // Terminal, and checked before the error branch: a token refusal that arrives
   // *because* the session ended should read as "it's over", not as a failure.
+  const topBar = (status?: React.ReactNode) => (
+    <RoomTopBar title={title} subtitle={subtitle}>
+      {status}
+    </RoomTopBar>
+  );
+
   if (finished) {
     return (
-      <SessionEnded
-        viewerIsTutor={viewerIsTutor}
-        otherPartyName={otherPartyName}
-        durationMinutes={durationMinutes}
-      />
+      <div className="flex flex-col gap-4">
+        {topBar()}
+        <SessionEnded
+          viewerIsTutor={viewerIsTutor}
+          otherPartyName={otherPartyName}
+          durationMinutes={durationMinutes}
+        />
+      </div>
     );
   }
 
   if (phase === "lobby") {
     return (
-      <Lobby
-        needsCamera={viewerIsTutor}
-        otherPartyName={otherPartyName}
-        otherPartyAvatarUrl={otherPartyAvatarUrl}
-        onJoin={() => setPhase("connecting")}
-      />
+      <div className="flex flex-col gap-4">
+        {topBar()}
+        <Lobby
+          needsCamera={viewerIsTutor}
+          otherPartyName={otherPartyName}
+          otherPartyAvatarUrl={otherPartyAvatarUrl}
+          onJoin={() => setPhase("connecting")}
+        />
+      </div>
     );
   }
 
   if (phase === "error") {
     return (
-      <div role="alert" className="rounded-xl border border-danger bg-danger-surface p-6">
-        <div className="flex gap-3">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
-          <div className="min-w-0">
-            <p className="font-semibold text-text">Couldn&apos;t join the session</p>
-            <p className="mt-1 text-body text-text">{error}</p>
-            <Button className="mt-4" onClick={retry}>
-              Try again
-            </Button>
+      <div className="flex flex-col gap-4">
+        {topBar()}
+        <div role="alert" className="rounded-card border border-danger bg-danger-surface p-6">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
+            <div className="min-w-0">
+              <p className="font-semibold text-text">Couldn&apos;t join the session</p>
+              <p className="mt-1 text-body text-text">{error}</p>
+              <Button className="mt-4" onClick={retry}>
+                Try again
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -327,9 +354,19 @@ export function SessionRoom({
 
   // The tutor's camera is the main tile for both parties: it is the only video in
   // the room (the student publishes microphone only, §9).
+  // The chip on the stage reports this browser's own link, the one the person
+  // can do something about. Problems are also spelled out in the banner above;
+  // the chip is the at-a-glance version, so it says nothing until the SDK has
+  // reported a quality.
+  const stageChip =
+    phase === "live" && quality ? (
+      <QualityChip level={qualityLevel(Math.max(quality.uplink, quality.downlink))} />
+    ) : null;
+
   const tutorTile = viewerIsTutor ? (
     <VideoTile
       primary
+      overlay={stageChip}
       name={viewerName}
       roleLabel="You"
       avatarUrl={viewerAvatarUrl}
@@ -344,6 +381,7 @@ export function SessionRoom({
   ) : (
     <VideoTile
       primary
+      overlay={stageChip}
       name={otherPartyName}
       roleLabel="Tutor"
       avatarUrl={otherPartyAvatarUrl}
@@ -379,18 +417,22 @@ export function SessionRoom({
   const cameraOn = cameraEnabled === true;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SessionTimer
-          deadline={deadline}
-          durationMinutes={durationMinutes}
-          onExpired={refreshState}
-          onStageChange={onStageChange}
-        />
-        {!remotePresent && phase === "live" && (
-          <p className="text-small text-text-muted">Waiting for {otherPartyName}…</p>
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
+      {topBar(
+        <>
+          {phase === "live" && (
+            <PresenceChip present={remotePresent} otherPartyName={otherPartyName} />
+          )}
+          <div className="sm:ml-auto">
+            <SessionTimer
+              deadline={deadline}
+              durationMinutes={durationMinutes}
+              onExpired={refreshState}
+              onStageChange={onStageChange}
+            />
+          </div>
+        </>,
+      )}
 
       <ConnectionBanner
         phase={phase}
@@ -402,7 +444,7 @@ export function SessionRoom({
       />
 
       {(stage === "two" || stage === "final") && (
-        <p className="flex items-center gap-2 rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
+        <p className="flex items-center gap-2 rounded-[14px] border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
           <Clock className="size-4 shrink-0" aria-hidden />
           {stage === "final"
             ? "Less than a minute left. The room closes on time."
@@ -414,16 +456,20 @@ export function SessionRoom({
         <p
           role="status"
           aria-live="polite"
-          className="rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning"
+          className="rounded-[14px] border border-warning bg-warning-surface px-3 py-2 text-small text-warning"
         >
           {notice}
         </p>
       )}
 
       {spotlight ? (
+        // Below md the picture-in-picture would cover most of a phone-width
+        // stage, so it sits under it instead.
         <div className="space-y-3 md:relative md:space-y-0">
           {tutorTile}
-          <div className="w-40 md:absolute md:bottom-3 md:right-3 md:w-52">{studentTile}</div>
+          <div className="w-40 md:absolute md:bottom-[18px] md:right-[18px] md:w-[clamp(150px,20vw,240px)]">
+            {studentTile}
+          </div>
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
@@ -475,7 +521,7 @@ function SessionEnded({
   return (
     <section
       aria-labelledby="ended-title"
-      className="mx-auto w-full max-w-xl space-y-4 rounded-xl border border-border bg-surface-raised p-6 text-center"
+      className="mx-auto w-full max-w-xl space-y-4 rounded-panel bg-surface-raised p-6 text-center md:p-8"
     >
       <h2 id="ended-title" className="font-display text-h2 font-semibold text-text">
         Session ended
@@ -507,6 +553,30 @@ function SessionEnded({
         .
       </p>
     </section>
+  );
+}
+
+/**
+ * The room's top bar (session-room mockup): the heading on the left, and the
+ * presence chip and clock pill passed in as children.
+ */
+function RoomTopBar({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="font-display text-h3 font-semibold text-text">{title}</h1>
+        {subtitle && <p className="text-small text-text-muted">{subtitle}</p>}
+      </div>
+      {children}
+    </header>
   );
 }
 

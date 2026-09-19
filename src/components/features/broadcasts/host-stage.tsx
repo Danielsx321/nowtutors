@@ -178,7 +178,7 @@ export function HostStage({ broadcastId, hostName, hostAvatarUrl, startedAt }: H
 
   if (phase === "error") {
     return (
-      <div role="alert" className="rounded-xl border border-danger bg-danger-surface p-6">
+      <div role="alert" className="rounded-card border border-danger bg-danger-surface p-6">
         <div className="flex gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
           <div className="min-w-0">
@@ -210,9 +210,10 @@ export function HostStage({ broadcastId, hostName, hostAvatarUrl, startedAt }: H
   const reconnecting = connection === "RECONNECTING" || connection === "CONNECTING";
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Status bar (design overhaul Part 4): on air, for how long, to how many, and the line. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-surface-raised px-4 py-2.5">
+    <div className="flex flex-col gap-4">
+      {/* Status bar (design overhaul Part 4): on air, for how long, to how many,
+          and the line. v2: one rounded dark bar, like the room's control bar. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[22px] bg-surface-raised px-4 py-2.5">
         {phase === "live" ? (
           <LiveChip label="LIVE" />
         ) : (
@@ -232,7 +233,7 @@ export function HostStage({ broadcastId, hostName, hostAvatarUrl, startedAt }: H
       </div>
 
       {notice && (
-        <p role="status" aria-live="polite" className="rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
+        <p role="status" aria-live="polite" className="rounded-[14px] border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
           {notice}
         </p>
       )}

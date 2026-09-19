@@ -42,7 +42,7 @@ export default async function LiveBroadcastPage({
     broadcast.status === "ended" ? (
       <BroadcastEnded tutorName={broadcast.tutorName} tutorSlug={broadcast.tutorSlug} />
     ) : (
-      <div className="rounded-xl border border-border bg-surface-raised p-6" data-broadcast-ended>
+      <div className="rounded-panel bg-surface-raised p-6 md:p-8" data-broadcast-ended>
         <h2 className="font-display text-h3 font-semibold text-text">This broadcast isn&apos;t live right now</h2>
         <p className="mt-2 max-w-prose text-body text-text-muted">See who else is teaching right now.</p>
         <Button asChild className="mt-4">
@@ -51,7 +51,7 @@ export default async function LiveBroadcastPage({
       </div>
     )
   ) : !profile ? (
-    <div className="grid aspect-video place-items-center rounded-xl border border-border bg-surface-raised p-6 text-center">
+    <div className="grid aspect-video place-items-center rounded-panel bg-surface-raised p-6 text-center">
       <div>
         <h2 className="font-display text-h3 font-semibold text-text">Sign in to watch</h2>
         <p className="mx-auto mt-2 max-w-prose text-body text-text-muted">
@@ -65,7 +65,7 @@ export default async function LiveBroadcastPage({
   ) : profile.isSuspended ? (
     <Alert variant="danger">This account is suspended, so it can&apos;t watch broadcasts.</Alert>
   ) : profile.id === broadcast.tutorId ? (
-    <div className="rounded-xl border border-border bg-surface-raised p-6">
+    <div className="rounded-card bg-surface-raised p-6">
       <p className="text-body text-text">This is your broadcast.</p>
       <Button asChild className="mt-4">
         <Link href={`/broadcast/${broadcast.id}`}>Open your host view</Link>
@@ -89,12 +89,12 @@ export default async function LiveBroadcastPage({
             {broadcast.watchable && <LiveChip label="LIVE" />}
             {broadcast.subjectName && <span className="text-small text-text-muted">{broadcast.subjectName}</span>}
           </div>
-          <h1 className="font-display text-h1 font-bold text-text">{broadcast.title}</h1>
+          <h1 className="font-display text-h2 font-semibold text-text">{broadcast.title}</h1>
           {stage}
         </div>
 
-        <aside className="space-y-4 lg:pt-12">
-          <div className="space-y-3 rounded-xl border border-border bg-surface-raised p-5">
+        <aside className="space-y-4 lg:pt-[88px]">
+          <div className="space-y-3 rounded-card bg-surface-raised p-5">
             <div className="flex items-center gap-3">
               <Avatar src={broadcast.tutorAvatarUrl} name={broadcast.tutorName} size="lg" />
               <div className="min-w-0">
@@ -109,7 +109,7 @@ export default async function LiveBroadcastPage({
             )}
           </div>
           {broadcast.description && (
-            <div className="space-y-2 rounded-xl border border-border bg-surface-raised p-5">
+            <div className="space-y-2 rounded-card bg-surface-raised p-5">
               <h2 className="text-small font-medium text-text-muted">About this class</h2>
               <p className="whitespace-pre-line text-body text-text">{broadcast.description}</p>
             </div>

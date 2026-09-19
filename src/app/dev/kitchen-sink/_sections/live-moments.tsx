@@ -7,6 +7,8 @@ import { Modal, ModalContent } from "@/components/ui/modal";
 import { VideoTile } from "@/components/features/session/video-tile";
 import { ControlBar } from "@/components/features/session/control-bar";
 import { ConnectionBanner } from "@/components/features/session/connection-banner";
+import { SessionTimer } from "@/components/features/session/session-timer";
+import { PresenceChip, QualityChip } from "@/components/features/session/room-chips";
 import { WaitingForTutor } from "@/components/features/booking/waiting-for-tutor";
 
 /**
@@ -19,14 +21,39 @@ export function LiveMomentsSection({ surface }: { surface: Surface }) {
   const [mic, setMic] = React.useState(true);
   const [cam, setCam] = React.useState(false);
   const [waiting, setWaiting] = React.useState<string | null>(null);
+  // Set after mount, so the server render and the first client render agree.
+  const [deadline, setDeadline] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setDeadline(new Date(Date.now() + 24 * 60_000 + 10_000).toISOString());
+  }, []);
 
   return (
     <Section id="live-moments" title="Live moments (rooms are always dark)" surface={surface}>
-      <div className="theme-dark space-y-4 rounded-xl bg-surface p-4 text-text md:p-6">
-        <p className="text-small text-text-muted">Spotlight: the tutor large, the student as a small tile.</p>
+      <div className="theme-dark space-y-4 rounded-panel bg-surface p-4 text-text md:p-6">
+        <p className="text-small text-text-muted">
+          Top bar: heading, presence chip, clock pill. Spotlight: the tutor large with the connection chip, the student
+          as a 16:10 picture-in-picture.
+        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="min-w-0">
+            <p className="font-display text-h3 font-semibold text-text">Algebra</p>
+            <p className="text-small text-text-muted">with Liam Bennett · 60 minutes</p>
+          </div>
+          <PresenceChip present otherPartyName="Liam Bennett" />
+          <div className="sm:ml-auto">
+            <SessionTimer deadline={deadline} durationMinutes={60} />
+          </div>
+        </div>
         <div className="space-y-3 md:relative md:space-y-0">
-          <VideoTile primary name="Liam Bennett" roleLabel="Tutor" track={null} emptyReason="camera-off" />
-          <div className="w-40 md:absolute md:bottom-3 md:right-3 md:w-52">
+          <VideoTile
+            primary
+            name="Liam Bennett"
+            roleLabel="Tutor"
+            track={null}
+            emptyReason="camera-off"
+            overlay={<QualityChip level="good" />}
+          />
+          <div className="w-40 md:absolute md:bottom-[18px] md:right-[18px] md:w-[clamp(150px,20vw,240px)]">
             <VideoTile compact name="Amara Okafor" roleLabel="You" track={null} muted={!mic} emptyReason="audio-only" />
           </div>
         </div>
@@ -59,7 +86,7 @@ export function LiveMomentsSection({ surface }: { surface: Surface }) {
           onRejoin={() => {}}
         />
         <ConnectionBanner phase="live" connection="DISCONNECTED" quality={null} otherRole="Your tutor" onRejoin={() => {}} />
-        <p className="flex items-center gap-2 rounded-lg border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
+        <p className="flex items-center gap-2 rounded-[14px] border border-warning bg-warning-surface px-3 py-2 text-small text-warning">
           2 minutes left. The session ends on time and can&apos;t be extended.
         </p>
       </div>

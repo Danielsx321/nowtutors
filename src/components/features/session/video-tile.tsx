@@ -39,6 +39,8 @@ export interface VideoTileProps {
   primary?: boolean;
   /** Small picture-in-picture tile: compact label, no avatar caption. */
   compact?: boolean;
+  /** Pinned to the top-left of the picture: the room's connection chip. */
+  overlay?: React.ReactNode;
   className?: string;
 }
 
@@ -57,6 +59,7 @@ export function VideoTile({
   muted,
   primary,
   compact,
+  overlay,
   className,
 }: VideoTileProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -80,8 +83,15 @@ export function VideoTile({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border border-border bg-surface-raised",
-        primary || compact ? "aspect-video w-full" : "aspect-video w-full sm:aspect-[4/3]",
+        // v2 room (session-room mockup): the stage is a 26px panel with no
+        // border; a picture-in-picture tile is 16px with a ground-coloured
+        // edge so it reads as lifted off the stage.
+        "relative w-full overflow-hidden bg-surface-raised",
+        primary
+          ? "aspect-video rounded-panel"
+          : compact
+            ? "aspect-[16/10] rounded-[16px] border-2 border-ground"
+            : "aspect-video rounded-card sm:aspect-[4/3]",
         className,
       )}
     >
@@ -106,10 +116,12 @@ export function VideoTile({
         </div>
       )}
 
+      {overlay && <div className="absolute left-3 top-3 md:left-[18px] md:top-[18px]">{overlay}</div>}
+
       <div
         className={cn(
-          "absolute bottom-0 left-0 flex max-w-full items-center gap-2 bg-surface/80",
-          compact ? "rounded-tr-md px-2 py-1" : "rounded-tr-lg px-3 py-2",
+          "absolute bottom-0 left-0 flex max-w-full items-center gap-2 bg-ground/70",
+          compact ? "rounded-tr-[10px] px-2.5 py-1.5" : "rounded-tr-[14px] px-4 py-2.5",
         )}
       >
         <p className={cn("truncate font-medium text-text", compact ? "text-caption" : "text-small")}>

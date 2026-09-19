@@ -91,8 +91,9 @@ function FilterChip({ href, active, children }: { href: string; active: boolean;
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "focus-ring inline-flex h-9 items-center rounded-full border px-4 text-small font-medium",
-        active ? "border-accent bg-surface-muted text-accent" : "border-border-strong text-text hover:bg-surface-muted",
+        // Same chips as Browse (tutor-filters.tsx): the chosen one is ink.
+        "focus-ring inline-flex h-[38px] shrink-0 items-center rounded-full border px-3.5 text-small font-medium transition-colors",
+        active ? "border-ink bg-ink text-on-ink" : "border-border-strong/40 bg-surface-raised text-text hover:bg-surface-muted",
       )}
     >
       {children}
@@ -106,18 +107,20 @@ function BroadcastRow({ title, broadcasts }: { title?: string; broadcasts: LiveB
       {title && <h2 className="text-h2 font-semibold text-text">{title}</h2>}
       <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {broadcasts.map((b) => (
-          <li key={b.id} className="group relative space-y-3">
+          // v2 card (as the tutor card): a white card on the ground, the photo
+          // inset with its own radius.
+          <li key={b.id} className="group relative space-y-3 rounded-card bg-surface-raised p-2.5 pb-4">
             <div className="relative">
               <TutorPhoto
                 src={b.tutorAvatarUrl}
                 name={b.tutorName}
                 sizes="(min-width: 1024px) 380px, (min-width: 640px) 50vw, 100vw"
-                className="aspect-video w-full rounded-xl"
+                className="aspect-video w-full rounded-photo"
                 initialsClassName="text-display"
               />
               <LiveChip label="LIVE" size="sm" className="absolute left-3 top-3" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 px-2">
               <h3 className="line-clamp-2 font-display text-body-lg font-semibold text-text">
                 <Link href={`/live/${b.id}`} className="focus-ring rounded-sm after:absolute after:inset-0 group-hover:underline">
                   {b.title}

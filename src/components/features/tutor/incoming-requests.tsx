@@ -317,7 +317,7 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
           </div>
 
           {current.message && (
-            <p className="whitespace-pre-line rounded-lg bg-surface-muted p-3 text-small text-text">
+            <p className="whitespace-pre-line rounded-[14px] bg-surface-muted p-3 text-small text-text">
               {current.message}
             </p>
           )}

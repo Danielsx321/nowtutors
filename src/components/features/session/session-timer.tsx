@@ -93,7 +93,7 @@ export function SessionTimer({
       <div
         role="status"
         aria-live="polite"
-        className="flex items-center gap-2 text-small text-text-muted"
+        className="flex items-center gap-2 rounded-full bg-surface-raised px-3.5 py-2 text-small text-text-muted"
       >
         <Clock className="size-4 shrink-0" aria-hidden />
         Timer starts when you&apos;re both here
@@ -108,7 +108,9 @@ export function SessionTimer({
   const final = secondsLeft <= 60;
 
   return (
-    <div className="flex items-center gap-3">
+    // v2 (live-globe Part H): the clock is a pill in the room's top bar with the
+    // thin progress line inside it, as in the session-room mockup.
+    <div className="flex items-center gap-2.5 rounded-full bg-surface-raised px-3.5 py-2">
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
@@ -119,15 +121,14 @@ export function SessionTimer({
         aria-live="off"
         aria-label={`${formatSpoken(secondsLeft)} remaining in this session`}
         className={cn(
-          "flex items-center gap-2 font-display text-body-lg font-semibold tabular-nums",
+          "flex items-center gap-2 font-display text-body font-semibold tabular-nums",
           final ? "text-danger" : urgent ? "text-warning" : "text-text",
         )}
       >
-        <Clock className="size-4 shrink-0" aria-hidden />
         <span>{formatClock(secondsLeft)}</span>
       </div>
       <div
-        className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-muted"
+        className="h-1 w-[90px] overflow-hidden rounded-full bg-border"
         aria-hidden
       >
         <div
