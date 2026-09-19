@@ -40,12 +40,18 @@ export function DataTable<T>({
   minWidth?: number;
 }) {
   return (
-    <div className="grid gap-3">
+    // `minmax(0,1fr)`: a grid item is at least its content's width by default,
+    // which let the scroll box grow to the table's min-width and scroll the
+    // whole page on a phone (Part I check, /admin/audit at 375px).
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       {toolbar}
       {rows.length === 0 && empty ? (
         empty
       ) : (
-        <div className="overflow-x-auto rounded-card border border-border bg-surface-raised">
+        // `relative`: the sr-only caption is absolutely positioned; without a
+        // positioned scroll box it escaped the clip and widened the page on
+        // phones (809px document on a 375px screen, /admin/audit).
+        <div className="relative overflow-x-auto rounded-card border border-border bg-surface-raised">
           <table className="w-full border-collapse text-[14.5px]" style={{ minWidth }}>
             {caption && <caption className="sr-only">{caption}</caption>}
             <thead>

@@ -4,6 +4,12 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**LIVE-GLOBE Part I, PR 1 IN REVIEW (`design-v2-acceptance-tables`).** Every table on `DataTable` (old
+`ui/table` deleted); typed confirmations for suspensions and 500+ credit adjustments, server-checked; availability
+Save sticky on phones. Checked in a browser at 1440 and 375 (admin tables, no page overflow; Save bar holds its
+place). 775 unit, 134 DOM, admin integration 13/13. **Next:** PR 2 (design smoke spec, full E2E, Lighthouse
+accessibility, Noora screenshot set with Daniels' approval, SPEC §16 and plan statuses).
+
 **FIX IN REVIEW on branch `fix-db-pipelining-pooler`: pages hung under ~10 simultaneous loads** (postgres.js
 pipelining through the Supabase transaction pooler stranded half-sent queries; DECISIONS). Now one query per
 connection plus connect/idle timeouts. Burst tests: 30/30 and 60/60 complete, no hangs. Integration 113/113,
