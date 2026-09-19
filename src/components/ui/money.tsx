@@ -61,7 +61,8 @@ export function Money({
   }${usd != null ? `, about ${formatUsd(usd)}` : ""}`;
   if (stacked) {
     return (
-      <span data-numeric aria-label={label} className={cn("flex flex-col text-text", className)} {...props}>
+      <span data-numeric className={cn("relative flex flex-col text-text", className)} {...props}>
+        <span className="sr-only">{label}</span>
         <span aria-hidden className="whitespace-nowrap">
           <span className={cn("font-display", s.amount)}>
             {sign}
@@ -81,10 +82,10 @@ export function Money({
   return (
     <span
       data-numeric
-      aria-label={label}
-      className={cn("inline-flex flex-wrap items-baseline gap-x-1.5 text-text", className)}
+      className={cn("relative inline-flex flex-wrap items-baseline gap-x-1.5 text-text", className)}
       {...props}
     >
+      <span className="sr-only">{label}</span>
       <span aria-hidden className={cn("font-display", s.amount)}>
         {sign}
         {abs.toLocaleString()}

@@ -109,12 +109,12 @@ describe("TutorCard, grid", () => {
 
   it("price carries the ≈ $ anchor only when a rate is passed", () => {
     const withRate = renderCard(tutor(), { usdPerCredit: 1.5 });
-    expect(within(withRate).getByLabelText("45 credits per hr, about $67.50")).toBeTruthy();
+    expect(within(withRate).getByText("45 credits per hr, about $67.50")).toBeTruthy();
   });
 
   it("price without a rate shows credits alone", () => {
     const noRate = renderCard(tutor());
-    expect(within(noRate).getByLabelText("45 credits per hr")).toBeTruthy();
+    expect(within(noRate).getByText("45 credits per hr")).toBeTruthy();
   });
 
   it("v2: country by name, the first subject as a tag, and a teal Request now", () => {
@@ -129,7 +129,8 @@ describe("TutorCard, grid", () => {
 
   it("v2: the rate cell stacks credits over the dollar anchor", () => {
     const card = renderCard(tutor(), { usdPerCredit: 1.5 });
-    const rate = within(card).getByLabelText("45 credits per hr, about $67.50");
+    // The announcement is sr-only text, so walk up to the element that holds the visible parts.
+    const rate = within(card).getByText("45 credits per hr, about $67.50").parentElement!;
     expect(rate.textContent).toContain("45 cr");
     expect(rate.textContent).toContain("≈ $67.50");
     expect(rate.textContent).not.toContain("/ hr");

@@ -315,7 +315,6 @@ export function TutorFilterChips({
         <span aria-hidden className="text-text-muted">·</span>
         <DropdownMenu>
           <DropdownMenuTrigger
-            aria-label={`Sort tutors: ${sortLabel}`}
             className="focus-ring inline-flex items-center gap-1 rounded-full text-small text-text-muted hover:text-text"
           >
             Sort: <span className="font-medium text-text">{sortLabel}</span>
