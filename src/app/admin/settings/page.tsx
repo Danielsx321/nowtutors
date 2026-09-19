@@ -48,15 +48,15 @@ export default async function AdminSettingsPage() {
   return (
     <div className="w-full space-y-8 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Settings</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Settings</h1>
+        <p className="mt-1 text-body text-text-muted">
           Platform settings take effect on the next request. Every change is written to the audit
           log.
         </p>
       </div>
 
       <section aria-labelledby="platform-settings" className="space-y-4">
-        <h2 id="platform-settings" className="text-h2 font-bold text-gray-700">
+        <h2 id="platform-settings" className="text-h2 font-bold text-text">
           Platform settings
         </h2>
         <SettingsEditor settings={settings} />
@@ -70,10 +70,10 @@ export default async function AdminSettingsPage() {
 
       <section aria-labelledby="scheduled-jobs" className="space-y-4">
         <div>
-          <h2 id="scheduled-jobs" className="text-h2 font-bold text-gray-700">
+          <h2 id="scheduled-jobs" className="text-h2 font-bold text-text">
             Scheduled jobs
           </h2>
-          <p className="mt-1 text-body text-gray-500">
+          <p className="mt-1 text-body text-text-muted">
             Runs the same code as the schedule, straight away. Every job is safe to run twice.
           </p>
         </div>

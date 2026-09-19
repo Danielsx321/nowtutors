@@ -66,7 +66,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
       <Demo label="Modal · Drawer · Dropdown" surface={surface}>
         <Modal>
           <ModalTrigger asChild>
-            <Button variant="secondary">Open modal</Button>
+            <Button variant="outline">Open modal</Button>
           </ModalTrigger>
           <ModalContent>
             <ModalHeader>
@@ -78,7 +78,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
             </ModalHeader>
             <ModalFooter>
               <ModalClose asChild>
-                <Button variant="secondary">Keep session</Button>
+                <Button variant="outline">Keep session</Button>
               </ModalClose>
               <ModalClose asChild>
                 <Button variant="danger">Cancel & refund</Button>
@@ -89,7 +89,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
 
         <Drawer>
           <DrawerTrigger asChild>
-            <Button variant="secondary">Open drawer</Button>
+            <Button variant="outline">Open drawer</Button>
           </DrawerTrigger>
           <DrawerContent>
             <DrawerHeader>
@@ -103,7 +103,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
             </DrawerBody>
             <DrawerFooter>
               <DrawerClose asChild>
-                <Button variant="secondary" className="flex-1">
+                <Button variant="outline" className="flex-1">
                   Clear
                 </Button>
               </DrawerClose>
@@ -116,7 +116,7 @@ export function OverlaysSection({ surface }: { surface: Surface }) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary">
+            <Button variant="outline">
               Sort <ChevronDown />
             </Button>
           </DropdownMenuTrigger>

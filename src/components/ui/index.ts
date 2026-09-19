@@ -16,7 +16,6 @@ export * from "./field-error";
 export * from "./input";
 export * from "./label";
 export * from "./live-chip";
-export * from "./live-pill";
 export * from "./modal";
 export * from "./money";
 export * from "./on-air-ring";

@@ -105,7 +105,7 @@ export function SignalSection({ surface }: { surface: Surface }) {
       <Demo label="AlertDialog: money and destructive confirms. Outcome labels, nothing preselected, no outside-click dismiss (Escape still closes)." surface={surface}>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="secondary">Withdraw 45 credits ($45.00)</Button>
+            <Button variant="outline">Withdraw 45 credits ($45.00)</Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarDaysBetween, countdownFraction, fullWhen, relativeWhen } from "@/lib/dashboard/when";
+import { calendarDaysBetween, countdownFraction, fullWhen, relativeWhen, timeAgo } from "@/lib/dashboard/when";
 
 // Friday 18 Sep 2026, 14:00 in Lagos (UTC+1).
 const NOW = new Date("2026-09-18T13:00:00Z");
@@ -51,5 +51,16 @@ describe("countdownFraction", () => {
     expect(countdownFraction(at("2026-09-18T13:00:00Z"), NOW)).toBe(1);
     expect(countdownFraction(at("2026-09-21T13:00:00Z"), NOW)).toBeCloseTo(4 / 7, 5);
     expect(countdownFraction(at("2026-10-30T13:00:00Z"), NOW)).toBe(0.04);
+  });
+});
+
+describe("timeAgo", () => {
+  it("reads naturally from minutes to dates", () => {
+    expect(timeAgo(at("2026-09-18T12:59:40Z"), NOW, TZ)).toBe("just now");
+    expect(timeAgo(at("2026-09-18T12:50:00Z"), NOW, TZ)).toBe("10 min ago");
+    expect(timeAgo(at("2026-09-18T10:00:00Z"), NOW, TZ)).toBe("3 hrs ago");
+    expect(timeAgo(at("2026-09-17T10:00:00Z"), NOW, TZ)).toBe("yesterday");
+    expect(timeAgo(at("2026-09-14T10:00:00Z"), NOW, TZ)).toBe("4 days ago");
+    expect(timeAgo(at("2026-08-30T10:00:00Z"), NOW, TZ)).toBe("30 Aug");
   });
 });

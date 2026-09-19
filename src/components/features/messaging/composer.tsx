@@ -173,7 +173,7 @@ export function Composer({
         />
         <Button
           type="button"
-          variant="secondary"
+          variant="outline"
           size="icon"
           aria-label="Attach jpg, png or PDF"
           disabled={pending}

@@ -15,8 +15,6 @@ const badgeVariants = cva(
         danger: "bg-danger-surface text-danger",
         // solid, for the rare place a filled label is needed on a light surface
         solid: "bg-primary text-on-primary",
-        /** @deprecated alias of `accent`, REMOVE IN PART 6 */
-        purple: "bg-accent/10 text-accent",
       },
     },
     defaultVariants: { variant: "neutral" },

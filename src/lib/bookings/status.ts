@@ -14,7 +14,7 @@ export interface BookingStatusMeta {
 const META: Record<string, BookingStatusMeta> = {
   pending_payment: { label: "Awaiting payment", variant: "warning" },
   confirmed: { label: "Confirmed", variant: "success" },
-  in_progress: { label: "In progress", variant: "purple" },
+  in_progress: { label: "In progress", variant: "accent" },
   completed: { label: "Completed", variant: "neutral" },
   cancelled_by_student: { label: "Cancelled", variant: "danger" },
   cancelled_by_tutor: { label: "Cancelled by tutor", variant: "danger" },

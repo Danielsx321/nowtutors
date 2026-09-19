@@ -191,7 +191,7 @@ export function AvailabilityEditor({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-h3 font-bold text-text">Date exceptions</h2>
-          <Button variant="secondary" size="sm" onClick={addException}>
+          <Button variant="outline" size="sm" onClick={addException}>
             <Plus className="size-4" aria-hidden />
             Add exception
           </Button>

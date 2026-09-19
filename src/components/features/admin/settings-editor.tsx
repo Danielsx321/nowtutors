@@ -48,16 +48,16 @@ function SettingCard({
     <Card>
       <CardContent className="space-y-3 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <Label htmlFor={id} className="text-body-lg font-bold text-gray-700">
+          <Label htmlFor={id} className="text-body-lg font-bold text-text">
             {setting.label}
           </Label>
-          <code className="text-caption text-gray-500">{setting.key}</code>
+          <code className="text-caption text-text-muted">{setting.key}</code>
         </div>
-        <p className="text-small text-gray-500">{setting.help}</p>
+        <p className="text-small text-text-muted">{setting.help}</p>
 
         {setting.readOnlyReason ? (
           <>
-            <pre className="overflow-auto rounded-md bg-gray-50 p-3 text-small text-gray-700">
+            <pre className="overflow-auto rounded-md bg-surface-muted p-3 text-small text-text">
               {setting.text ?? "Not set"}
             </pre>
             <Alert variant="info">{setting.readOnlyReason}</Alert>
@@ -97,7 +97,7 @@ function SettingCard({
               {dirty && (
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="outline"
                   disabled={pending}
                   onClick={() => {
                     setText(setting.text ?? "");

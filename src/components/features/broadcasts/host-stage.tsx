@@ -197,7 +197,7 @@ export function HostStage({ broadcastId, hostName, hostAvatarUrl, startedAt }: H
               >
                 Try again
               </Button>
-              <Button variant="secondary" loading={ending} onClick={() => void end()}>
+              <Button variant="outline" loading={ending} onClick={() => void end()}>
                 End broadcast
               </Button>
             </div>

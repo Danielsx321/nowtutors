@@ -193,39 +193,6 @@
   --color-success: var(--success);
   --color-success-surface: var(--success-surface);
   --color-scrim: var(--scrim);
-
-  /* ═══════════════════════════════════════════════════════════════════════
-     COMPATIBILITY ALIASES — REMOVE IN PART 6 of the design overhaul.
-     The old colour-named utilities (`bg-ink-900`, `text-gray-500`...) still
-     appear in pages that Parts 2 to 5 convert. Each maps to the nearest role
-     so nothing goes invisible in between. Deleting this block is the proof
-     the sweep is finished: `pnpm typecheck && pnpm build` fail on any leftover.
-     ═══════════════════════════════════════════════════════════════════════ */
-  --color-white: var(--text-on-inverse);
-  --color-black: var(--surface-inverse);
-  --color-ink-1000: var(--surface-inverse);
-  --color-ink-950: var(--surface-inverse);
-  --color-ink-900: var(--surface-inverse);
-  --color-ink-800: var(--border-strong);
-  --color-ink-700: var(--border-strong);
-  --color-ink-300: var(--border);
-  --color-purple-50: var(--surface-muted);
-  --color-purple-100: var(--surface-muted);
-  --color-purple-300: var(--accent);
-  --color-purple-500: var(--accent);
-  --color-purple-700: var(--accent);
-  --color-gold-400: var(--live);
-  --color-live-500: var(--live);
-  --color-live-400: var(--live);
-  --color-gray-50: var(--surface-muted);
-  --color-gray-100: var(--surface-muted);
-  --color-gray-200: var(--border);
-  --color-gray-300: var(--border);
-  --color-gray-400: var(--border-strong);
-  --color-gray-500: var(--text-muted);
-  --color-gray-700: var(--text);
-  --color-red-500: var(--danger);
-  /* ═══════════════════════ END COMPATIBILITY ALIASES ══════════════════════ */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

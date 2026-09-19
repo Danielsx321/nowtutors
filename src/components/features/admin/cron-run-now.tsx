@@ -34,8 +34,8 @@ function JobCard({ job }: { job: RunNowJob }) {
       <CardContent className="space-y-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-body-lg font-bold text-gray-700">{job.name}</p>
-            <p className="text-small text-gray-500">{job.schedule}</p>
+            <p className="text-body-lg font-bold text-text">{job.name}</p>
+            <p className="text-small text-text-muted">{job.schedule}</p>
           </div>
           <div className="flex gap-2">
             {confirming ? (
@@ -43,22 +43,22 @@ function JobCard({ job }: { job: RunNowJob }) {
                 <Button size="sm" loading={pending} onClick={run}>
                   Confirm run
                 </Button>
-                <Button size="sm" variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
                   Cancel
                 </Button>
               </>
             ) : (
-              <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
+              <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
                 <Play aria-hidden />
                 Run now
               </Button>
             )}
           </div>
         </div>
-        <p className="text-small text-gray-700">{job.what}</p>
+        <p className="text-small text-text">{job.what}</p>
         {result && !result.ok && <Alert variant="danger">{result.error}</Alert>}
         {result && result.ok && (
-          <pre className="max-h-72 overflow-auto rounded-md bg-gray-50 p-3 text-caption text-gray-700">
+          <pre className="max-h-72 overflow-auto rounded-md bg-surface-muted p-3 text-caption text-text">
             {JSON.stringify(result.summary, null, 2)}
           </pre>
         )}

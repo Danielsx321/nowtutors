@@ -43,12 +43,12 @@ function SuspensionCard({ userId, isSuspended, isSelf }: { userId: string; isSus
         <CardTitle>Access</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-small text-gray-500">
+        <p className="text-small text-text-muted">
           A suspended account can sign in but only sees the suspended page. A live tutor is taken offline.
         </p>
         <OutcomeAlert outcome={outcome} />
         {isSuspended ? (
-          <Button variant="secondary" loading={pending} onClick={() => run(false)}>
+          <Button variant="outline" loading={pending} onClick={() => run(false)}>
             Unsuspend account
           </Button>
         ) : isSelf ? (
@@ -58,7 +58,7 @@ function SuspensionCard({ userId, isSuspended, isSelf }: { userId: string; isSus
             <Button variant="danger" loading={pending} onClick={() => run(true)}>
               Yes, suspend
             </Button>
-            <Button variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
               Cancel
             </Button>
           </div>
@@ -156,7 +156,7 @@ function PromoteCard({ userId, email }: { userId: string; email: string }) {
             });
           }}
         >
-          <p className="text-small text-gray-500">
+          <p className="text-small text-text-muted">
             Admins can change settings, money and other accounts. The wallet must be empty with no open sessions,
             withdrawals or unpaid earnings. There is no demote button yet.
           </p>

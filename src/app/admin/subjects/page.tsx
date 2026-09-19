@@ -19,8 +19,8 @@ export default async function AdminSubjectsPage() {
   return (
     <div className="w-full space-y-6 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Subjects</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Subjects</h1>
+        <p className="mt-1 text-body text-text-muted">
           {subjects.length} subjects{hidden ? `, ${hidden} hidden` : ""}. Renaming changes the label, never the
           link. Hiding removes a subject from pickers without touching tutors who already teach it.
         </p>

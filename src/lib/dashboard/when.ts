@@ -57,3 +57,18 @@ export function countdownFraction(at: Date, now: Date, horizonDays = 7): number 
   if (left <= 0) return 1;
   return Math.min(1, Math.max(0.04, 1 - left / (horizonDays * DAY)));
 }
+
+/** "10 min ago", "3 hrs ago", "yesterday", "4 days ago", then the date. For queues and activity lists. */
+export function timeAgo(at: Date, now: Date, timeZone: string): string {
+  const mins = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const days = -calendarDaysBetween(now, at, timeZone);
+  if (days === 0) {
+    const hrs = Math.round(mins / 60);
+    return `${hrs} ${hrs === 1 ? "hr" : "hrs"} ago`;
+  }
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short" }).format(at);
+}

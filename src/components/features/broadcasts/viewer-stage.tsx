@@ -195,7 +195,7 @@ export function BroadcastEnded({ tutorName, tutorSlug }: { tutorName: string; tu
             <Link href={`/tutors/${tutorSlug}`}>Book a 1:1 with {tutorName}</Link>
           </Button>
         )}
-        <Button asChild variant="secondary">
+        <Button asChild variant="outline">
           <Link href="/live">Live now</Link>
         </Button>
       </div>

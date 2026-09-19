@@ -10,8 +10,6 @@ export interface RatingStarsProps
   count?: number;
   size?: keyof typeof sizes;
   showValue?: boolean;
-  /** @deprecated kept rendering for the old dark cards. REMOVE IN PART 6. */
-  surface?: "light" | "ink";
 }
 
 /**
@@ -24,15 +22,13 @@ export function RatingStars({
   count,
   size = "md",
   showValue = true,
-  surface = "light",
   className,
   ...props
 }: RatingStarsProps) {
-  const ink = surface === "ink";
-  const emptyColor = ink ? "text-border-strong" : "text-border";
-  const fillColor = ink ? "text-text-on-inverse" : "text-text";
-  const valueColor = ink ? "text-text-on-inverse" : "text-text";
-  const countColor = ink ? "text-text-on-inverse/70" : "text-text-muted";
+  const emptyColor = "text-border";
+  const fillColor = "text-text";
+  const valueColor = "text-text";
+  const countColor = "text-text-muted";
   const clamped = Math.max(0, Math.min(5, value));
   const label =
     count != null

@@ -23,7 +23,7 @@ const STATUS_DOT: Record<string, string> = {
   success: "bg-live",
   warning: "bg-warning",
   danger: "bg-danger",
-  purple: "bg-accent",
+  accent: "bg-accent",
   neutral: "bg-border-strong",
 };
 

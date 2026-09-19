@@ -324,7 +324,7 @@ export function IncomingRequests({ tutorId, ttlSeconds }: IncomingRequestsProps)
 
           <ModalFooter>
             <Button
-              variant="secondary"
+              variant="outline"
               onClick={onDecline}
               disabled={pending !== null}
               loading={pending === "decline"}

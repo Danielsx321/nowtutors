@@ -128,7 +128,7 @@ export default async function TutorBroadcastsPage() {
       </section>
 
       {liveId && (
-        <Button asChild variant="secondary">
+        <Button asChild variant="outline">
           <Link href={`/broadcast/${liveId}`}>Open the host view</Link>
         </Button>
       )}

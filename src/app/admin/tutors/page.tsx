@@ -52,8 +52,8 @@ export default async function AdminTutorsPage() {
   return (
     <div className="w-full py-2">
       <div className="mb-6 space-y-1">
-        <h1 className="text-h1 font-bold text-gray-700">Tutor approvals</h1>
-        <p className="text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Tutor approvals</h1>
+        <p className="text-body text-text-muted">
           Review new applications and profiles that changed since their last review.
         </p>
       </div>
@@ -63,7 +63,7 @@ export default async function AdminTutorsPage() {
           <TabsTrigger value="pending">
             Pending
             {pending.length > 0 && (
-              <Badge variant="purple" className="ml-2">
+              <Badge variant="accent" className="ml-2">
                 {pending.length}
               </Badge>
             )}

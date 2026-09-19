@@ -6,8 +6,6 @@ export interface CreditBalanceProps
   extends React.HTMLAttributes<HTMLSpanElement> {
   credits: number;
   size?: "sm" | "md" | "lg";
-  /** @deprecated `ink` kept rendering for the old dark topbar. REMOVE IN PART 6. */
-  tone?: "light" | "ink";
 }
 
 const sizeMap = {
@@ -20,7 +18,6 @@ const sizeMap = {
 export function CreditBalance({
   credits,
   size = "md",
-  tone = "light",
   className,
   ...props
 }: CreditBalanceProps) {
@@ -32,9 +29,7 @@ export function CreditBalance({
         "inline-flex items-center gap-1.5 rounded-full border",
         s.pad,
         s.text,
-        tone === "ink"
-          ? "border-border-strong text-text-on-inverse"
-          : "border-border bg-surface-muted text-text",
+        "border-border bg-surface-muted text-text",
         className,
       )}
       aria-label={`${credits.toLocaleString()} credits`}

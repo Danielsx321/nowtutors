@@ -66,7 +66,7 @@ export function ConnectionBanner({
           <WifiOff className="size-4 shrink-0" aria-hidden />
           You&apos;ve lost the connection.
         </span>
-        <Button size="sm" variant="secondary" onClick={onRejoin}>
+        <Button size="sm" variant="outline" onClick={onRejoin}>
           Rejoin
         </Button>
       </span>
@@ -79,7 +79,7 @@ export function ConnectionBanner({
     body = onTurnOffVideo ? (
       <span className="flex flex-wrap items-center gap-3">
         Your connection is weak. Turn off video to keep audio clear.
-        <Button size="sm" variant="secondary" onClick={onTurnOffVideo}>
+        <Button size="sm" variant="outline" onClick={onTurnOffVideo}>
           Turn off video
         </Button>
       </span>

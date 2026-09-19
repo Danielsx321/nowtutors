@@ -25,11 +25,11 @@ export function RefundReversal({ paymentId, buyerId }: { paymentId: string; buye
         <CardTitle>Reverse this refund</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-small text-gray-500">
+        <p className="text-small text-text-muted">
           Only after a <strong>full</strong> refund in PayPal. It removes the credits this payment added (up to what the
           student still has), or cancels the booking a direct payment paid for without a second refund. For a partial
           refund, adjust credits on the{" "}
-          <a href={`/admin/users/${buyerId}`} className="focus-ring text-purple-700 underline">
+          <a href={`/admin/users/${buyerId}`} className="focus-ring text-accent underline">
             student&apos;s page
           </a>{" "}
           instead.
@@ -61,7 +61,7 @@ export function RefundReversal({ paymentId, buyerId }: { paymentId: string; buye
             >
               Yes, reverse it
             </Button>
-            <Button variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
+            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
               Back
             </Button>
           </div>

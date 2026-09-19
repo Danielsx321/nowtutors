@@ -29,9 +29,9 @@ const BOOKING_GROUPS: { label: string; statuses: string[] }[] = [
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap justify-between gap-2 border-b border-gray-200 py-2 last:border-0">
-      <dt className="text-small text-gray-500">{label}</dt>
-      <dd className="text-small text-gray-700">{children}</dd>
+    <div className="flex flex-wrap justify-between gap-2 border-b border-border py-2 last:border-0">
+      <dt className="text-small text-text-muted">{label}</dt>
+      <dd className="text-small text-text">{children}</dd>
     </div>
   );
 }
@@ -68,18 +68,18 @@ export default async function AdminUserPage({
   return (
     <div className="w-full space-y-6 py-2">
       <div className="space-y-2">
-        <Link href="/admin/users" className="focus-ring text-small font-medium text-purple-700">
+        <Link href="/admin/users" className="focus-ring text-small font-medium text-accent">
           All users
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-h1 font-bold text-gray-700">
+            <h1 className="truncate font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">
               {detail.displayName ?? detail.fullName ?? "No name"}
             </h1>
-            <p className="break-all text-body text-gray-500">{detail.email}</p>
+            <p className="break-all text-body text-text-muted">{detail.email}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant={detail.role === "admin" ? "solid" : detail.role ? "purple" : "neutral"}>
+            <Badge variant={detail.role === "admin" ? "solid" : detail.role ? "accent" : "neutral"}>
               {detail.role ?? "not onboarded"}
             </Badge>
             {detail.isSuspended && <Badge variant="danger">suspended</Badge>}
@@ -113,7 +113,7 @@ export default async function AdminUserPage({
               <Fact label="Last seen">{detail.lastSeenAt ? fmt.format(detail.lastSeenAt) : "Never"}</Fact>
               {detail.tutor && (
                 <Fact label="Tutor profile">
-                  <Link href={`/tutors/${detail.tutor.slug}`} className="focus-ring text-purple-700">
+                  <Link href={`/tutors/${detail.tutor.slug}`} className="focus-ring text-accent">
                     {detail.tutor.slug}
                   </Link>{" "}
                   ({detail.tutor.approvalStatus})
@@ -164,7 +164,7 @@ export default async function AdminUserPage({
           </div>
           {history.pageCount > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-small text-gray-500">
+              <p className="text-small text-text-muted">
                 Page {history.page} of {history.pageCount} · {history.total} transaction
                 {history.total === 1 ? "" : "s"}
               </p>

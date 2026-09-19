@@ -80,9 +80,19 @@ export type StudentOnboardingValues = z.infer<typeof studentOnboardingSchema>;
 
 const subjectLevel = z.enum(["beginner", "intermediate", "advanced", "all"]);
 
+/**
+ * Tutors must have a photo (Part G; Noora, decision 4): students choose a
+ * person, and approval refuses without one. Students keep the optional one.
+ */
+const tutorAvatarUrl = z
+  .string({ message: "Add a profile photo." })
+  .trim()
+  .min(1, "Add a profile photo.")
+  .url("Add a profile photo.");
+
 export const tutorOnboardingSchema = z.object({
   fullName,
-  avatarUrl,
+  avatarUrl: tutorAvatarUrl,
   headline: z.string().trim().min(10, "Write a short headline.").max(120),
   about: z.string().trim().min(30, "Tell students about yourself.").max(2000),
   // At least one subject, each with a level.

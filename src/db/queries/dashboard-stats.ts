@@ -364,3 +364,34 @@ export async function getTutorStudents(tutorId: string, limit = 4): Promise<Tuto
     conversationId: r.conversation_id,
   }));
 }
+
+/**
+ * Captured revenue per month for the admin dashboard (Part G): PayPal payments
+ * with status `captured` (refunds excluded, as on the overview), summed in
+ * USD by the month they were captured, in the admin's timezone. `value` is
+ * dollars to the cent; `count` is payments.
+ */
+export async function getCapturedRevenueByMonth(
+  timeZone: string,
+  months = 5,
+  now = new Date(),
+): Promise<MonthBucket[]> {
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
+  const rows = await db.execute<{ captured_at: Date | string; amount_usd: string }>(sql`
+    select captured_at, amount_usd::text as amount_usd
+      from payments
+     where status = 'captured'
+       and captured_at >= ${since.toISOString()}::timestamptz
+  `);
+  const buckets = bucketByMonth(
+    Array.from(rows as Iterable<{ captured_at: Date | string; amount_usd: string }>).map((r) => ({
+      at: new Date(r.captured_at),
+      value: Math.round(Number(r.amount_usd) * 100),
+    })),
+    timeZone,
+    now,
+    months,
+  );
+  // Summed in cents to avoid float drift, returned in dollars.
+  return buckets.map((b) => ({ ...b, value: b.value / 100 }));
+}

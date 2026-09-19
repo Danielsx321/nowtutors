@@ -34,11 +34,6 @@ const buttonVariants = cva(
         ghost: "text-text hover:bg-surface-muted",
         live: "bg-live text-on-live hover:brightness-95",
         danger: "bg-danger text-on-danger hover:brightness-95",
-        /** @deprecated renamed to `outline`. REMOVE IN PART G. */
-        secondary:
-          "border border-border-strong bg-surface-raised text-text hover:bg-surface-muted",
-        /** @deprecated white ghost for the old ink header, gone with it. REMOVE IN PART G. */
-        "ink-ghost": "text-text-on-inverse hover:bg-text-on-inverse/10",
       },
       size: {
         sm: "h-[38px] px-4 text-small [&_svg]:size-4",

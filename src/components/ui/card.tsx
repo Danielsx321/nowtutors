@@ -6,26 +6,17 @@ import { cn } from "@/lib/utils";
  * at rest (DESIGN.md v2, "Cards"). `interactive` is for a card that is one big
  * link: it lifts 3px with a soft shadow on hover, and holds still for anyone
  * who asked for reduced motion.
- *
- * `surface="ink"` is the old dark-card treatment, kept rendering (on the
- * inverse tokens) so the pages the later parts convert stay legible in between.
- * REMOVE IN PART G.
  */
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   interactive?: boolean;
-  /** @deprecated REMOVE IN PART G */
-  surface?: "white" | "ink";
 }
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, interactive, surface = "white", ...props }, ref) => (
+  ({ className, interactive, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "rounded-card border transition duration-200",
-        surface === "ink"
-          ? "border-border-strong bg-surface-inverse text-text-on-inverse"
-          : "border-border bg-surface-raised text-text",
+        "rounded-card border border-border bg-surface-raised text-text transition duration-200",
         interactive &&
           "hover:border-border-strong hover:shadow-lift motion-safe:hover:-translate-y-[3px]",
         className,

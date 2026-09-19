@@ -103,7 +103,7 @@ export default async function LiveBroadcastPage({
               </div>
             </div>
             {broadcast.tutorSlug && (
-              <Button asChild variant="secondary" className="w-full">
+              <Button asChild variant="outline" className="w-full">
                 <Link href={`/tutors/${broadcast.tutorSlug}`}>Book a 1:1</Link>
               </Button>
             )}

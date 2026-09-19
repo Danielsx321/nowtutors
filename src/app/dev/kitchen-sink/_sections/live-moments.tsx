@@ -66,7 +66,7 @@ export function LiveMomentsSection({ surface }: { surface: Surface }) {
 
       <div className="flex flex-wrap gap-2">
         {["pending", "expired", "declined", "failed_payment", "accepted"].map((s) => (
-          <Button key={s} variant="secondary" size="sm" onClick={() => setWaiting(s)}>
+          <Button key={s} variant="outline" size="sm" onClick={() => setWaiting(s)}>
             Student wait: {s}
           </Button>
         ))}

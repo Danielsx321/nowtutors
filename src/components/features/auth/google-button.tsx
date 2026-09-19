@@ -34,7 +34,7 @@ export function GoogleButton({ label = "Continue with Google" }: { label?: strin
     <div className="space-y-2">
       <Button
         type="button"
-        variant="secondary"
+        variant="outline"
         className="w-full"
         loading={loading}
         onClick={signIn}

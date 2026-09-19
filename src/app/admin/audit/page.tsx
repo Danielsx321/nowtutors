@@ -35,8 +35,8 @@ function Chip({ to, active, children }: { to: string; active: boolean; children:
       className={cn(
         "focus-ring rounded-full border px-3 py-1 text-small font-medium",
         active
-          ? "border-purple-500 bg-purple-100 text-purple-700"
-          : "border-gray-200 text-gray-700 hover:bg-gray-50",
+          ? "border-ink bg-ink text-on-ink"
+          : "border-border text-text hover:bg-surface-muted",
       )}
     >
       {children}
@@ -84,8 +84,8 @@ export default async function AdminAuditPage({
   return (
     <div className="w-full space-y-6 py-2">
       <div>
-        <h1 className="text-h1 font-bold text-gray-700">Audit log</h1>
-        <p className="mt-1 text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Audit log</h1>
+        <p className="mt-1 text-body text-text-muted">
           Every admin change, newest first. {log.total.toLocaleString()} matching{" "}
           {log.total === 1 ? "entry" : "entries"}.
         </p>
@@ -126,27 +126,27 @@ export default async function AdminAuditPage({
                 <CardContent className="space-y-2 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="purple">{e.action}</Badge>
-                      <span className="text-small text-gray-700">
+                      <Badge variant="accent">{e.action}</Badge>
+                      <span className="text-small text-text">
                         {e.actorName ?? e.actorEmail ?? "Unknown actor"}
                       </span>
                     </div>
-                    <time dateTime={e.createdAt.toISOString()} className="text-small text-gray-500">
+                    <time dateTime={e.createdAt.toISOString()} className="text-small text-text-muted">
                       {fmt.format(e.createdAt)}
                     </time>
                   </div>
                   {(e.targetType || e.targetId) && (
-                    <p className="break-all text-small text-gray-500">
+                    <p className="break-all text-small text-text-muted">
                       Target: {e.targetType ?? "unknown"}
                       {e.targetId ? ` ${e.targetId}` : ""}
                     </p>
                   )}
                   {e.payload != null && (
                     <details>
-                      <summary className="cursor-pointer text-small font-medium text-purple-700">
+                      <summary className="cursor-pointer text-small font-medium text-accent">
                         Details
                       </summary>
-                      <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-gray-50 p-3 text-caption text-gray-700">
+                      <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-surface-muted p-3 text-caption text-text">
                         {JSON.stringify(e.payload, null, 2)}
                       </pre>
                     </details>
@@ -161,17 +161,17 @@ export default async function AdminAuditPage({
       {log.pageCount > 1 && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-3">
           {log.page > 1 ? (
-            <Link href={href({ action, actor, page: log.page - 1 })} className="focus-ring text-body font-medium text-purple-700">
+            <Link href={href({ action, actor, page: log.page - 1 })} className="focus-ring text-body font-medium text-accent">
               Newer
             </Link>
           ) : (
             <span />
           )}
-          <span className="text-small text-gray-500">
+          <span className="text-small text-text-muted">
             Page {log.page} of {log.pageCount}
           </span>
           {log.page < log.pageCount ? (
-            <Link href={href({ action, actor, page: log.page + 1 })} className="focus-ring text-body font-medium text-purple-700">
+            <Link href={href({ action, actor, page: log.page + 1 })} className="focus-ring text-body font-medium text-accent">
               Older
             </Link>
           ) : (

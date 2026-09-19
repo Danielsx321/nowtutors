@@ -9,8 +9,6 @@ export interface StatCardProps
   icon?: React.ReactNode;
   hint?: React.ReactNode;
   trend?: { direction: "up" | "down"; label: string };
-  /** @deprecated kept rendering for the old dark dashboards. REMOVE IN PART 6. */
-  surface?: "white" | "ink";
 }
 
 /** Dashboard metric tile: label, big value in tabular figures, optional icon/trend. */
@@ -20,21 +18,19 @@ export function StatCard({
   icon,
   hint,
   trend,
-  surface = "white",
   className,
   ...props
 }: StatCardProps) {
-  const ink = surface === "ink";
-  const muted = ink ? "text-text-on-inverse/70" : "text-text-muted";
+  const muted = "text-text-muted";
   return (
-    <Card surface={surface} className={cn("p-5", className)} {...props}>
+    <Card className={cn("p-5", className)} {...props}>
       <div className="flex items-start justify-between gap-3">
         <p className={cn("text-small font-medium", muted)}>{label}</p>
         {icon && (
           <span
             className={cn(
               "grid size-9 place-items-center rounded-md",
-              ink ? "bg-text-on-inverse/10 text-text-on-inverse" : "bg-surface-muted text-text-muted",
+              "text-accent",
             )}
             aria-hidden
           >

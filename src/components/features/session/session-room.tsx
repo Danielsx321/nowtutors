@@ -494,7 +494,7 @@ function SessionEnded({
           <Link href={bookings}>Back to bookings</Link>
         </Button>
         {!viewerIsTutor && (
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline">
             <Link href="/tutors?live=1">Find a live tutor</Link>
           </Button>
         )}

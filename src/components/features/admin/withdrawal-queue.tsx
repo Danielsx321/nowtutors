@@ -59,14 +59,14 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
       <CardContent className="space-y-4 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-body-lg font-bold text-gray-700">
+            <p className="text-body-lg font-bold text-text">
               {w.tutorName ?? "Unnamed tutor"}
             </p>
-            <p className="text-small text-gray-500">{w.tutorEmail}</p>
+            <p className="text-small text-text-muted">{w.tutorEmail}</p>
           </div>
           <div className="text-right">
-            <p className="text-h3 font-bold text-gray-700">${w.amountUsd}</p>
-            <p className="text-small text-gray-500">
+            <p className="text-h3 font-bold text-text">${w.amountUsd}</p>
+            <p className="text-small text-text-muted">
               {w.amountCredits.toLocaleString()} credits
             </p>
           </div>
@@ -74,35 +74,35 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
 
         <dl className="grid gap-x-4 gap-y-1 text-small sm:grid-cols-2">
           <div className="flex gap-2">
-            <dt className="text-gray-500">Pay to (PayPal)</dt>
-            <dd className="break-all font-medium text-gray-700">{w.payoutDestination}</dd>
+            <dt className="text-text-muted">Pay to (PayPal)</dt>
+            <dd className="break-all font-medium text-text">{w.payoutDestination}</dd>
           </div>
           <div className="flex gap-2">
-            <dt className="text-gray-500">Requested</dt>
-            <dd className="text-gray-700">{w.requestedLabel}</dd>
+            <dt className="text-text-muted">Requested</dt>
+            <dd className="text-text">{w.requestedLabel}</dd>
           </div>
           <div className="flex items-center gap-2">
-            <dt className="text-gray-500">Status</dt>
+            <dt className="text-text-muted">Status</dt>
             <dd>
               <WithdrawalStatusBadge status={w.status} />
             </dd>
           </div>
           {w.processedLabel && (
             <div className="flex gap-2">
-              <dt className="text-gray-500">Last action</dt>
-              <dd className="text-gray-700">{w.processedLabel}</dd>
+              <dt className="text-text-muted">Last action</dt>
+              <dd className="text-text">{w.processedLabel}</dd>
             </div>
           )}
           {w.externalReference && (
             <div className="flex gap-2">
-              <dt className="text-gray-500">PayPal transaction</dt>
-              <dd className="break-all text-gray-700">{w.externalReference}</dd>
+              <dt className="text-text-muted">PayPal transaction</dt>
+              <dd className="break-all text-text">{w.externalReference}</dd>
             </div>
           )}
           {w.adminNote && (
             <div className="flex gap-2 sm:col-span-2">
-              <dt className="text-gray-500">Note</dt>
-              <dd className="text-gray-700">{w.adminNote}</dd>
+              <dt className="text-text-muted">Note</dt>
+              <dd className="text-text">{w.adminNote}</dd>
             </div>
           )}
         </dl>
@@ -121,7 +121,7 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="text-small text-gray-500">
+            <p className="text-small text-text-muted">
               Send ${w.amountUsd} to {w.payoutDestination} in PayPal first, then
               paste the transaction ID here.
             </p>
@@ -138,7 +138,7 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-            <p className="text-small text-gray-500">
+            <p className="text-small text-text-muted">
               Rejecting returns {w.amountCredits.toLocaleString()} credits to the
               tutor&apos;s wallet.
             </p>
@@ -160,7 +160,7 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
               </Button>
             )}
             {mode === "idle" && (
-              <Button variant="secondary" onClick={() => setMode("reject")}>
+              <Button variant="outline" onClick={() => setMode("reject")}>
                 <X aria-hidden />
                 Reject
               </Button>
@@ -186,7 +186,7 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
             )}
             {mode !== "idle" && (
               <Button
-                variant="secondary"
+                variant="outline"
                 disabled={pending}
                 onClick={() => {
                   setMode("idle");

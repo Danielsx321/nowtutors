@@ -4,6 +4,19 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**LIVE-GLOBE REBUILD Part G (admin dashboard, photo rule, cleanup) is IN REVIEW on branch `design-v2-admin`.
+No migration, no new dependency.** `/admin` follows the Part 0 mockup with real data (queue banner, wallet
+check, summary cards, approval queue photo cards, revenue per month, accounts, recent activity in plain words,
+withdrawals to pay with masked PayPal). A tutor must now have a photo: required at onboarding and in the
+profile editor, refused by `approveTutor` on the server, shown in the queue. The compatibility alias block,
+`LivePill`, the `secondary`/`ink-ghost` button variants, the `purple` badge and the dead `surface`/`tone`
+props are deleted. New `DataTable` used on the dashboard; migrating the other admin tables and typed confirms
+for big suspensions/adjustments are deferred (DECISIONS Part G item 8). Gates: typecheck and lint clean,
+770 unit, 124 DOM, 5 integration. Part F (PR #94) and full-width pages + loading feedback (PR #95) are merged.
+**Next:** Daniels merges; Claude checks `/admin` in Chrome signed in as admin; then Part H (live moments).
+
+## Earlier on 2026-09-19
+
 **LIVE-GLOBE REBUILD Part F (tutor dashboard and tutor surfaces) is IN REVIEW on branch `design-v2-tutor`.
 No migration, no new dependency.** `/tutor` follows the Part 0 mockup with real data: go-live banner (one
 shared state with the topbar switch), summary cards (next session, available to withdraw with the payout-rate
