@@ -8,7 +8,7 @@ import * as schema from "./schema";
 // `max_pipeline: 1`, which is effectively postgres.js's default behaviour for
 // this app: it keeps transactions working. NOT 0: with 0, postgres.js never
 // calls the `onexecute` hook that reserves a connection for `sql.begin`, so
-// every transaction failed with UNSAFE_TRANSACTION (PR #100 shipped 0 and broke
+// every transaction failed with UNSAFE_TRANSACTION (PR 100 shipped 0 and broke
 // every db.transaction on production until this fix).
 // tests/integration/db-client.test.ts runs a transaction through this exact
 // client so that can't happen again.
