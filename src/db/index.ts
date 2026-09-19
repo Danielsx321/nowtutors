@@ -5,14 +5,19 @@ import * as schema from "./schema";
 // DATABASE_URL is the Supabase transaction pooler (PgBouncer). Prepared
 // statements are not supported in transaction pooling mode, so disable them.
 //
-// `max_pipeline: 0`: one query in flight per connection. postgres.js
-// otherwise pipelines up to 100 queries on a busy connection, and the
-// transaction pooler can hand the pieces of pipelined queries to different
-// server connections. Under a burst of page loads that left Postgres holding
-// half a query, waiting on the client forever (`ClientRead`), until the pool
-// was exhausted and every page hung (found 2026-09-19; DECISIONS). 0, not 1:
-// postgres.js compares `sent.length < max_pipeline` after the first query, so
-// 1 still allows two in flight.
+// `max_pipeline: 1`: at most one query waiting behind the one in flight on a
+// connection. postgres.js otherwise pipelines up to 100 queries on a busy
+// connection, and through the transaction pooler the pieces of pipelined
+// queries could land on different server connections. Under a burst of page
+// loads that left Postgres holding half a query, waiting on the client forever
+// (`ClientRead`), until the pool was exhausted and every page hung (found
+// 2026-09-19; DECISIONS).
+//
+// NOT 0. With 0, postgres.js never calls the `onexecute` hook that reserves a
+// connection for `sql.begin`, so every transaction failed with
+// UNSAFE_TRANSACTION (PR #100 shipped 0 and broke every db.transaction on
+// production until this fix). tests/integration/db-client.test.ts runs a
+// transaction through this exact client so that can't happen again.
 //
 // Timeouts so a bad connection fails instead of lingering: 10 s to connect,
 // idle connections closed after 20 s.
@@ -20,7 +25,7 @@ import * as schema from "./schema";
 // its type definitions don't list, hence the widened object.
 const options: postgres.Options<Record<string, postgres.PostgresType>> & { max_pipeline: number } = {
   prepare: false,
-  max_pipeline: 0,
+  max_pipeline: 1,
   connect_timeout: 10,
   idle_timeout: 20,
 };
