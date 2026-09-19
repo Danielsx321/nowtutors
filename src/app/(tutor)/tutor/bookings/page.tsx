@@ -21,7 +21,7 @@ export default async function TutorBookingsPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-4xl py-2">
+    <div className="w-full py-2">
       <h1 className="mb-6 font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Bookings</h1>
       <BookingList
         groups={groupBookingsByTab(items)}

@@ -25,7 +25,7 @@ export default async function FavouritesPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-4xl py-2">
+    <div className="w-full py-2">
       <div className="mb-6 space-y-1">
         <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Saved tutors</h1>
         <p className="text-body text-text-muted">

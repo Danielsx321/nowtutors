@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Funnel_Display, Funnel_Sans } from "next/font/google";
+import { Suspense } from "react";
 import { Providers } from "@/components/providers";
+import { NavigationProgress } from "@/components/layout/navigation-progress";
 import "./globals.css";
 
 // Two faces, both bundled at build by next/font (no runtime request to
@@ -36,6 +38,10 @@ export default function RootLayout({
       className={`${funnelDisplay.variable} ${funnelSans.variable}`}
     >
       <body>
+        {/* useSearchParams needs a Suspense boundary to keep pages dynamic-safe. */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
         <Providers>{children}</Providers>
       </body>
     </html>

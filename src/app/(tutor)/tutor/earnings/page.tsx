@@ -25,7 +25,7 @@ export default async function TutorEarningsPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 py-2">
+    <div className="w-full space-y-6 py-2">
       <div>
         <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Earnings</h1>
         <p className="mt-1 text-body text-text-muted">

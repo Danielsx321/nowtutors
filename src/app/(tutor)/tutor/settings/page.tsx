@@ -16,7 +16,7 @@ export default async function TutorSettingsPage() {
   const email = await getPayoutEmailFor(user.id);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 py-2">
+    <div className="w-full space-y-6 py-2">
       <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Settings</h1>
       <Card>
         <CardHeader>

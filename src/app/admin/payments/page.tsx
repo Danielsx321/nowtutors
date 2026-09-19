@@ -53,7 +53,7 @@ export default async function AdminPaymentsPage({
   const timeZone = me?.timezone ?? "UTC";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 py-8">
+    <div className="w-full space-y-6 py-2">
       <div>
         <h1 className="text-h1 font-bold text-gray-700">Payments</h1>
         <p className="mt-1 text-body text-gray-500">

@@ -50,7 +50,7 @@ export default async function AdminTutorsPage() {
   });
 
   return (
-    <div className="py-8">
+    <div className="w-full py-2">
       <div className="mb-6 space-y-1">
         <h1 className="text-h1 font-bold text-gray-700">Tutor approvals</h1>
         <p className="text-body text-gray-500">
