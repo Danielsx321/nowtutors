@@ -4,6 +4,11 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**Side track X (presence E2E) in progress on branch `fix-toast-covers-go-live`.** Sign-in stall did not
+reproduce. Found and fixed: toasts covered the topbar go-live switch (now bottom-right); the wallet read raced
+the login redirect (now waits for the element). Remaining failures traced to the Mac's load (average 187),
+not the app. Needs one run on a quiet machine or CI before Part I. Room-end fix (PR #98) is merged and live.
+
 **FIX IN REVIEW on branch `fix-room-end-for-both`:** when either person ends an instant session, the other
 person's room now closes too (it asks the server once when the SDK reports the other person left); session
 pages show the viewer's name instead of "Guest". Found in the first real session on production after Part H

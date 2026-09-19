@@ -163,7 +163,8 @@ async function goLive(page: Page): Promise<void> {
  * cannot answer on the database's behalf.
  */
 async function isListedLive(page: Page): Promise<boolean> {
-  await page.goto(`/tutors?live=1&_t=${Date.now()}`);
+  // Server-rendered list: the cards are in the document once it has parsed.
+  await page.goto(`/tutors?live=1&_t=${Date.now()}`, { waitUntil: "domcontentloaded" });
   return (await page.locator(`a[href^="/tutors/${TUTOR_SLUG}"]`).count()) > 0;
 }
 
@@ -319,11 +320,15 @@ test.describe("presence: ungraceful exit drops the tutor from Live now", () => {
  * scraping formatted text.
  */
 async function readWalletBalance(page: Page): Promise<number> {
-  await page.goto(`/dashboard/wallet?_t=${Date.now()}`);
-  const label = await page
-    .locator('[aria-label$="credits"]')
-    .first()
-    .getAttribute("aria-label");
+  // "domcontentloaded", then the element itself: the balance is what's needed,
+  // not every subresource. Waiting for "load" right after sign-in hung for the
+  // whole test timeout on 2026-09-19 (side track X): the login redirect to
+  // /dashboard was still in flight, the two navigations raced, and the `load`
+  // this goto waited for never came.
+  await page.goto(`/dashboard/wallet?_t=${Date.now()}`, { waitUntil: "domcontentloaded" });
+  const pill = page.locator('[aria-label$="credits"]').first();
+  await pill.waitFor({ state: "attached", timeout: 30_000 });
+  const label = await pill.getAttribute("aria-label");
   const digits = (label ?? "").replace(/[^0-9]/g, "");
   if (digits === "") throw new Error(`No credit balance found (aria-label: ${label})`);
   return Number.parseInt(digits, 10);
