@@ -5,9 +5,9 @@ import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth/guards";
 import { listAuditFacets, listAuditLog } from "@/db/queries/admin-audit";
 import { safeTimeZone } from "@/db/queries/admin-overview";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { auditActionLabel } from "@/lib/admin/audit-labels";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Audit log · NowTutors" };
@@ -116,47 +116,74 @@ export default async function AdminAuditPage({
         )}
       </div>
 
-      {log.entries.length === 0 ? (
-        <EmptyState title="No audit entries" description="Nothing matches these filters." />
-      ) : (
-        <ol className="space-y-3">
-          {log.entries.map((e) => (
-            <li key={e.id}>
-              <Card>
-                <CardContent className="space-y-2 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="accent">{e.action}</Badge>
-                      <span className="text-small text-text">
-                        {e.actorName ?? e.actorEmail ?? "Unknown actor"}
-                      </span>
-                    </div>
-                    <time dateTime={e.createdAt.toISOString()} className="text-small text-text-muted">
-                      {fmt.format(e.createdAt)}
-                    </time>
-                  </div>
-                  {(e.targetType || e.targetId) && (
-                    <p className="break-all text-small text-text-muted">
-                      Target: {e.targetType ?? "unknown"}
-                      {e.targetId ? ` ${e.targetId}` : ""}
-                    </p>
-                  )}
-                  {e.payload != null && (
-                    <details>
-                      <summary className="cursor-pointer text-small font-medium text-accent">
-                        Details
-                      </summary>
-                      <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-surface-muted p-3 text-caption text-text">
-                        {JSON.stringify(e.payload, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ol>
-      )}
+      {/* v2 (live-globe Part I): the shared DataTable. The action reads in plain
+          words (Part G labels) with the raw name under it, since the filter
+          chips above use the raw prefixes; the payload stays behind Details. */}
+      <DataTable
+        caption="Audit log"
+        rows={log.entries}
+        rowKey={(e) => e.id}
+        minWidth={860}
+        empty={<EmptyState title="No audit entries" description="Nothing matches these filters." />}
+        columns={[
+          {
+            key: "when",
+            header: "When",
+            className: "whitespace-nowrap align-top",
+            cell: (e) => (
+              <time dateTime={e.createdAt.toISOString()} className="text-small text-text-muted">
+                {fmt.format(e.createdAt)}
+              </time>
+            ),
+          },
+          {
+            key: "action",
+            header: "Action",
+            className: "align-top",
+            cell: (e) => (
+              <span className="grid gap-0.5">
+                <span className="font-medium text-text">{auditActionLabel(e.action)}</span>
+                <code className="text-caption text-text-muted">{e.action}</code>
+              </span>
+            ),
+          },
+          {
+            key: "actor",
+            header: "By",
+            className: "align-top",
+            cell: (e) => e.actorName ?? e.actorEmail ?? "Unknown actor",
+          },
+          {
+            key: "target",
+            header: "Target",
+            className: "align-top",
+            cell: (e) =>
+              e.targetType || e.targetId ? (
+                <span className="break-all text-small text-text-muted">
+                  {e.targetType ?? "unknown"}
+                  {e.targetId ? ` ${e.targetId}` : ""}
+                </span>
+              ) : (
+                <span className="text-small text-text-muted">None</span>
+              ),
+          },
+          {
+            key: "details",
+            header: "Details",
+            srOnlyHeader: true,
+            className: "align-top",
+            cell: (e) =>
+              e.payload != null ? (
+                <details>
+                  <summary className="cursor-pointer text-small font-medium text-accent">Details</summary>
+                  <pre className="mt-2 max-h-96 max-w-[420px] overflow-auto rounded-md bg-surface-muted p-3 text-caption text-text">
+                    {JSON.stringify(e.payload, null, 2)}
+                  </pre>
+                </details>
+              ) : null,
+          },
+        ]}
+      />
 
       {log.pageCount > 1 && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-3">

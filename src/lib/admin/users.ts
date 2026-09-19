@@ -8,6 +8,12 @@ import { z } from "zod";
 
 /** Largest single admin adjustment, either direction. A guard rail, not a product rule. */
 export const MAX_ADJUSTMENT_CREDITS = 10_000;
+/**
+ * From this size, either direction, the admin types the amount again to confirm
+ * (live-globe Part I, deferred from Part G). Checked by the schema, so the
+ * server refuses a large adjustment that skipped the form's confirmation.
+ */
+export const LARGE_ADJUSTMENT_CREDITS = 500;
 export const ADJUSTMENT_NOTE_MIN = 5;
 export const ADJUSTMENT_NOTE_MAX = 500;
 
@@ -38,7 +44,37 @@ export const adjustmentSchema = z.object({
    * while a deliberate second adjustment from a fresh form is a new key.
    */
   requestKey: z.string().uuid(),
+  /** The amount typed again; required only for a large adjustment. */
+  confirmAmount: z.string().trim().max(20).optional(),
+}).superRefine((v, ctx) => {
+  if (needsTypedAdjustmentConfirm(v.delta) && !adjustmentConfirmed(v.delta, v.confirmAmount)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["confirmAmount"],
+      message: `Type ${v.delta} to confirm an adjustment this large.`,
+    });
+  }
 });
+
+/** A large adjustment needs the amount typed again. */
+export function needsTypedAdjustmentConfirm(delta: number): boolean {
+  return Number.isFinite(delta) && Math.abs(delta) >= LARGE_ADJUSTMENT_CREDITS;
+}
+
+/** The typed confirmation matches the adjustment exactly, sign included ("+500" reads as 500). */
+export function adjustmentConfirmed(delta: number, typed: string | undefined): boolean {
+  if (!typed) return false;
+  const t = typed.trim().replace(/^\+/, "").replace(/,/g, "");
+  return /^-?\d+$/.test(t) && Number(t) === delta;
+}
+
+/**
+ * Suspending needs the account's email typed (live-globe Part I): it shuts the
+ * person out and takes a live tutor offline. Same comparison as promotion.
+ */
+export function suspensionConfirmed(typed: string | undefined, email: string): boolean {
+  return !!typed && typed.trim().toLowerCase() === email.trim().toLowerCase();
+}
 
 export type AdjustmentInput = z.infer<typeof adjustmentSchema>;
 

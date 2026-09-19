@@ -107,3 +107,23 @@ export function StatusDot({ tone, children }: { tone: keyof typeof DOT; children
     </span>
   );
 }
+
+/**
+ * The `Badge` variant a status helper already returns (e.g. `bookingStatusMeta`)
+ * mapped to a `StatusDot` tone, so a page moving from badges to the table keeps
+ * one source of truth for which statuses are good, pending or bad.
+ */
+export function toneForVariant(variant: string): keyof typeof DOT {
+  switch (variant) {
+    case "success":
+      return "live";
+    case "accent":
+      return "primary";
+    case "warning":
+      return "spark";
+    case "danger":
+      return "danger";
+    default:
+      return "muted";
+  }
+}

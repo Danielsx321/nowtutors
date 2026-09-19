@@ -101,7 +101,14 @@ describe("applySuspension (drizzle/0016 lets the trusted connection change is_su
       const tutor = await idOf(tx, "tutor3@nowtutors.dev");
       await tx.execute(sql`update tutor_profiles set is_live = true, live_mode = 'instant', last_seen_at = now() where user_id = ${tutor}`);
 
-      expect(await users.applySuspension(tx, { userId: tutor, suspended: true, actorId: admin })).toEqual({
+      expect(
+        await users.applySuspension(tx, {
+          userId: tutor,
+          suspended: true,
+          actorId: admin,
+          confirmEmail: "tutor3@nowtutors.dev",
+        }),
+      ).toEqual({
         ok: true,
         changed: true,
         wentOffline: true,
@@ -124,6 +131,27 @@ describe("applySuspension (drizzle/0016 lets the trusted connection change is_su
         actor_id: admin,
         payload: { from: false, to: true, went_offline: true, email: "tutor3@nowtutors.dev" },
       });
+    });
+  });
+
+  it("refuses a suspension without the account's email typed, and writes nothing (Part I)", async () => {
+    await rolledBack(async (tx) => {
+      const admin = await idOf(tx, "admin@nowtutors.dev");
+      const tutor = await idOf(tx, "tutor3@nowtutors.dev");
+      for (const confirmEmail of [undefined, "", "tutor4@nowtutors.dev"]) {
+        expect(await users.applySuspension(tx, { userId: tutor, suspended: true, actorId: admin, confirmEmail })).toEqual({
+          ok: false,
+          reason: "confirm",
+        });
+      }
+      const state = await one<{ is_suspended: boolean }>(tx, sql`select is_suspended from profiles where id = ${tutor}`);
+      expect(state.is_suspended).toBe(false);
+      expect(await auditsFor(tx, tutor)).toHaveLength(0);
+
+      // Case and surrounding spaces don't matter, as with promotion.
+      expect(
+        await users.applySuspension(tx, { userId: tutor, suspended: true, actorId: admin, confirmEmail: "  TUTOR3@nowtutors.dev " }),
+      ).toMatchObject({ ok: true, changed: true });
     });
   });
 

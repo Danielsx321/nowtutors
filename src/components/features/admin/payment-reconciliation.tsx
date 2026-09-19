@@ -1,14 +1,7 @@
+import { DataTable } from "@/components/ui/data-table";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   creditTransactionLabel,
   formatCreditDelta,
@@ -181,44 +174,59 @@ export function PaymentReconciliation({
               <code>captured</code> one it means the credit never landed.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Delta</TableHead>
-                  <TableHead className="text-right">Balance after</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {payment.ledger.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap text-text-muted">
-                      <Stamp at={row.createdAt} timeZone={timeZone} />
-                    </TableCell>
-                    <TableCell>
+            <DataTable
+              caption="Ledger rows for this payment"
+              rows={payment.ledger}
+              rowKey={(row) => row.id}
+              minWidth={680}
+              columns={[
+                {
+                  key: "when",
+                  header: "When",
+                  className: "whitespace-nowrap text-text-muted",
+                  cell: (row) => <Stamp at={row.createdAt} timeZone={timeZone} />,
+                },
+                {
+                  key: "type",
+                  header: "Type",
+                  cell: (row) => (
+                    <>
                       {creditTransactionLabel(row.type)}
                       <span className="block text-small text-text-muted">
                         <code>{row.type}</code>
                       </span>
-                    </TableCell>
-                    <TableCell className="text-small text-text-muted">
-                      {row.referenceType ?? "—"}
+                    </>
+                  ),
+                },
+                {
+                  key: "ref",
+                  header: "Reference",
+                  className: "text-small text-text-muted",
+                  cell: (row) => (
+                    <>
+                      {row.referenceType ?? "None"}
                       <span className="block break-all">
-                        <code>{row.referenceId ?? "—"}</code>
+                        <code>{row.referenceId ?? "None"}</code>
                       </span>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                      {formatCreditDelta(row.delta)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums text-text-muted">
-                      {row.balanceAfter}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </>
+                  ),
+                },
+                {
+                  key: "delta",
+                  header: "Delta",
+                  align: "right",
+                  className: "whitespace-nowrap font-medium",
+                  cell: (row) => formatCreditDelta(row.delta),
+                },
+                {
+                  key: "after",
+                  header: "Balance after",
+                  align: "right",
+                  className: "whitespace-nowrap text-text-muted",
+                  cell: (row) => row.balanceAfter,
+                },
+              ]}
+            />
           )}
           {payment.purpose === "booking" && payment.ledger.length === 2 && (
             <p className="text-small text-text-muted">

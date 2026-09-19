@@ -1,5 +1,6 @@
 "use client";
 
+import { DataTable, StatusDot, toneForVariant } from "@/components/ui/data-table";
 import * as React from "react";
 import { CalendarDays, Users, Wallet, Inbox, Search } from "lucide-react";
 import { Section, Demo, type Surface } from "./kit";
@@ -22,14 +23,6 @@ import { CreditBalance } from "@/components/ui/credit-balance";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 export function DataDisplaySection({ surface }: { surface: Surface }) {
   const [page, setPage] = React.useState(3);
@@ -85,38 +78,30 @@ export function DataDisplaySection({ surface }: { surface: Surface }) {
 
       <Demo label="Table" surface={surface} className="items-stretch">
         <Card className="w-full overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Price</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[
-                ["Ada Lovelace", "Mathematics", "success", "Confirmed"],
-                ["Alan Turing", "Physics", "warning", "Pending"],
-                ["Grace Hopper", "English", "neutral", "Completed"],
-              ].map(([name, subj, variant, status]) => (
-                <TableRow key={name}>
-                  <TableCell className="flex items-center gap-2 font-medium">
-                    <Avatar name={name} size="sm" /> {name}
-                  </TableCell>
-                  <TableCell>{subj}</TableCell>
-                  <TableCell>
-                    <Badge variant={variant as "success" | "warning" | "neutral"}>
-                      {status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <PriceTag credits={60} unit="hr" size="sm" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            caption="Example bookings"
+            minWidth={560}
+            rows={[
+              { name: "Ada Lovelace", subject: "Mathematics", variant: "success", status: "Confirmed" },
+              { name: "Alan Turing", subject: "Physics", variant: "warning", status: "Pending" },
+              { name: "Grace Hopper", subject: "English", variant: "neutral", status: "Completed" },
+            ]}
+            rowKey={(r) => r.name}
+            columns={[
+              {
+                key: "student",
+                header: "Student",
+                cell: (r) => (
+                  <span className="flex items-center gap-2 font-medium">
+                    <Avatar name={r.name} size="sm" /> {r.name}
+                  </span>
+                ),
+              },
+              { key: "subject", header: "Subject", cell: (r) => r.subject },
+              { key: "status", header: "Status", cell: (r) => <StatusDot tone={toneForVariant(r.variant)}>{r.status}</StatusDot> },
+              { key: "price", header: "Price", align: "right", cell: () => <PriceTag credits={60} unit="hr" size="sm" /> },
+            ]}
+          />
         </Card>
       </Demo>
 

@@ -1,12 +1,5 @@
+import { DataTable } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   creditTransactionLabel,
@@ -45,40 +38,39 @@ export function TransactionHistory({
   });
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Date</TableHead>
-          <TableHead>Description</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead className="text-right">Change</TableHead>
-          <TableHead className="text-right">Balance</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {transactions.map((t) => (
-          <TableRow key={t.id}>
-            <TableCell className="whitespace-nowrap text-text-muted">
-              {dateFormat.format(t.createdAt)}
-            </TableCell>
-            <TableCell>{t.description ?? "—"}</TableCell>
-            <TableCell className="text-text-muted">
-              {creditTransactionLabel(t.type)}
-            </TableCell>
-            <TableCell
-              className={cn(
-                "whitespace-nowrap text-right font-medium tabular-nums",
-                t.delta > 0 ? "text-success" : "text-text",
-              )}
-            >
+    <DataTable
+      caption="Credit history"
+      rows={transactions}
+      rowKey={(t) => t.id}
+      minWidth={640}
+      columns={[
+        {
+          key: "date",
+          header: "Date",
+          className: "whitespace-nowrap text-text-muted",
+          cell: (t) => dateFormat.format(t.createdAt),
+        },
+        { key: "desc", header: "Description", cell: (t) => t.description ?? "None" },
+        { key: "type", header: "Type", className: "text-text-muted", cell: (t) => creditTransactionLabel(t.type) },
+        {
+          key: "change",
+          header: "Change",
+          align: "right",
+          className: "whitespace-nowrap",
+          cell: (t) => (
+            <span className={cn("font-medium", t.delta > 0 ? "text-success" : "text-text")}>
               {formatCreditDelta(t.delta)}
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums text-text-muted">
-              {t.balanceAfter.toLocaleString()}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+            </span>
+          ),
+        },
+        {
+          key: "balance",
+          header: "Balance",
+          align: "right",
+          className: "whitespace-nowrap text-text-muted",
+          cell: (t) => t.balanceAfter.toLocaleString(),
+        },
+      ]}
+    />
   );
 }

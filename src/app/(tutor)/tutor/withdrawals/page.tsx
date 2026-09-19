@@ -1,3 +1,4 @@
+import { DataTable } from "@/components/ui/data-table";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -20,14 +21,6 @@ import { maskEmail } from "@/lib/withdrawals/mask-email";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreditBalance } from "@/components/ui/credit-balance";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { WithdrawalRequest } from "@/components/features/tutor/withdrawal-request";
 import { WithdrawalStatusBadge } from "@/components/features/withdrawals/status-badge";
 
@@ -136,34 +129,19 @@ export default async function TutorWithdrawalsPage() {
           {history.length === 0 ? (
             <EmptyState title="No withdrawals yet" />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Requested</TableHead>
-                  <TableHead className="text-right">Credits</TableHead>
-                  <TableHead className="text-right">USD</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Note</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((w) => (
-                  <TableRow key={w.id}>
-                    <TableCell>{fmt.format(w.createdAt)}</TableCell>
-                    <TableCell className="text-right">
-                      {w.amountCredits.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">${w.amountUsd}</TableCell>
-                    <TableCell>
-                      <WithdrawalStatusBadge status={w.status} />
-                    </TableCell>
-                    <TableCell className="text-small text-text-muted">
-                      {w.adminNote ?? ""}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable
+              caption="Withdrawal history"
+              rows={history}
+              rowKey={(w) => w.id}
+              minWidth={600}
+              columns={[
+                { key: "requested", header: "Requested", className: "whitespace-nowrap", cell: (w) => fmt.format(w.createdAt) },
+                { key: "credits", header: "Credits", align: "right", cell: (w) => w.amountCredits.toLocaleString() },
+                { key: "usd", header: "USD", align: "right", cell: (w) => `$${w.amountUsd}` },
+                { key: "status", header: "Status", cell: (w) => <WithdrawalStatusBadge status={w.status} /> },
+                { key: "note", header: "Note", className: "text-small text-text-muted", cell: (w) => w.adminNote ?? "" },
+              ]}
+            />
           )}
         </CardContent>
       </Card>

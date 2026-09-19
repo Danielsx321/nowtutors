@@ -112,6 +112,26 @@ describe("setUserSuspended", () => {
     expect(m.calls).toEqual(["guard", "transaction", "applySuspension"]);
   });
 
+  it("passes the typed email through and explains a refused confirmation (Part I)", async () => {
+    m.applySuspension.mockResolvedValueOnce({ ok: false, reason: "confirm" });
+    expect(await setUserSuspended({ userId: TARGET, suspended: true, confirmEmail: "wrong@x.y" })).toEqual({
+      error: "Type the account's email exactly to confirm the suspension.",
+    });
+    expect(m.applySuspension).toHaveBeenCalledWith("tx", {
+      userId: TARGET,
+      suspended: true,
+      actorId: ADMIN_ID,
+      confirmEmail: "wrong@x.y",
+    });
+  });
+
+  it("refuses a large adjustment without the amount typed again, before any transaction (Part I)", async () => {
+    expect(await adjustUserCredits({ ...adjustment(), delta: 800 })).toEqual({
+      error: "Type 800 to confirm an adjustment this large.",
+    });
+    expect(m.calls).toEqual(["guard"]);
+  });
+
   it("reports a missing user and a no-op", async () => {
     m.applySuspension.mockResolvedValueOnce({ ok: false, reason: "not_found" });
     expect(await setUserSuspended({ userId: TARGET, suspended: false })).toEqual({ error: "User not found." });

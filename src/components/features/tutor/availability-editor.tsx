@@ -4,7 +4,6 @@ import * as React from "react";
 import { Plus, Trash2, CalendarX2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { TimePicker } from "@/components/ui/time-picker";
 import {
@@ -257,14 +256,18 @@ export function AvailabilityEditor({
         )}
       </section>
 
-      {error && <Alert variant="danger">{error}</Alert>}
-      {saved && <Alert variant="success">Availability saved.</Alert>}
-
-      <div className="flex justify-end">
-        <Label className="sr-only">Save availability</Label>
-        <Button onClick={onSave} loading={saving} disabled={saving}>
-          Save availability
-        </Button>
+      {/* Below md the Save bar sticks just above the bottom nav, so a tutor
+          editing Sunday doesn't scroll back past the whole week to save, and
+          sees the outcome where they tapped (live-globe Part I, deferred from
+          Part F). From md it sits in the flow as before. */}
+      <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 -mx-4 space-y-3 border-t border-border bg-ground px-4 py-3 md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
+        {error && <Alert variant="danger">{error}</Alert>}
+        {saved && <Alert variant="success">Availability saved.</Alert>}
+        <div className="flex justify-end">
+          <Button onClick={onSave} loading={saving} disabled={saving} className="w-full sm:w-auto">
+            Save availability
+          </Button>
+        </div>
       </div>
     </div>
   );
