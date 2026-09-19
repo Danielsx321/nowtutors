@@ -1,14 +1,6 @@
-import { Badge } from "@/components/ui/badge";
+import { DataTable, StatusDot, toneForVariant } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { EarningsBreakdown as Breakdown } from "@/db/queries/withdrawals";
 
 const STATUS = {
@@ -63,38 +55,33 @@ export function EarningsBreakdown({
           description="Earnings appear here after each completed session."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Session ended</TableHead>
-              <TableHead className="text-right">Session price</TableHead>
-              <TableHead className="text-right">You earn</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Available from</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell>{fmt.format(r.createdAt)}</TableCell>
-                <TableCell className="text-right">
-                  {r.grossCredits.toLocaleString()}
-                </TableCell>
-                <TableCell className="text-right font-medium">
-                  {r.netCredits.toLocaleString()}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={STATUS[r.status].variant}>
-                    {STATUS[r.status].label}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {r.availableAt ? fmt.format(r.availableAt) : "Not set"}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <DataTable
+          caption="Earnings history"
+          rows={rows}
+          rowKey={(r) => r.id}
+          minWidth={680}
+          columns={[
+            { key: "ended", header: "Session ended", className: "whitespace-nowrap", cell: (r) => fmt.format(r.createdAt) },
+            { key: "price", header: "Session price", align: "right", cell: (r) => r.grossCredits.toLocaleString() },
+            {
+              key: "earn",
+              header: "You earn",
+              align: "right",
+              cell: (r) => <span className="font-medium">{r.netCredits.toLocaleString()}</span>,
+            },
+            {
+              key: "status",
+              header: "Status",
+              cell: (r) => <StatusDot tone={toneForVariant(STATUS[r.status].variant)}>{STATUS[r.status].label}</StatusDot>,
+            },
+            {
+              key: "available",
+              header: "Available from",
+              className: "whitespace-nowrap",
+              cell: (r) => (r.availableAt ? fmt.format(r.availableAt) : "Not set"),
+            },
+          ]}
+        />
       )}
     </div>
   );

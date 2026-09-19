@@ -8,6 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { adjustUserCredits, promoteToAdmin, setUserSuspended } from "@/actions/admin-users";
+import {
+  adjustmentConfirmed,
+  needsTypedAdjustmentConfirm,
+  suspensionConfirmed,
+} from "@/lib/admin/users";
 import type { AdminUserActionResult } from "@/actions/admin-users";
 
 type Outcome = { kind: "ok" | "error"; text: string } | null;
@@ -25,16 +30,32 @@ function OutcomeAlert({ outcome }: { outcome: Outcome }) {
   );
 }
 
-function SuspensionCard({ userId, isSuspended, isSelf }: { userId: string; isSuspended: boolean; isSelf: boolean }) {
+function SuspensionCard({
+  userId,
+  email,
+  isSuspended,
+  isSelf,
+}: {
+  userId: string;
+  email: string;
+  isSuspended: boolean;
+  isSelf: boolean;
+}) {
   const [confirming, setConfirming] = React.useState(false);
+  // Typed confirmation (live-globe Part I): the server checks it too.
+  const [typed, setTyped] = React.useState("");
   const [outcome, setOutcome] = React.useState<Outcome>(null);
   const [pending, start] = React.useTransition();
 
   const run = (suspended: boolean) =>
     start(async () => {
       setOutcome(null);
-      setOutcome(toOutcome(await setUserSuspended({ userId, suspended })));
-      setConfirming(false);
+      const res = await setUserSuspended({ userId, suspended, confirmEmail: suspended ? typed : undefined });
+      setOutcome(toOutcome(res));
+      if (!("error" in res)) {
+        setConfirming(false);
+        setTyped("");
+      }
     });
 
   return (
@@ -54,14 +75,47 @@ function SuspensionCard({ userId, isSuspended, isSelf }: { userId: string; isSus
         ) : isSelf ? (
           <Alert variant="info">You can&apos;t suspend your own account.</Alert>
         ) : confirming ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="danger" loading={pending} onClick={() => run(true)}>
-              Yes, suspend
-            </Button>
-            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </div>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(true);
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="suspend-confirm" required>
+                Type {email} to confirm
+              </Label>
+              <Input
+                id="suspend-confirm"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                variant="danger"
+                loading={pending}
+                disabled={!suspensionConfirmed(typed, email)}
+              >
+                Suspend account
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  setConfirming(false);
+                  setTyped("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
         ) : (
           <Button variant="danger" onClick={() => setConfirming(true)}>
             Suspend account
@@ -74,6 +128,7 @@ function SuspensionCard({ userId, isSuspended, isSelf }: { userId: string; isSus
 
 function AdjustCard({ userId }: { userId: string }) {
   const [amount, setAmount] = React.useState("");
+  const [confirmAmount, setConfirmAmount] = React.useState("");
   const [note, setNote] = React.useState("");
   // One key per filled-in form: a double-click lands once, a new adjustment gets a new key.
   const [requestKey, setRequestKey] = React.useState(() => crypto.randomUUID());
@@ -85,15 +140,25 @@ function AdjustCard({ userId }: { userId: string }) {
     start(async () => {
       setOutcome(null);
       const delta = amount.trim() === "" ? Number.NaN : Number(amount);
-      const res = await adjustUserCredits({ userId, delta, note, requestKey });
+      const res = await adjustUserCredits({
+        userId,
+        delta,
+        note,
+        requestKey,
+        confirmAmount: large ? confirmAmount : undefined,
+      });
       setOutcome(toOutcome(res));
       if (!("error" in res)) {
         setAmount("");
+        setConfirmAmount("");
         setNote("");
         setRequestKey(crypto.randomUUID());
       }
     });
   };
+
+  const parsedAmount = amount.trim() === "" ? Number.NaN : Number(amount);
+  const large = needsTypedAdjustmentConfirm(parsedAmount);
 
   return (
     <Card>
@@ -119,6 +184,21 @@ function AdjustCard({ userId }: { userId: string }) {
               autoComplete="off"
             />
           </div>
+          {large && (
+            <div className="space-y-1.5">
+              <Label htmlFor="adjust-confirm" required>
+                This is a large adjustment. Type {parsedAmount} to confirm
+              </Label>
+              <Input
+                id="adjust-confirm"
+                inputMode="numeric"
+                value={confirmAmount}
+                onChange={(e) => setConfirmAmount(e.target.value)}
+                className="max-w-48"
+                autoComplete="off"
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="adjust-note" required>
               Why (admins only see this; the user sees &quot;Adjusted by NowTutors support&quot;)
@@ -126,7 +206,11 @@ function AdjustCard({ userId }: { userId: string }) {
             <Textarea id="adjust-note" rows={2} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
           </div>
           <OutcomeAlert outcome={outcome} />
-          <Button type="submit" loading={pending}>
+          <Button
+            type="submit"
+            loading={pending}
+            disabled={large && !adjustmentConfirmed(parsedAmount, confirmAmount)}
+          >
             Apply adjustment
           </Button>
         </form>
@@ -198,7 +282,7 @@ export function UserAdminActions({
 }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <SuspensionCard userId={userId} isSuspended={isSuspended} isSelf={isSelf} />
+      <SuspensionCard userId={userId} email={email} isSuspended={isSuspended} isSelf={isSelf} />
       {(role === "student" || role === "tutor") && <AdjustCard userId={userId} />}
       {role !== "admin" && role !== null && <PromoteCard userId={userId} email={email} />}
     </div>

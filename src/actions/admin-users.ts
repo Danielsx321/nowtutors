@@ -33,24 +33,37 @@ function revalidateUser(userId: string) {
   revalidatePath("/admin/audit");
 }
 
-const suspendSchema = z.object({ userId: z.string().uuid(), suspended: z.boolean() });
+const suspendSchema = z.object({
+  userId: z.string().uuid(),
+  suspended: z.boolean(),
+  /** The account's email, typed to confirm a suspension (Part I). */
+  confirmEmail: z.string().max(320).optional(),
+});
 
 export async function setUserSuspended(input: {
   userId: string;
   suspended: boolean;
+  confirmEmail?: string;
 }): Promise<AdminUserActionResult> {
   const { user } = await requireRole("admin");
   const parsed = suspendSchema.safeParse(input);
   if (!parsed.success) return { error: "Invalid user." };
-  const { userId, suspended } = parsed.data;
+  const { userId, suspended, confirmEmail } = parsed.data;
   if (suspended && selfSuspensionRefused(user.id, userId)) {
     return { error: "You can't suspend your own account." };
   }
 
   const res = await db.transaction((tx) =>
-    applySuspension(tx, { userId, suspended, actorId: user.id }),
+    applySuspension(tx, { userId, suspended, actorId: user.id, confirmEmail }),
   );
-  if (!res.ok) return { error: "User not found." };
+  if (!res.ok) {
+    return {
+      error:
+        res.reason === "confirm"
+          ? "Type the account's email exactly to confirm the suspension."
+          : "User not found.",
+    };
+  }
 
   revalidateUser(userId);
   // Browse and tutor profiles hide suspended tutors.
@@ -71,6 +84,7 @@ export async function adjustUserCredits(input: {
   delta: number;
   note: string;
   requestKey: string;
+  confirmAmount?: string;
 }): Promise<AdminUserActionResult> {
   const { user } = await requireRole("admin");
   const parsed = adjustmentSchema.safeParse(input);

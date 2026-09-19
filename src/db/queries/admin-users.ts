@@ -13,6 +13,7 @@ import {
   canAdjustWallet,
   promotionBlockers,
   type PromotionBlocker,
+  suspensionConfirmed,
   type PromotionFacts,
   type Role,
   type UserFilter,
@@ -206,7 +207,7 @@ async function lockProfile(tx: Tx, userId: string) {
 
 export type SuspensionResult =
   | { ok: true; changed: boolean; wentOffline: boolean }
-  | { ok: false; reason: "not_found" };
+  | { ok: false; reason: "not_found" | "confirm" };
 
 /**
  * Set `profiles.is_suspended`. A no-op writes nothing. Suspending a tutor who is
@@ -215,10 +216,15 @@ export type SuspensionResult =
  */
 export async function applySuspension(
   tx: Tx,
-  p: { userId: string; suspended: boolean; actorId: string },
+  p: { userId: string; suspended: boolean; actorId: string; confirmEmail?: string },
 ): Promise<SuspensionResult> {
   const before = await lockProfile(tx, p.userId);
   if (!before) return { ok: false, reason: "not_found" };
+  // Suspending needs the account's email typed (Part I). Checked against the
+  // locked row, so it's the email as it is now. Unsuspending needs nothing.
+  if (p.suspended && !before.isSuspended && !suspensionConfirmed(p.confirmEmail, before.email)) {
+    return { ok: false, reason: "confirm" };
+  }
   if (before.isSuspended === p.suspended) return { ok: true, changed: false, wentOffline: false };
 
   await tx.update(profiles).set({ isSuspended: p.suspended }).where(eq(profiles.id, p.userId));

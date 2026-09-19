@@ -8,9 +8,8 @@ import { listAdminBookings } from "@/db/queries/admin-bookings";
 import { safeTimeZone } from "@/db/queries/admin-overview";
 import { bookingStatusMeta } from "@/lib/bookings/status";
 import { normalizeUserSearch } from "@/lib/admin/users";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { DataTable, StatusDot, toneForVariant } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -115,42 +114,51 @@ export default async function AdminBookingsPage({ searchParams }: { searchParams
         ))}
       </nav>
 
-      {result.bookings.length === 0 ? (
-        <EmptyState title="No bookings found" description="Try a different filter." />
-      ) : (
-        <ul className="space-y-3">
-          {result.bookings.map((b) => {
-            const meta = bookingStatusMeta(b.status);
-            return (
-              <li key={b.id}>
-                <Card>
-                  <CardContent className="p-0">
-                    <Link
-                      href={`/admin/bookings/${b.id}`}
-                      className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-lg p-4 hover:bg-surface-muted"
-                    >
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="text-body font-bold text-text">
-                          {b.studentName} with {b.tutorName}
-                        </p>
-                        <p className="text-small text-text-muted">
-                          {fmt.format(b.startsAt)} · {b.type} · {b.durationMinutes ?? "?"} min
-                          {b.subjectName ? ` · ${b.subjectName}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={meta.variant}>{meta.label}</Badge>
-                        {b.earningStatus && <Badge variant="neutral">earnings {b.earningStatus}</Badge>}
-                        <span className="text-small text-text-muted">{b.priceCredits ?? "?"} credits</span>
-                      </div>
-                    </Link>
-                  </CardContent>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {/* v2 (live-globe Part I): the shared DataTable, one row per booking. */}
+      <DataTable
+        caption="Bookings"
+        rows={result.bookings}
+        rowKey={(b) => b.id}
+        minWidth={820}
+        empty={<EmptyState title="No bookings found" description="Try a different filter." />}
+        columns={[
+          {
+            key: "who",
+            header: "Booking",
+            cell: (b) => (
+              <Link href={`/admin/bookings/${b.id}`} className="focus-ring block min-w-0 rounded-sm hover:underline">
+                <span className="block font-medium text-text">
+                  {b.studentName} with {b.tutorName}
+                </span>
+                {b.subjectName && <span className="block text-small text-text-muted">{b.subjectName}</span>}
+              </Link>
+            ),
+          },
+          { key: "when", header: "When", cell: (b) => fmt.format(b.startsAt), className: "whitespace-nowrap" },
+          {
+            key: "type",
+            header: "Type",
+            cell: (b) => `${b.type === "instant" ? "Instant" : "Scheduled"} · ${b.durationMinutes ?? "?"} min`,
+            className: "whitespace-nowrap",
+          },
+          {
+            key: "status",
+            header: "Status",
+            cell: (b) => {
+              const meta = bookingStatusMeta(b.status);
+              return (
+                <span className="grid gap-0.5">
+                  <StatusDot tone={toneForVariant(meta.variant)}>{meta.label}</StatusDot>
+                  {b.earningStatus && (
+                    <span className="text-small text-text-muted">Earnings {b.earningStatus}</span>
+                  )}
+                </span>
+              );
+            },
+          },
+          { key: "credits", header: "Credits", align: "right", cell: (b) => b.priceCredits ?? "?" },
+        ]}
+      />
 
       {result.pageCount > 1 && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-3">

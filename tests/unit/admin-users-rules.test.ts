@@ -4,6 +4,10 @@ import {
   adjustmentSchema,
   canAdjustWallet,
   MAX_ADJUSTMENT_CREDITS,
+  LARGE_ADJUSTMENT_CREDITS,
+  adjustmentConfirmed,
+  needsTypedAdjustmentConfirm,
+  suspensionConfirmed,
   normalizeUserSearch,
   parseUserFilter,
   promotionBlockerMessage,
@@ -42,8 +46,10 @@ describe("adjustmentSchema", () => {
     expect(firstMessage({ ...valid(), delta: 0 })).toBe("The adjustment can't be zero.");
     expect(firstMessage({ ...valid(), delta: 1.5 })).toBe("Enter a whole number of credits.");
     expect(firstMessage({ ...valid(), delta: "10" })).toBe("Enter a whole number of credits.");
-    expect(adjustmentSchema.safeParse({ ...valid(), delta: MAX_ADJUSTMENT_CREDITS }).success).toBe(true);
-    expect(adjustmentSchema.safeParse({ ...valid(), delta: -MAX_ADJUSTMENT_CREDITS }).success).toBe(true);
+    // At the cap the amount is large, so it's typed again (Part I).
+    const max = MAX_ADJUSTMENT_CREDITS;
+    expect(adjustmentSchema.safeParse({ ...valid(), delta: max, confirmAmount: String(max) }).success).toBe(true);
+    expect(adjustmentSchema.safeParse({ ...valid(), delta: -max, confirmAmount: String(-max) }).success).toBe(true);
     expect(firstMessage({ ...valid(), delta: MAX_ADJUSTMENT_CREDITS + 1 })).toMatch(/at most 10,000/);
     expect(firstMessage({ ...valid(), delta: -MAX_ADJUSTMENT_CREDITS - 1 })).toMatch(/at most 10,000/);
   });
@@ -157,5 +163,42 @@ describe("subjects", () => {
     expect(createSubjectSchema.safeParse({ name: "!!!" }).success).toBe(false);
     expect(createSubjectSchema.safeParse({ name: "x".repeat(81) }).success).toBe(false);
     expect(renameSubjectSchema.safeParse({ subjectId: "nope", name: "Latin" }).success).toBe(false);
+  });
+});
+
+describe("typed confirmations (live-globe Part I)", () => {
+  it("a large adjustment needs the amount typed again; a small one doesn't", () => {
+    expect(needsTypedAdjustmentConfirm(LARGE_ADJUSTMENT_CREDITS - 1)).toBe(false);
+    expect(needsTypedAdjustmentConfirm(LARGE_ADJUSTMENT_CREDITS)).toBe(true);
+    expect(needsTypedAdjustmentConfirm(-LARGE_ADJUSTMENT_CREDITS)).toBe(true);
+    expect(needsTypedAdjustmentConfirm(Number.NaN)).toBe(false);
+
+    expect(adjustmentSchema.safeParse({ ...valid(), delta: 499 }).success).toBe(true);
+    expect(firstMessage({ ...valid(), delta: 500 })).toBe("Type 500 to confirm an adjustment this large.");
+    expect(firstMessage({ ...valid(), delta: -500, confirmAmount: "500" })).toBe(
+      "Type -500 to confirm an adjustment this large.",
+    );
+    expect(adjustmentSchema.safeParse({ ...valid(), delta: 500, confirmAmount: " 500 " }).success).toBe(true);
+    expect(adjustmentSchema.safeParse({ ...valid(), delta: -750, confirmAmount: "-750" }).success).toBe(true);
+  });
+
+  it("the typed amount must match exactly, sign included; '+' and thousands commas are fine", () => {
+    expect(adjustmentConfirmed(500, "500")).toBe(true);
+    expect(adjustmentConfirmed(500, "+500")).toBe(true);
+    expect(adjustmentConfirmed(1500, "1,500")).toBe(true);
+    expect(adjustmentConfirmed(-500, "-500")).toBe(true);
+    expect(adjustmentConfirmed(-500, "500")).toBe(false);
+    expect(adjustmentConfirmed(500, "5000")).toBe(false);
+    expect(adjustmentConfirmed(500, "500.0")).toBe(false);
+    expect(adjustmentConfirmed(500, "")).toBe(false);
+    expect(adjustmentConfirmed(500, undefined)).toBe(false);
+  });
+
+  it("a suspension is confirmed by the account's email, ignoring case and spaces", () => {
+    expect(suspensionConfirmed("ada@example.com", "ada@example.com")).toBe(true);
+    expect(suspensionConfirmed("  ADA@Example.com ", "ada@example.com")).toBe(true);
+    expect(suspensionConfirmed("ada@example.co", "ada@example.com")).toBe(false);
+    expect(suspensionConfirmed("", "ada@example.com")).toBe(false);
+    expect(suspensionConfirmed(undefined, "ada@example.com")).toBe(false);
   });
 });

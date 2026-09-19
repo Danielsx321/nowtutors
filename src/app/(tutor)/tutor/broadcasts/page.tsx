@@ -1,3 +1,4 @@
+import { DataTable, StatusDot } from "@/components/ui/data-table";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { Radio } from "lucide-react";
@@ -10,18 +11,9 @@ import {
   listTutorBroadcasts,
 } from "@/db/queries/broadcasts";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { StartBroadcastForm } from "@/components/features/broadcasts/start-broadcast-form";
 
 export const metadata = { title: "Broadcasts · NowTutors" };
@@ -89,40 +81,38 @@ export default async function TutorBroadcastsPage() {
           />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Length</TableHead>
-                  <TableHead className="text-right">Peak viewers</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((b) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="font-medium text-text">
-                      {b.status === "live" ? (
-                        <Link href={`/broadcast/${b.id}`} className="focus-ring rounded-sm hover:underline">
-                          {b.title}
-                        </Link>
-                      ) : (
-                        b.title
-                      )}
-                    </TableCell>
-                    <TableCell>{b.startedAt ? fmt.format(b.startedAt) : "—"}</TableCell>
-                    <TableCell>
-                      {b.status === "live" ? (
-                        <Badge variant="success">Live</Badge>
-                      ) : (
-                        formatLength(b.startedAt, b.endedAt)
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">{b.peakViewers}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable
+              caption="Your broadcasts"
+              rows={history}
+              rowKey={(b) => b.id}
+              minWidth={560}
+              columns={[
+                {
+                  key: "title",
+                  header: "Title",
+                  cell: (b) =>
+                    b.status === "live" ? (
+                      <Link href={`/broadcast/${b.id}`} className="focus-ring rounded-sm font-medium hover:underline">
+                        {b.title}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{b.title}</span>
+                    ),
+                },
+                {
+                  key: "started",
+                  header: "Started",
+                  className: "whitespace-nowrap",
+                  cell: (b) => (b.startedAt ? fmt.format(b.startedAt) : "Not started"),
+                },
+                {
+                  key: "length",
+                  header: "Length",
+                  cell: (b) => (b.status === "live" ? <StatusDot tone="live">Live</StatusDot> : formatLength(b.startedAt, b.endedAt)),
+                },
+                { key: "peak", header: "Peak viewers", align: "right", cell: (b) => b.peakViewers },
+              ]}
+            />
           </div>
         )}
       </section>

@@ -7,9 +7,8 @@ import {
   USER_FILTERS,
   type UserFilter,
 } from "@/lib/admin/users";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { DataTable, StatusDot } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -107,41 +106,41 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         ))}
       </nav>
 
-      {result.users.length === 0 ? (
-        <EmptyState title="No users found" description="Try a different search or filter." />
-      ) : (
-        <ul className="space-y-3">
-          {result.users.map((u) => (
-            <li key={u.id}>
-              <Card>
-                <CardContent className="p-0">
-                  <Link
-                    href={`/admin/users/${u.id}`}
-                    className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-lg p-4 hover:bg-surface-muted"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-body font-bold text-text">
-                        {u.displayName ?? u.fullName ?? "No name"}
-                      </p>
-                      <p className="truncate text-small text-text-muted">{u.email}</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={u.role === "admin" ? "solid" : u.role ? "accent" : "neutral"}>
-                        {u.role ?? "not onboarded"}
-                      </Badge>
-                      {u.role === "tutor" && u.approvalStatus && u.approvalStatus !== "approved" && (
-                        <Badge variant="warning">{u.approvalStatus}</Badge>
-                      )}
-                      {u.isSuspended && <Badge variant="danger">suspended</Badge>}
-                      <span className="text-small text-text-muted">{u.balance} credits</span>
-                    </div>
-                  </Link>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* v2 (live-globe Part I): the shared DataTable, one row per account.
+          The name links to the account page; status is a dot and a word. */}
+      <DataTable
+        caption="Accounts"
+        rows={result.users}
+        rowKey={(u) => u.id}
+        minWidth={640}
+        empty={<EmptyState title="No users found" description="Try a different search or filter." />}
+        columns={[
+          {
+            key: "who",
+            header: "Account",
+            cell: (u) => (
+              <Link href={`/admin/users/${u.id}`} className="focus-ring block min-w-0 rounded-sm hover:underline">
+                <span className="block truncate font-medium text-text">{u.displayName ?? u.fullName ?? "No name"}</span>
+                <span className="block truncate text-small text-text-muted">{u.email}</span>
+              </Link>
+            ),
+          },
+          { key: "role", header: "Role", cell: (u) => (u.role ? capitalise(u.role) : "Not onboarded") },
+          {
+            key: "status",
+            header: "Status",
+            cell: (u) =>
+              u.isSuspended ? (
+                <StatusDot tone="danger">Suspended</StatusDot>
+              ) : u.role === "tutor" && u.approvalStatus && u.approvalStatus !== "approved" ? (
+                <StatusDot tone="spark">{capitalise(u.approvalStatus.replace(/_/g, " "))}</StatusDot>
+              ) : (
+                <StatusDot tone="live">Active</StatusDot>
+              ),
+          },
+          { key: "credits", header: "Credits", align: "right", cell: (u) => u.balance.toLocaleString("en-US") },
+        ]}
+      />
 
       {result.pageCount > 1 && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-3">
@@ -172,4 +171,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
       )}
     </div>
   );
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
