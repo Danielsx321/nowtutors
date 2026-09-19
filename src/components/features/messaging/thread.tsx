@@ -157,7 +157,7 @@ export function Thread({
           </div>
         )}
         {messages.length === 0 && (
-          <p className="py-12 text-center text-body text-gray-500">
+          <p className="py-12 text-center text-body text-text-muted">
             No messages yet. Say hello.
           </p>
         )}
@@ -169,7 +169,7 @@ export function Thread({
             <React.Fragment key={m.id}>
               {newDay && (
                 <p
-                  className="py-2 text-center text-caption font-medium text-gray-500"
+                  className="py-2 text-center text-caption font-medium text-text-muted"
                   suppressHydrationWarning
                 >
                   {dayFmt.format(at)}

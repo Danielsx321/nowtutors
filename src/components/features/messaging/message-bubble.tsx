@@ -33,7 +33,7 @@ export function MessageBubble({
       <div
         className={cn(
           "max-w-[80%] space-y-1.5 rounded-lg px-3 py-2 text-body",
-          mine ? "bg-purple-500 text-white" : "bg-gray-100 text-gray-700",
+          mine ? "bg-primary text-on-primary" : "bg-surface-muted text-text",
         )}
       >
         {attachment && (
@@ -46,7 +46,7 @@ export function MessageBubble({
         )}
         {body && <p className="whitespace-pre-wrap break-words">{body}</p>}
         <p
-          className={cn("text-right text-caption", mine ? "text-purple-100" : "text-gray-500")}
+          className={cn("text-right text-caption", mine ? "text-on-primary/75" : "text-text-muted")}
           suppressHydrationWarning
         >
           {time}

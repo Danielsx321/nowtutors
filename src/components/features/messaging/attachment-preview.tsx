@@ -53,7 +53,7 @@ export function AttachmentPreview({
   if (attachment.kind === "image") {
     if (failed) {
       return (
-        <p className={cn("flex items-center gap-1.5 text-small", mine ? "text-purple-100" : "text-gray-500")}>
+        <p className={cn("flex items-center gap-1.5 text-small", mine ? "text-on-primary/75" : "text-text-muted")}>
           <ImageOff className="size-4" aria-hidden />
           Image unavailable
         </p>
@@ -62,7 +62,7 @@ export function AttachmentPreview({
     if (!url) {
       return (
         <div
-          className="h-40 w-56 max-w-full animate-pulse rounded-md bg-black/10"
+          className="h-40 w-56 max-w-full animate-pulse rounded-md bg-surface-muted"
           role="img"
           aria-label={`Loading ${attachment.name}`}
         />
@@ -105,7 +105,7 @@ export function AttachmentPreview({
       }}
       className={cn(
         "focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-small",
-        mine ? "bg-purple-700/40 hover:bg-purple-700/60" : "bg-white hover:bg-gray-50",
+        mine ? "bg-on-primary/15 hover:bg-on-primary/25" : "bg-surface-raised hover:bg-surface-muted",
       )}
     >
       <FileText className="size-5 shrink-0" aria-hidden />

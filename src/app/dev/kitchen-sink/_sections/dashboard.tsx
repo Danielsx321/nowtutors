@@ -16,6 +16,9 @@ import { PeopleList } from "@/components/features/dashboard/people-list";
 import { BookingsTable } from "@/components/features/dashboard/bookings-table";
 import { DashboardColumns, RailBox } from "@/components/features/dashboard/dashboard-columns";
 import { UnreadCountProvider } from "@/components/features/messaging/unread-context";
+import { GoLiveProvider } from "@/components/features/tutor/go-live-context";
+import { GoLiveBanner } from "@/components/features/tutor/go-live-banner";
+import { Check, X } from "lucide-react";
 
 /**
  * The v2 app shell and dashboard pieces (live-globe rebuild Part E), with
@@ -124,6 +127,39 @@ export function DashboardSection({ surface }: { surface: Surface }) {
           </div>
         </div>
         </UnreadCountProvider>
+      </Demo>
+
+      <Demo label="Tutor dashboard pieces: go-live banner, profile checklist, earnings stages (example data)" surface={surface} className="items-stretch">
+        <GoLiveProvider initialLive={false} broadcastHref={null}>
+          <div className="w-full rounded-lg border border-border bg-ground p-4">
+            <DashboardColumns
+              main={<GoLiveBanner othersLive={11} />}
+              rail={
+                <RailBox title="Earnings">
+                  <div className="grid gap-2.5">
+                    <div className="flex items-center gap-3 rounded-2xl border border-border px-3.5 py-3">
+                      <div>
+                        <p className="text-caption text-text-muted">Held · releases after 48 hrs</p>
+                        <p className="font-display text-[18px] font-semibold text-text">92 cr</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-2xl border border-primary px-3.5 py-3">
+                      <div>
+                        <p className="text-caption text-text-muted">Available</p>
+                        <p className="font-display text-[18px] font-semibold text-text">310 cr ≈ $310.00</p>
+                      </div>
+                      <Button size="sm" className="ml-auto h-[34px] px-3.5">Withdraw</Button>
+                    </div>
+                  </div>
+                  <ul className="grid gap-2 text-small">
+                    <li className="flex items-center gap-2 text-live"><Check className="size-4" aria-hidden />Photo added</li>
+                    <li className="flex items-center gap-2 text-spark-text"><X className="size-4" aria-hidden />Set your weekly availability</li>
+                  </ul>
+                </RailBox>
+              }
+            />
+          </div>
+        </GoLiveProvider>
       </Demo>
     </Section>
   );

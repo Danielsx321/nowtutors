@@ -26,6 +26,7 @@ import {
 import { updateTutorProfile } from "@/actions/tutor-profile";
 import { AvatarUpload } from "@/components/features/onboarding/avatar-upload";
 import type { SubjectOption } from "@/components/features/onboarding/student-form";
+import { TutorCard } from "@/components/features/tutor-card";
 
 const LEVELS = [
   { value: "all", label: "All levels" },
@@ -44,11 +45,14 @@ export function TutorProfileEditor({
   subjects,
   defaults,
   isApproved,
+  preview,
 }: {
   userId: string;
   subjects: SubjectOption[];
   defaults: TutorProfileEditValues;
   isApproved: boolean;
+  /** What the card needs that the form doesn't edit (live-globe Part F preview). */
+  preview?: { slug: string; country: string | null; completedSessions: number };
 }) {
   const [formError, setFormError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
@@ -67,6 +71,9 @@ export function TutorProfileEditor({
   const avatarUrl = watch("avatarUrl");
   const selectedSubjects = watch("subjects");
   const languages = watch("languages");
+  const headline = watch("headline");
+  const rate = watch("hourlyRateCredits");
+  const years = watch("yearsExperience");
 
   const nameFor = React.useMemo(
     () => new Map(subjects.map((s) => [s.slug, s.name])),
@@ -108,8 +115,8 @@ export function TutorProfileEditor({
     else setSaved(true);
   });
 
-  return (
-    <form onSubmit={onSubmit} noValidate className="space-y-6">
+  const form = (
+    <form onSubmit={onSubmit} noValidate className="min-w-0 space-y-6">
       {formError && <Alert variant="danger">{formError}</Alert>}
       {saved && (
         <Alert variant="success" title="Profile saved">
@@ -168,10 +175,10 @@ export function TutorProfileEditor({
           ))}
         </div>
         {selectedSubjects.length > 0 && (
-          <div className="space-y-2 rounded-md border border-gray-200 p-3">
+          <div className="space-y-2 rounded-md border border-border p-3">
             {selectedSubjects.map((s) => (
               <div key={s.slug} className="flex items-center justify-between gap-3">
-                <span className="text-small text-gray-700">
+                <span className="text-small text-text">
                   {nameFor.get(s.slug) ?? s.slug}
                 </span>
                 <div className="w-40">
@@ -228,7 +235,7 @@ export function TutorProfileEditor({
         <Label required>Languages you teach in</Label>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           {LANGUAGES.map((lang) => (
-            <label key={lang} className="flex items-center gap-2 text-small text-gray-700">
+            <label key={lang} className="flex items-center gap-2 text-small text-text">
               <Checkbox
                 checked={languages.includes(lang)}
                 onCheckedChange={() => toggleLanguage(lang)}
@@ -262,5 +269,44 @@ export function TutorProfileEditor({
         Save changes
       </Button>
     </form>
+  );
+
+  if (!preview) return form;
+
+  // The card as students will see it, redrawn as the form changes (Part F).
+  // `inert` so its links and heart don't navigate away mid-edit.
+  return (
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+      {form}
+      <aside aria-label="Card preview" className="lg:sticky lg:top-28 lg:self-start">
+        <p className="mb-2 text-small font-medium text-text">How students see your card</p>
+        <div inert>
+          <TutorCard
+            favouriteMode="hidden"
+            tutor={{
+              userId,
+              slug: preview.slug,
+              displayName: fullName?.trim() || "Your name",
+              avatarUrl: avatarUrl ?? null,
+              country: preview.country,
+              headline: headline?.trim() || null,
+              ratingAvg: 0,
+              ratingCount: 0,
+              hourlyRateCredits: Number(rate) > 0 ? Number(rate) : 0,
+              yearsExperience: years != null && Number(years) > 0 ? Number(years) : null,
+              completedSessions: preview.completedSessions,
+              acceptsInstant: false,
+              subjects: selectedSubjects.map((sub) => nameFor.get(sub.slug) ?? sub.slug).slice(0, 3),
+              liveStatus: "offline",
+              liveBroadcastId: null,
+              isFavourited: false,
+            }}
+          />
+        </div>
+        <p className="mt-2 text-caption text-text-muted">
+          Saved changes show on your public page straight away.
+        </p>
+      </aside>
+    </div>
   );
 }

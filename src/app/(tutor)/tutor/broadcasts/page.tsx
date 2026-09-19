@@ -52,10 +52,10 @@ export default async function TutorBroadcastsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 py-8">
+    <div className="mx-auto max-w-4xl space-y-6 py-2">
       <div className="space-y-1">
-        <h1 className="text-h1 font-bold text-gray-700">Broadcasts</h1>
-        <p className="text-body text-gray-500">
+        <h1 className="font-display text-[clamp(28px,3vw,38px)] font-medium leading-tight tracking-[-0.03em] text-text">Broadcasts</h1>
+        <p className="text-body text-text-muted">
           Teach many students at once. Anyone can see you on Live now, and signed-in
           students watch for free.
         </p>
@@ -80,7 +80,7 @@ export default async function TutorBroadcastsPage() {
       )}
 
       <section className="space-y-3">
-        <h2 className="text-h3 font-bold text-gray-700">Past broadcasts</h2>
+        <h2 className="text-h3 font-bold text-text">Past broadcasts</h2>
         {history.length === 0 ? (
           <EmptyState
             icon={<Radio className="size-6" />}
@@ -88,7 +88,7 @@ export default async function TutorBroadcastsPage() {
             description="When you go live, your broadcasts show up here with how many people watched."
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -101,7 +101,7 @@ export default async function TutorBroadcastsPage() {
               <TableBody>
                 {history.map((b) => (
                   <TableRow key={b.id}>
-                    <TableCell className="font-medium text-gray-700">
+                    <TableCell className="font-medium text-text">
                       {b.status === "live" ? (
                         <Link href={`/broadcast/${b.id}`} className="focus-ring rounded-sm hover:underline">
                           {b.title}

@@ -2,10 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { LiveChip } from "@/components/ui/live-chip";
-import { setInstantAvailability } from "@/actions/presence";
+import { useGoLive, useGoLiveState } from "@/components/features/tutor/go-live-context";
 
 export interface GoLiveToggleProps {
   /**
@@ -41,33 +40,15 @@ export function GoLiveToggle({
   broadcastHref,
   variant = "card",
 }: GoLiveToggleProps) {
-  const [live, setLive] = React.useState(initialLive);
-  const [pending, startTransition] = React.useTransition();
-  const broadcasting = !!broadcastHref;
-
-  const onChange = (next: boolean) => {
-    const previous = live;
-    setLive(next); // optimistic
-    startTransition(async () => {
-      try {
-        const res = await setInstantAvailability({ live: next });
-        if ("error" in res) {
-          setLive(previous);
-          toast.error(res.error);
-          return;
-        }
-        setLive(res.isLive);
-        toast.success(
-          res.isLive
-            ? "You're live — students can request an instant session."
-            : "You're offline for instant sessions.",
-        );
-      } catch {
-        setLive(previous);
-        toast.error("Could not change your availability. Try again.");
-      }
-    });
-  };
+  // Inside the tutor shell the state is shared with the dashboard banner
+  // (GoLiveProvider, Part F); on its own (kitchen sink, tests) it keeps its
+  // own. Both paths run the same handler, toasts included.
+  const own = useGoLiveState(initialLive, broadcastHref ?? null);
+  const shared = useGoLive();
+  const { live, pending, setLive } = shared ?? own;
+  const broadcastLink = shared ? shared.broadcastHref : (broadcastHref ?? null);
+  const broadcasting = !!broadcastLink;
+  const onChange = (next: boolean) => setLive(next);
 
   if (variant === "compact") {
     return (
@@ -107,7 +88,7 @@ export function GoLiveToggle({
           {broadcasting ? (
             <>
               You&apos;re broadcasting, so students can&apos;t request you right now.{" "}
-              <Link href={broadcastHref} className="focus-ring rounded-sm text-accent hover:underline">
+              <Link href={broadcastLink ?? "/tutor/broadcasts"} className="focus-ring rounded-sm text-accent hover:underline">
                 Return to your broadcast
               </Link>{" "}
               to end it first.

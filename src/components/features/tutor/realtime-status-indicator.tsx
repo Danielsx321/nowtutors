@@ -20,12 +20,11 @@ import { AlertTriangle } from "lucide-react";
  * not news. It disappears on its own when a retry succeeds; there is nothing to
  * dismiss and no action to take, so it offers neither.
  *
- * **Tokens only (§10.1).** `ink-900` fill with an `ink-700` border — the ink
- * shell's own separation rule, since elevation-by-lightness is unavailable on
- * ink — white body text (9.29:1) with `ink-300` secondary (4.69:1), and the
- * `warning` amber for the non-text dot (4.55:1 on ink-900, past the 3:1
- * non-text floor). No hardcoded hex, and deliberately not live-green: green
- * here would be a second meaning for the colour §10.1 reserves for live status.
+ * **Tokens only (§10.1).** A dark island (`.theme-dark`, v2 Part F): the raised
+ * room surface with its border, body text and muted secondary text from the
+ * dark roles, and the `warning` amber for the non-text dot. No hardcoded hex,
+ * and deliberately not live-green: green here would be a second meaning for
+ * the colour §10.1 reserves for live status.
  */
 export function RealtimeStatusIndicator() {
   return (
@@ -34,13 +33,13 @@ export function RealtimeStatusIndicator() {
       aria-live="polite"
       className="pointer-events-none fixed bottom-4 left-4 z-40 max-w-[calc(100vw-2rem)] sm:max-w-sm"
     >
-      <div className="flex items-start gap-2.5 rounded-md border border-ink-700 bg-ink-900 px-3 py-2 shadow-md">
+      <div className="flex items-start gap-2.5 rounded-md theme-dark border border-border bg-surface-raised px-3 py-2 shadow-md">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
         <div className="min-w-0">
-          <p className="text-small font-medium text-white">
+          <p className="text-small font-medium text-text">
             Reconnecting to instant requests
           </p>
-          <p className="text-caption text-ink-300">
+          <p className="text-caption text-text-muted">
             You may not be notified of new requests until this clears.
           </p>
         </div>

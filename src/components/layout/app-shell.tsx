@@ -20,6 +20,7 @@ import {
 } from "@/components/layout/nav-config";
 import { UnreadCountProvider } from "@/components/features/messaging/unread-context";
 import { usePresence } from "@/hooks/use-presence";
+import { GoLiveProvider } from "@/components/features/tutor/go-live-context";
 
 export interface AppShellProps {
   role: Role;
@@ -76,8 +77,7 @@ export function AppShell({
 
   usePresence();
 
-  return (
-    <UnreadCountProvider enabled={!!messagesHref}>
+  const shell = (
       <div className="flex min-h-screen bg-ground">
         <Sidebar items={items} messagesHref={messagesHref} people={people} accountLinks={accountLinks} />
 
@@ -123,6 +123,19 @@ export function AppShell({
           onOpenMore={() => setMenuOpen(true)}
         />
       </div>
+  );
+
+  // Tutors get one shared go-live state for the topbar switch and the
+  // dashboard banner (Part F); nobody else has one.
+  return (
+    <UnreadCountProvider enabled={!!messagesHref}>
+      {goLive ? (
+        <GoLiveProvider initialLive={goLive.initialLive} broadcastHref={goLive.broadcastHref}>
+          {shell}
+        </GoLiveProvider>
+      ) : (
+        shell
+      )}
     </UnreadCountProvider>
   );
 }

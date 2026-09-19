@@ -33,25 +33,25 @@ export async function ConversationView({
     <div className="mx-auto max-w-3xl space-y-3 py-6">
       <Link
         href={backHref}
-        className="focus-ring inline-flex items-center gap-1.5 rounded-sm text-small text-gray-500 hover:text-gray-700"
+        className="focus-ring inline-flex items-center gap-1.5 rounded-sm text-small text-text-muted hover:text-text"
       >
         <ArrowLeft className="size-4" aria-hidden />
         All messages
       </Link>
 
-      <div className="flex items-center gap-3 border-b border-gray-200 pb-3">
+      <div className="flex items-center gap-3 border-b border-border pb-3">
         <Avatar src={header.otherPartyAvatarUrl} name={header.otherPartyName} size="md" />
         <div className="min-w-0">
-          <h1 className="truncate text-h3 font-bold text-gray-700">{header.otherPartyName}</h1>
+          <h1 className="truncate text-h3 font-bold text-text">{header.otherPartyName}</h1>
           {header.otherPartyTutorSlug ? (
             <Link
               href={`/tutors/${header.otherPartyTutorSlug}`}
-              className="focus-ring rounded-sm text-small text-purple-500 hover:underline"
+              className="focus-ring rounded-sm text-small text-accent hover:underline"
             >
               View profile
             </Link>
           ) : (
-            <p className="text-small text-gray-500">
+            <p className="text-small text-text-muted">
               {header.otherPartyRole === "student" ? "Student" : "Tutor"}
             </p>
           )}

@@ -73,7 +73,7 @@ export function StartBroadcastForm({ subjects }: StartBroadcastFormProps) {
           rows={4}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <p className="text-caption text-gray-500">
+        <p className="text-caption text-text-muted">
           {description.length}/{DESCRIPTION_MAX}
         </p>
       </div>
@@ -84,7 +84,7 @@ export function StartBroadcastForm({ subjects }: StartBroadcastFormProps) {
           id="broadcast-subject"
           value={subjectId}
           onChange={(e) => setSubjectId(e.target.value)}
-          className="focus-ring h-11 w-full rounded-md border border-gray-200 bg-white px-3 text-body text-gray-700"
+          className="focus-ring h-11 w-full rounded-md border border-border bg-surface-raised px-3 text-body text-text"
         >
           <option value="">No subject</option>
           {subjects.map((s) => (
@@ -109,7 +109,7 @@ export function StartBroadcastForm({ subjects }: StartBroadcastFormProps) {
         </Alert>
       )}
 
-      <p className="text-small text-gray-500">
+      <p className="text-small text-text-muted">
         Your camera and microphone turn on when the broadcast page opens. Students
         can&apos;t send you instant session requests while you&apos;re live.
       </p>
