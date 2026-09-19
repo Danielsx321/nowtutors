@@ -4,6 +4,12 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**FIX IN REVIEW on branch `fix-db-pipelining-pooler`: pages hung under ~10 simultaneous loads** (postgres.js
+pipelining through the Supabase transaction pooler stranded half-sent queries; DECISIONS). Now one query per
+connection plus connect/idle timeouts. Burst tests: 30/30 and 60/60 complete, no hangs. Integration 113/113,
+presence E2E 2/2, so **side track X is closed** and Part I can start once this is merged. Production uses the
+same pooler setup, so this protects the live site too.
+
 **Side track X (presence E2E) in progress on branch `fix-toast-covers-go-live`.** Sign-in stall did not
 reproduce. Found and fixed: toasts covered the topbar go-live switch (now bottom-right); the wallet read raced
 the login redirect (now waits for the element). Remaining failures traced to the Mac's load (average 187),

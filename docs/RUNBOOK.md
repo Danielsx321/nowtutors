@@ -661,3 +661,9 @@ If that check fails, the setting has been turned on: Google sign-in on an existi
 email will create a **second account** instead of linking to the existing one. Fix
 it in the dashboard, then re-run `pnpm db:verify-rls`. Run this against **each**
 environment (dev, and production before launch) — it is a per-project setting.
+
+## Running the test suites (2026-09-19)
+
+- **Never run `pnpm test:db:test` and `pnpm test:e2e` at the same time.** Both use the test project; integration fixtures (live broadcasts, bookings) change what the E2E sees and break it.
+- **Hanging pages under load** used to mean the database client pipelining through the transaction pooler (fixed, DECISIONS 2026-09-19). If it comes back, check `pg_stat_activity` through `DIRECT_URL` for `active` queries waiting on `Client/ClientRead`.
+
