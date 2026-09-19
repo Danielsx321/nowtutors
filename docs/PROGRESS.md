@@ -4,6 +4,11 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**IN REVIEW (`fix-db-hang-split-clients`): the real fix for pages hanging under load.** Two database clients:
+plain queries with no pipelining, transactions on their own client. 20-wide burst 60/60 with none hung (the
+hotfix now live hangs 54/60); integration 116/116; withdrawal, messaging, presence and design-smoke E2E green.
+Broadcast E2E still not green on this Mac (timing under load, no DB errors).
+
 **HOTFIX IN REVIEW (`hotfix-db-transactions`): every database transaction failed on production after PR #100**
 (`max_pipeline: 0` stops postgres.js reserving a connection for `sql.begin`). Now `max_pipeline: 1`, plus an
 integration test through the app's real client that fails on the bug. Merge first, before anything else.
