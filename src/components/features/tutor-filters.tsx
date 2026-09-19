@@ -243,7 +243,7 @@ export function TutorFilterChips({
       <div
         role="group"
         aria-label="Filters"
-        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0"
+        className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0"
       >
         <button
           type="button"

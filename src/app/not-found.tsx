@@ -17,6 +17,7 @@ export default function NotFound() {
     <SiteShell>
       <div className="flex items-center justify-center px-4 py-20">
         <EmptyState
+          headingLevel={1}
           icon={<Compass className="size-6" />}
           title="We can't find that page"
           description="The link may be old, or the page may have moved. Browse tutors who are online now, or start from the home page."

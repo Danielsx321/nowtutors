@@ -123,7 +123,7 @@ export function FoundationsSection({ surface }: { surface: Surface }) {
       </Demo>
 
       <Demo label={`Contrast, ${surface} theme: every sanctioned pair and its ratio (test floor 4.5:1 text, 3:1 controls)`} surface={surface} className="items-stretch">
-        <div className="w-full overflow-x-auto rounded-md border border-border">
+        <div className="relative w-full overflow-x-auto rounded-md border border-border">
           <table className="w-full text-small">
             <thead className="bg-surface-muted text-left text-text-muted">
               <tr>

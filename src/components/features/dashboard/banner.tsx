@@ -21,6 +21,8 @@ export function Banner({
 }) {
   return (
     <section
+      // Read by tests/e2e/design-smoke.spec.ts (Part I): every dashboard leads with this.
+      data-dashboard-banner=""
       className={cn(
         "relative grid min-h-[220px] gap-[22px] overflow-hidden rounded-panel bg-primary p-[clamp(24px,3.4vw,40px)] text-on-primary",
         className,
