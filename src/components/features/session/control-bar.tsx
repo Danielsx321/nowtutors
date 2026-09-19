@@ -15,6 +15,10 @@ import { cn } from "@/lib/utils";
  * well as by its icon. The end action is passed in and set apart on the right,
  * so it can't be hit on the way to Mute.
  *
+ * v2 (live-globe Part H): one dark rounded bar, controls centred, End session a
+ * coral pill with a gap before it, as in the session-room mockup. Hover uses
+ * the border colour because in the room `surface-muted` equals the bar.
+ *
  * Screen share and in-session chat are not here: they are their own phase
  * (DECISIONS, design overhaul Part 4), and an inert control that looks live is
  * worse than one that isn't there.
@@ -51,7 +55,7 @@ export function ControlBar({
       role="toolbar"
       aria-label="Session controls"
       className={cn(
-        "flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-raised px-3 py-2",
+        "flex flex-wrap items-center justify-center gap-1.5 rounded-[22px] bg-surface-raised p-2.5 sm:gap-2.5",
         className,
       )}
     >
@@ -78,14 +82,14 @@ export function ControlBar({
           <button
             type="button"
             onClick={onToggleLayout}
-            className="focus-ring hidden min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-text hover:bg-surface-muted md:flex [&_svg]:size-5"
+            className="focus-ring hidden min-h-11 min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-[14px] px-2.5 py-2 text-text hover:bg-border md:flex [&_svg]:size-5"
           >
             {layout === "spotlight" ? <LayoutGrid aria-hidden /> : <Maximize2 aria-hidden />}
             <span className="text-caption">{layout === "spotlight" ? "Side by side" : "Spotlight"}</span>
           </button>
         )}
       </div>
-      <div className="flex items-center border-l border-border pl-3">{endAction}</div>
+      <div className="ml-1 flex items-center sm:ml-[18px]">{endAction}</div>
     </div>
   );
 }
@@ -113,8 +117,8 @@ function ControlButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "focus-ring flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 rounded-lg px-2 transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5",
-        on ? "text-text hover:bg-surface-muted" : "bg-danger-surface text-danger hover:brightness-110",
+        "focus-ring flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 rounded-[14px] px-2 py-2 transition-colors sm:min-w-[72px] sm:px-2.5 hover:bg-border disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5",
+        on ? "text-text" : "text-danger",
       )}
     >
       {icon}

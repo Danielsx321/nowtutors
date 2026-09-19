@@ -140,8 +140,10 @@ The chip is always text. A dot on its own is decoration, never the indicator. No
 Every live room is dark: `.theme-dark` on the `(session)` layout (instant session, classroom, broadcast host) and on the `/live/[id]` band under the light site header. Dialogs portal outside that wrapper, so a room's own confirms carry `className="theme-dark"` themselves.
 
 - **Lobby first.** A device check before anything joins. Join is disabled until it passes; a blocked device says exactly where to allow it.
-- **Spotlight.** The tutor's video is the picture (students publish audio only, SPEC §9); the student is a small tile in the corner from `md`, stacked below on phones.
-- **Control bar.** 44px labelled toggles with a fixed accessible name and `aria-pressed` = on; an off device turns the danger colour and says "Mic off". The end action sits apart on the right, in `danger`.
+- **Top bar (v2, Part H).** The heading and who with on the left, a `live` "Connected" chip once the other person is in (a muted "Waiting for {name}…" before), and the clock as a pill with a thin progress line, pushed right.
+- **Spotlight.** The tutor's video is the picture (students publish audio only, SPEC §9) on a 26px stage (`rounded-panel`) with a "Good / Fair / Weak connection" chip top-left and name plates on the canvas colour at 70%. The student is a 16:10 picture-in-picture, 16px radius with a 2px ground-coloured edge, 18px in from the corner from `md`, stacked below on phones.
+- **Control bar.** One dark rounded bar (22px), controls centred. 44px labelled toggles with a fixed accessible name and `aria-pressed` = on; an off device turns coral and says "Mic off". The end action sits apart on the right as a coral `danger` pill.
+- **Broadcasts** use the same stage; the audience count ("3 watching") is a chip on the picture, and the host's status bar is one rounded dark bar like the control bar. The Lobby's Join is `live` green: joining is going on air.
 - **Connection banner.** One polite live region. Silent when all is well; words and one action when it isn't.
 - **Time.** The clock turns `warning` at 5 minutes and `danger` in the last minute; a toast at 5, a banner from 2, each announced once.
 - **The incoming request is a call.** Green on-air ring round the student, a short rise-in, Accept focused and green, a two-note chime the tutor can mute, and a notice that stays when a call is missed.

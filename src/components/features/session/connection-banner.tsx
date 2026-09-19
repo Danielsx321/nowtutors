@@ -96,7 +96,7 @@ export function ConnectionBanner({
       {tone && (
         <div
           className={cn(
-            "rounded-lg border px-3 py-2 text-small",
+            "rounded-[14px] border px-3 py-2 text-small",
             tone === "info" && "border-border bg-surface-raised text-text",
             tone === "warning" && "border-warning bg-warning-surface text-warning",
             tone === "danger" && "border-danger bg-danger-surface text-danger",

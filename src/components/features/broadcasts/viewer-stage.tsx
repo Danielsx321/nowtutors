@@ -134,7 +134,7 @@ export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, tutorSlug,
 
   if (phase === "error") {
     return (
-      <div role="alert" className="rounded-xl border border-danger bg-danger-surface p-6">
+      <div role="alert" className="rounded-card border border-danger bg-danger-surface p-6">
         <div className="flex gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
           <div className="min-w-0">
@@ -160,20 +160,25 @@ export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, tutorSlug,
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <VideoTile
-        primary
-        name={tutorName}
-        roleLabel="Tutor"
-        avatarUrl={tutorAvatarUrl}
-        track={hostVideo}
-        emptyReason={hostPresent ? "camera-off" : "waiting"}
-      />
-      <p className="inline-flex items-center gap-1.5 text-small text-text-muted" data-viewer-count={count}>
-        <Users className="size-4" aria-hidden />
-        {count} watching
-      </p>
-    </div>
+    // v2 (live-globe Part H): the audience count is a chip on the stage, where
+    // the session room shows its connection chip.
+    <VideoTile
+      primary
+      name={tutorName}
+      roleLabel="Tutor"
+      avatarUrl={tutorAvatarUrl}
+      track={hostVideo}
+      emptyReason={hostPresent ? "camera-off" : "waiting"}
+      overlay={
+        <p
+          className="inline-flex items-center gap-1.5 rounded-full bg-ground/70 px-3 py-1.5 text-small text-text"
+          data-viewer-count={count}
+        >
+          <Users className="size-4" aria-hidden />
+          {count} watching
+        </p>
+      }
+    />
   );
 }
 
@@ -184,7 +189,7 @@ export function ViewerStage({ broadcastId, tutorName, tutorAvatarUrl, tutorSlug,
  */
 export function BroadcastEnded({ tutorName, tutorSlug }: { tutorName: string; tutorSlug?: string | null }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6" data-broadcast-ended>
+    <div className="rounded-panel bg-surface-raised p-6 md:p-8" data-broadcast-ended>
       <h2 className="font-display text-h3 font-semibold text-text">This broadcast has ended</h2>
       <p className="mt-2 max-w-prose text-body text-text-muted">
         {tutorName}&apos;s live class is over. Book a 1:1 to keep going, or see who else is teaching now.

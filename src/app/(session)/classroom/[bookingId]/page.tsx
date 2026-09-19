@@ -284,7 +284,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6">
+    <div className="rounded-card bg-surface-raised p-6">
       <div className="flex gap-4">
         {icon}
         <div className="min-w-0">

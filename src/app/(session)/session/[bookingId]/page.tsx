@@ -53,6 +53,7 @@ export default async function SessionPage({
   if (view.type === "scheduled") redirect(`/classroom/${bookingId}`);
 
   const heading = view.subjectName ?? "Tutoring session";
+  const subtitle = `with ${view.otherPartyName}${view.durationMinutes ? ` · ${view.durationMinutes} minutes` : ""}`;
 
   // The hard stop, computed server-side from `started_at` (§7.4). Null until
   // both parties have been in the room together — the clock has not started.
@@ -62,20 +63,23 @@ export default async function SessionPage({
   // not open a room in the window before one does.
   const elapsed = hasElapsed(view, new Date());
 
+  const open = view.status === "in_progress" && !elapsed;
+
+  // The room draws its own top bar (heading, presence chip, clock), as in the
+  // session-room mockup. The closed states keep a plain header with the status.
   return (
     <div className="flex flex-col gap-5 px-4 py-2 md:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="font-display text-h2 font-bold text-text">{heading}</h1>
-          <p className="mt-1 text-body text-text-muted">
-            with {view.otherPartyName}
-            {view.durationMinutes ? ` · ${view.durationMinutes} minutes` : ""}
-          </p>
-        </div>
-        <Badge variant={bookingStatusMeta(view.status).variant}>
-          {bookingStatusMeta(view.status).label}
-        </Badge>
-      </header>
+      {!open && (
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-display text-h2 font-bold text-text">{heading}</h1>
+            <p className="mt-1 text-body text-text-muted">{subtitle}</p>
+          </div>
+          <Badge variant={bookingStatusMeta(view.status).variant}>
+            {bookingStatusMeta(view.status).label}
+          </Badge>
+        </header>
+      )}
 
       {view.status !== "in_progress" ? (
         <NotLive status={view.status} />
@@ -84,6 +88,8 @@ export default async function SessionPage({
       ) : (
         <SessionRoom
           bookingId={view.bookingId}
+          title={heading}
+          subtitle={subtitle}
           viewerIsTutor={view.viewerIsTutor}
           viewerName={view.viewerName}
           viewerAvatarUrl={view.viewerAvatarUrl}
@@ -106,7 +112,7 @@ export default async function SessionPage({
  */
 function NotLive({ status }: { status: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6">
+    <div className="rounded-card bg-surface-raised p-6">
       <h2 className="text-h3 font-bold text-text">This session isn&apos;t live</h2>
       <p className="mt-2 max-w-prose text-body text-text-muted">
         It&apos;s marked <span className="text-text">{bookingStatusMeta(status).label.toLowerCase()}</span>,
@@ -131,7 +137,7 @@ function NotLive({ status }: { status: string }) {
  */
 function TimeIsUp() {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6">
+    <div className="rounded-card bg-surface-raised p-6">
       <h2 className="text-h3 font-bold text-text">This session&apos;s time is up</h2>
       <p className="mt-2 max-w-prose text-body text-text-muted">
         The booked time has run out, so the room is closed. Sessions run for the

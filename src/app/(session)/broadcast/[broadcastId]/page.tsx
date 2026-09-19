@@ -47,7 +47,7 @@ export default async function BroadcastHostPage({
           startedAt={broadcast.startedAt?.toISOString() ?? null}
         />
       ) : (
-        <div className="rounded-xl border border-border bg-surface-raised p-6">
+        <div className="rounded-card bg-surface-raised p-6">
           <h2 className="text-h3 font-bold text-text">This broadcast has ended</h2>
           <p className="mt-2 max-w-prose text-body text-text-muted">
             {broadcast.peakViewers === 1

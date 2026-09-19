@@ -97,7 +97,7 @@ export function ClassroomFrame({ bookingId, otherPartyName }: ClassroomFrameProp
 
   if (phase.kind === "error") {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-xl border border-border bg-surface-raised p-6 text-center">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-panel bg-surface-raised p-6 text-center">
         <AlertTriangle className="size-8 text-warning" aria-hidden />
         <div>
           <h2 className="text-h3 font-bold text-text">Couldn&apos;t open the classroom</h2>
@@ -121,7 +121,7 @@ export function ClassroomFrame({ bookingId, otherPartyName }: ClassroomFrameProp
       <div
         role="status"
         aria-live="polite"
-        className="flex min-h-[60vh] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-surface-raised p-6 text-center"
+        className="flex min-h-[60vh] flex-col items-center justify-center gap-3 rounded-panel bg-surface-raised p-6 text-center"
       >
         <Loader2 className="size-7 animate-spin text-live motion-reduce:animate-none" aria-hidden />
         <p className="text-body text-text-muted">
@@ -141,7 +141,7 @@ export function ClassroomFrame({ bookingId, otherPartyName }: ClassroomFrameProp
       allowFullScreen
       src={phase.url}
       title="Classroom"
-      className="h-[calc(100vh-13rem)] min-h-[420px] w-full rounded-xl border border-border bg-surface-raised"
+      className="h-[calc(100vh-13rem)] min-h-[420px] w-full rounded-panel bg-surface-raised"
     />
   );
 }

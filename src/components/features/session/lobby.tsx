@@ -164,9 +164,9 @@ export function Lobby({
   return (
     <section
       aria-labelledby="lobby-title"
-      className="mx-auto grid w-full max-w-4xl gap-6 rounded-xl border border-border bg-surface-raised p-5 md:grid-cols-[1.3fr_1fr] md:p-6"
+      className="mx-auto grid w-full max-w-4xl gap-6 rounded-panel bg-surface-raised p-5 md:grid-cols-[1.3fr_1fr] md:p-6"
     >
-      <div className="relative aspect-video overflow-hidden rounded-lg bg-surface-muted">
+      <div className="relative aspect-video overflow-hidden rounded-card bg-ground">
         {needsCamera ? (
           <video
             ref={videoRef}
@@ -211,7 +211,7 @@ export function Lobby({
             </p>
           )}
           {problem && (
-            <div className="space-y-3 rounded-lg border border-danger bg-danger-surface p-3 text-small text-danger">
+            <div className="space-y-3 rounded-[14px] border border-danger bg-danger-surface p-3 text-small text-danger">
               <p className="flex gap-2">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 {problemCopy(check.state, needsCamera)}
@@ -234,7 +234,7 @@ export function Lobby({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(level * 100)}
-              className="h-2 overflow-hidden rounded-full bg-surface-muted"
+              className="h-2 overflow-hidden rounded-full bg-border"
             >
               <div className="h-full rounded-full bg-live" style={{ width: `${Math.round(level * 100)}%` }} />
             </div>
@@ -245,7 +245,8 @@ export function Lobby({
           </div>
         )}
 
-        <Button className="mt-auto w-full" size="lg" disabled={!ready} onClick={join}>
+        {/* Live green: joining is going on air (DESIGN.md, v2 buttons). */}
+        <Button className="mt-auto w-full" size="lg" variant="live" disabled={!ready} onClick={join}>
           {joinLabel}
         </Button>
       </div>
