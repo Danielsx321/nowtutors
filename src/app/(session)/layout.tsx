@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { getSessionProfile, requireUser } from "@/lib/auth/guards";
+import { getShellIdentity } from "@/db/queries/shell";
 
 /**
  * Session-area shell (SPEC §6 "SESSION — participants only").
@@ -21,8 +22,8 @@ export default async function SessionLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireUser();
-  const profile = await getSessionProfile();
+  const user = await requireUser();
+  const [profile, identity] = await Promise.all([getSessionProfile(), getShellIdentity(user.id)]);
   if (!profile || profile.role == null) redirect("/onboarding");
   if (profile.isSuspended) redirect("/suspended");
   // Admins have no session of their own to be a participant in; the page's
@@ -35,7 +36,12 @@ export default async function SessionLayout({
   // knows which theme it's in.
   return (
     <div className="theme-dark">
-      <AppShell role={profile.role} title="Session">
+      <AppShell
+        role={profile.role}
+        title="Session"
+        userName={identity.displayName ?? user.email ?? undefined}
+        avatarUrl={identity.avatarUrl}
+      >
         {children}
       </AppShell>
     </div>
