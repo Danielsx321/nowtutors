@@ -5006,3 +5006,11 @@ Asked for by Daniels after seeing Part F live: every signed-in page should share
 2. **Fix:** when the SDK reports the other person left the channel, the room calls `getSessionState` once. If the server says the session is finished, the room tears down and shows "Session ended"; if not (a dropped connection), nothing changes and the room waits for them. Still event-driven, no polling. Covered by `tests/dom/session-room-end.test.tsx`.
 3. **The `(session)` layout now passes the viewer's name and photo to the shell** (`getShellIdentity`, as the student and tutor layouts do). It showed "Guest" before.
 
+## Side track X: presence E2E investigation (`fix-toast-covers-go-live`, 2026-09-19)
+
+1. **The original symptom (tutor sign-in stalling on `/login`) did not reproduce.** Two runs on 2026-09-19 signed in `tutor1` and `student1` every time.
+2. **A real app bug was found instead: toasts covered the go-live switch.** Sonner sat top-right, over the topbar switch, so after "You're offline for instant sessions." a tutor couldn't switch back on until the toast faded; the E2E click landed on the toast for 270 seconds. Toasts now sit bottom-right, 88px up on phones so they clear the bottom nav.
+3. **The wallet read no longer waits for the page's `load` event.** Right after sign-in the login redirect was still in flight, the two navigations raced and the awaited `load` never came. `readWalletBalance` and `isListedLive` now wait for `domcontentloaded` and then for the element they read.
+4. **The remaining failures were the machine, not the app.** During the runs the Mac's load average was 187 on 4 cores. The same pages load in 1 to 2 seconds headless when measured alone; a read-only watch of the test database showed no locks, no long transactions and `select 1` at about 170 ms. The home page's globe is heavy in headless Chromium (software WebGL: about 5.8 s of main-thread work per 6 s) but no E2E visits it.
+5. **Still open:** the presence spec needs one run on a quiet machine (or CI) to close side track X. It gates Part I.
+

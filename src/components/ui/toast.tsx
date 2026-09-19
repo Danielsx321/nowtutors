@@ -7,11 +7,17 @@ import { Toaster as SonnerToaster, toast } from "sonner";
  * `unstyled` + `classNames` (Phase 2 amendment #2) — sonner's own palette is
  * never rendered, so the brand grep stays clean and toasts are on-brand.
  * Sonner provides the aria-live announcement region (SPEC §10.3).
+ *
+ * Bottom-right, not top-right: at the top the toast sat over the topbar's
+ * go-live switch, so a tutor who went offline couldn't switch back on until
+ * the "You're offline" toast faded (found by the presence E2E, 2026-09-19:
+ * the click landed on the toast). On phones it clears the bottom nav.
  */
 export function Toaster() {
   return (
     <SonnerToaster
-      position="top-right"
+      position="bottom-right"
+      mobileOffset={{ bottom: 88 }}
       gap={10}
       toastOptions={{
         unstyled: true,
