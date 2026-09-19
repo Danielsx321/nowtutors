@@ -4,6 +4,11 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-19)
 
+**FIX IN REVIEW on branch `fix-room-end-for-both`:** when either person ends an instant session, the other
+person's room now closes too (it asks the server once when the SDK reports the other person left); session
+pages show the viewer's name instead of "Guest". Found in the first real session on production after Part H
+(PR #97, merged `d4ebf69`). 770 unit, 134 DOM (2 new).
+
 **LIVE-GLOBE REBUILD Part H (live moments touch-up) is IN REVIEW on branch `design-v2-live`.
 No migration, no new dependency, no behaviour change.** The instant-session room follows the session-room
 mockup: a top bar with the heading, a "Connected" chip (or who it's waiting for) and the clock as a pill with a

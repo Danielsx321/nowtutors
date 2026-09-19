@@ -43,10 +43,11 @@ import { getSessionState } from "@/actions/sessions";
  *
  * **The countdown is cosmetic and this component never decides the session is
  * over.** It ticks a deadline the server computed from `bookings.started_at`,
- * and asks the server what is true at exactly three moments: on mount, when the
+ * and asks the server what is true at exactly four moments: on mount, when the
  * SDK reports the other party arrived (so a `started_at` written after the page
- * rendered is picked up), and once when the countdown reaches zero. Three
- * event-driven calls, no interval — CLAUDE.md's ban on polling is intact, and a
+ * rendered is picked up), when the SDK reports the other party left (so an
+ * end-session by either person closes both rooms), and once when the countdown
+ * reaches zero. Event-driven calls, no interval — CLAUDE.md's ban on polling is intact, and a
  * browser with a fast clock gets corrected rather than obeyed.
  *
  * Everything about *what this participant publishes* comes from the token
@@ -134,7 +135,7 @@ export function SessionRoom({
   /**
    * Ask the server what is actually true. This is the only call this component
    * makes about session state, and it is never on a timer — see the note at the
-   * top of the file for the three moments that trigger it.
+   * top of the file for the four moments that trigger it.
    *
    * At the deadline this is also the *actor*: `getSessionState` performs the
    * transition server-side when the booked duration has run out. A failure here
@@ -152,6 +153,11 @@ export function SessionRoom({
       // Intentionally ignored; see above.
     }
   }, [bookingId, finish]);
+
+  // Read by the SDK handlers below, which are bound once per join and so can't
+  // close over a newer `refreshState`.
+  const refreshRef = React.useRef(refreshState);
+  refreshRef.current = refreshState;
 
   // On mount: the page rendered from a read that may predate the other party's
   // arrival, so the deadline it handed down can already be stale.
@@ -180,7 +186,15 @@ export function SessionRoom({
     const client = new SessionClient({
       onLocalVideo: setLocalVideo,
       onRemoteVideo: setRemoteVideo,
-      onRemotePresence: setRemotePresent,
+      onRemotePresence: (present) => {
+        setRemotePresent(present);
+        // The other person left the channel. If they ended the session, the
+        // server has already closed it and this is how this side finds out:
+        // without it the room stayed open, timer running, until the booked
+        // time ran out. A dropped connection gets "not finished" back and the
+        // room simply waits for them. Event-driven, one call per departure.
+        if (!present) void refreshRef.current();
+      },
       onConnectionState: setConnection,
       onNetworkQuality: setQuality,
       onError: (err) => setNotice(describeJoinError(err)),

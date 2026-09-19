@@ -4999,3 +4999,10 @@ Asked for by Daniels after seeing Part F live: every signed-in page should share
 6. **Lobby Join is live green,** following the v2 rule that green is for going on air (Go live, Join); **"Try another live tutor" is teal**, as finding a tutor is the primary action, like "Find a live tutor" on the home page.
 7. **`/live` cards use the tutor-card shell** (white card, 10px padding, photo inset at `rounded-photo`) and the subject filter uses the Browse chips (chosen one ink). The viewer page's side cards and states lose their borders, as dark cards on the room ground.
 8. **The chips live in `room-chips.tsx`** so the kitchen sink can show the top bar and stage without loading the video SDK. The kitchen sink's live-moments section now shows the full v2 room.
+
+## Session room closes for both people; session pages show the viewer's name (`fix-room-end-for-both`, 2026-09-19)
+
+1. **Found on production after Part H:** the tutor pressed End session, their room closed, and the student's room stayed open with the clock running. The room only asked the server what was true on mount, on the other person's arrival, and at the deadline, so it never learned the session had been ended.
+2. **Fix:** when the SDK reports the other person left the channel, the room calls `getSessionState` once. If the server says the session is finished, the room tears down and shows "Session ended"; if not (a dropped connection), nothing changes and the room waits for them. Still event-driven, no polling. Covered by `tests/dom/session-room-end.test.tsx`.
+3. **The `(session)` layout now passes the viewer's name and photo to the shell** (`getShellIdentity`, as the student and tutor layouts do). It showed "Guest" before.
+
