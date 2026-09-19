@@ -52,7 +52,7 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
   const debit = detail.ledger.find((l) => l.type === "booking_debit");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 py-8">
+    <div className="w-full space-y-6 py-2">
       <div className="space-y-2">
         <Link href="/admin/bookings" className="focus-ring text-small font-medium text-purple-700">
           All bookings

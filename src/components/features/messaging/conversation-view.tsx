@@ -30,7 +30,7 @@ export async function ConversationView({
   const page = await getThreadPageFor(conversationId, viewerId);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-3 py-6">
+    <div className="w-full space-y-3 py-2">
       <Link
         href={backHref}
         className="focus-ring inline-flex items-center gap-1.5 rounded-sm text-small text-text-muted hover:text-text"

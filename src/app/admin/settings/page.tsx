@@ -46,7 +46,7 @@ export default async function AdminSettingsPage() {
   const unmanaged = rows.filter((r) => !SETTING_DEFINITIONS.some((d) => d.key === r.key));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 py-8">
+    <div className="w-full space-y-8 py-2">
       <div>
         <h1 className="text-h1 font-bold text-gray-700">Settings</h1>
         <p className="mt-1 text-body text-gray-500">

@@ -70,7 +70,7 @@ export function BookingDetailView({
   const isUpcoming = booking.status === "confirmed" || booking.status === "in_progress";
 
   return (
-    <div className="mx-auto max-w-2xl py-8">
+    <div className="w-full py-2">
       <Link
         href={backHref}
         className="focus-ring mb-4 inline-flex items-center gap-1.5 rounded-sm text-small text-text-muted hover:text-text"
