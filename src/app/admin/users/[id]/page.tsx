@@ -159,7 +159,7 @@ export default async function AdminUserPage({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <TransactionHistory transactions={history.transactions} timeZone={timeZone} />
           </div>
           {history.pageCount > 1 && (

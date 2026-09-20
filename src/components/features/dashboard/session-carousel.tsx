@@ -100,7 +100,7 @@ export function SessionCarousel({
         <div
           ref={ref}
           onScroll={update}
-          className="grid snap-x snap-mandatory scroll-px-3.5 auto-cols-[minmax(250px,1fr)] grid-flow-col gap-3.5 overflow-x-auto rounded-[24px] border border-border bg-surface-raised p-3.5"
+          className="relative grid snap-x snap-mandatory scroll-px-3.5 auto-cols-[minmax(250px,1fr)] grid-flow-col gap-3.5 overflow-x-auto rounded-[24px] border border-border bg-surface-raised p-3.5"
         >
           {sessions.map((s) => (
             <article key={s.id} className="relative flex snap-start flex-col gap-2.5">

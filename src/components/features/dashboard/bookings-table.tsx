@@ -37,7 +37,7 @@ const STATUS_DOT: Record<string, string> = {
  */
 export function BookingsTable({ rows, personHeading }: { rows: BookingsTableRow[]; personHeading: string }) {
   return (
-    <div className="overflow-x-auto rounded-card border border-border bg-surface-raised">
+    <div className="relative overflow-x-auto rounded-card border border-border bg-surface-raised">
       <table className="w-full min-w-[620px] border-collapse text-[14.5px]">
         <thead>
           <tr>

@@ -149,6 +149,8 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
           />
         ) : (
           <>
+            {/* The cards' names are h3; without this the page jumps h1 to h3. */}
+            <h2 className="sr-only">Tutors</h2>
             <ul className="hidden gap-[18px] md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {cards.map((tutor, i) => (
                 <GridItem key={tutor.userId} showPromise={i === promiseAfter}>

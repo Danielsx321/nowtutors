@@ -7,6 +7,11 @@ export interface EmptyStateProps
   title: string;
   description?: React.ReactNode;
   action?: React.ReactNode;
+  /**
+   * Render the title as a real heading. Only where the empty state is the page
+   * (the 404 uses 1); inside a page it stays text, so it can't jump the outline.
+   */
+  headingLevel?: 1 | 2 | 3;
 }
 
 /**
@@ -18,9 +23,11 @@ export function EmptyState({
   title,
   description,
   action,
+  headingLevel,
   className,
   ...props
 }: EmptyStateProps) {
+  const Title = headingLevel ? (`h${headingLevel}` as const) : "p";
   return (
     <div
       className={cn(
@@ -38,7 +45,7 @@ export function EmptyState({
         </span>
       )}
       <div className="space-y-1">
-        <p className="text-h3 font-bold text-text">{title}</p>
+        <Title className="text-h3 font-bold text-text">{title}</Title>
         {description && (
           <p className="mx-auto max-w-sm text-body text-text-muted">
             {description}

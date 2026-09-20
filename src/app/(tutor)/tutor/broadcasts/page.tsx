@@ -80,7 +80,7 @@ export default async function TutorBroadcastsPage() {
             description="When you go live, your broadcasts show up here with how many people watched."
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
+          <div className="relative overflow-x-auto rounded-lg border border-border">
             <DataTable
               caption="Your broadcasts"
               rows={history}
