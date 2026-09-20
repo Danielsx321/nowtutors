@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -5,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt, uuidPk } from "./_helpers";
@@ -93,6 +95,12 @@ export const sessionRequests = pgTable(
   (t) => [
     index("session_requests_tutor_status_idx").on(t.tutorId, t.status),
     index("session_requests_status_expires_idx").on(t.status, t.expiresAt),
+    // drizzle/0022 (code review 2026-09-20, R1): one pending request per
+    // student (§7.4). `createSessionRequest` checks first; the index is what
+    // makes two requests sent at the same moment land once rather than twice.
+    uniqueIndex("session_requests_one_pending_per_student")
+      .on(t.studentId)
+      .where(sql`status = 'pending'`),
   ],
 );
 

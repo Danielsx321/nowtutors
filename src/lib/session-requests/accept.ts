@@ -50,6 +50,15 @@ export interface SessionRequestRecord {
   priceCredits: number;
   status: string;
   expiresAt: Date;
+  /**
+   * `expires_at <= now()` as Postgres sees it, read in the same statement that
+   * locks the row. `expires_at` is written on the database's clock (§7.4), so
+   * that is the clock that decides whether it has passed; this server's can be
+   * a second or two off either way, which is the difference between charging a
+   * student and not. Optional so a store without a database (the unit tests)
+   * falls back to comparing `expiresAt` with the injected `now`.
+   */
+  expiredByDatabase?: boolean;
 }
 
 /** The `bookings` row an accepted request creates. */
@@ -195,7 +204,7 @@ export async function acceptSessionRequest(
       }
 
       const at = now();
-      if (at.getTime() >= request.expiresAt.getTime()) {
+      if (request.expiredByDatabase ?? at.getTime() >= request.expiresAt.getTime()) {
         await tx.markExpired(request.id, at);
         return { status: "expired" } as const;
       }

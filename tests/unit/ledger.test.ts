@@ -5,6 +5,8 @@ import {
   DuplicateLedgerReferenceError,
   InsufficientCreditsError,
   pgErrorCode,
+  type LedgerExecutor,
+  type LedgerRow,
 } from "@/lib/credits/ledger";
 import { InMemoryLedger } from "./helpers/in-memory-ledger";
 
@@ -192,5 +194,41 @@ describe("creditWallet — opening a fresh wallet and signed deltas", () => {
     await expect(
       creditWallet(ex, { userId: "alice", delta: 0, type: "admin_adjustment", referenceId: "z" }),
     ).rejects.toThrow(/non-zero/);
+  });
+});
+
+describe("creditWallet — two first credits at the same moment (code review M3)", () => {
+  it("re-reads the balance under the lock after opening the wallet, so the other credit is not overwritten", async () => {
+    // Wallet rows are created lazily, so the first `lockWallet` finds nothing to
+    // lock. Meanwhile another transaction opens the wallet and credits it 10.
+    // Our `createWallet` is `ON CONFLICT DO NOTHING`: it waits for that commit
+    // and then does nothing. Carrying on from an assumed 0 would write
+    // `balance_after = 5` over a real 10 and lose the other credit.
+    const rows: LedgerRow[] = [];
+    let stored: number | null = null;
+    const ex: LedgerExecutor = {
+      lockWallet: async () => stored,
+      createWallet: async () => {
+        stored = 10; // the concurrent transaction's committed balance
+      },
+      insertTransaction: async (row) => {
+        rows.push(row);
+      },
+      setBalance: async (_userId, balance) => {
+        stored = balance;
+      },
+    };
+
+    const { balanceAfter } = await creditWallet(ex, {
+      userId: "tutor",
+      delta: 5,
+      type: "session_earning",
+      referenceType: "booking",
+      referenceId: "booking-2",
+    });
+
+    expect(balanceAfter).toBe(15);
+    expect(rows[0].balanceAfter).toBe(15);
+    expect(stored).toBe(15);
   });
 });

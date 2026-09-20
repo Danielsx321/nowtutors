@@ -48,6 +48,37 @@ export class PayPalApiError extends Error {
   }
 }
 
+/**
+ * PayPal did not answer within {@link PAYPAL_TIMEOUT_MS}. A subclass, so callers
+ * that only know {@link PayPalApiError} still treat it as a PayPal failure, but
+ * distinct because it says nothing about what PayPal did: a capture that timed
+ * out may well have gone through, and the webhook settles it if so (§7.6).
+ */
+export class PayPalTimeoutError extends PayPalApiError {
+  constructor(path: string) {
+    super(0, path, { timeout: true });
+    this.name = "PayPalTimeoutError";
+  }
+}
+
+/**
+ * How long any one PayPal call may take (code review 2026-09-20, T4). Agora and
+ * LessonSpace already had one; without it a hung connection held the buyer's
+ * request open until the platform killed the function.
+ */
+export const PAYPAL_TIMEOUT_MS = 20_000;
+
+/** `fetch` with the PayPal timeout, turning an abort into {@link PayPalTimeoutError}. */
+async function fetchWithTimeout(url: string, path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS) });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    if (name === "TimeoutError" || name === "AbortError") throw new PayPalTimeoutError(path);
+    throw err;
+  }
+}
+
 // Re-exported from a `server-only`-free module so the route-adapter config
 // boundary (and its test) can reach the class without importing this file.
 export { PayPalConfigError, isPayPalConfigError } from "./config-error";
@@ -87,7 +118,7 @@ export async function getAccessToken(): Promise<string> {
   }
 
   const basic = Buffer.from(`${clientId}:${secret}`).toString("base64");
-  const res = await fetch(`${paypalBaseUrl()}/v1/oauth2/token`, {
+  const res = await fetchWithTimeout(`${paypalBaseUrl()}/v1/oauth2/token`, "/v1/oauth2/token", {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
@@ -143,7 +174,7 @@ export async function paypalFetch<T>(
   { method = "POST", body, requestId }: PayPalRequest = {},
 ): Promise<T> {
   const send = async (token: string) =>
-    fetch(`${paypalBaseUrl()}${path}`, {
+    fetchWithTimeout(`${paypalBaseUrl()}${path}`, path, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,

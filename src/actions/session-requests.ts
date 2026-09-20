@@ -20,6 +20,7 @@ import {
   getPendingRequestForStudent,
   getPendingRequestsForTutor,
   insertSessionRequest,
+  PendingRequestExistsError,
   type IncomingRequestDetail,
 } from "@/db/queries/session-requests";
 import { getBookingSettings, getInstantRequestTtlSeconds } from "@/lib/settings";
@@ -80,6 +81,12 @@ const createSchema = z.object({
 export type CreateSessionRequestInput = z.input<typeof createSchema>;
 
 const requestIdSchema = z.string().uuid();
+
+// There is no student-side cancel in v1 (the `cancelled` status is unused), so
+// the message doesn't offer one: a pending request answers or expires within
+// `instant_request_ttl_seconds`.
+const ALREADY_WAITING =
+  "You already have a request waiting. Give the tutor a moment to answer.";
 
 /**
  * Student → live tutor: "can we start now?" (SPEC §7.4, first leg).
@@ -160,9 +167,7 @@ export async function createSessionRequest(
   await expireStalePendingForStudent(student.id);
   const existing = await getPendingRequestForStudent(student.id);
   if (existing) {
-    return {
-      error: "You already have a request waiting. Cancel it or wait for an answer.",
-    };
+    return { error: ALREADY_WAITING };
   }
 
   // Server-authoritative price — the one formula (§7.3/§7.4), never a client value.
@@ -178,15 +183,23 @@ export async function createSessionRequest(
   }
 
   const ttlSeconds = await getInstantRequestTtlSeconds();
-  const inserted = await insertSessionRequest({
-    studentId: student.id,
-    tutorId: v.tutorId,
-    subjectId: v.subjectId ?? null,
-    message: v.message?.trim() || null,
-    durationMinutes: v.durationMinutes,
-    priceCredits,
-    ttlSeconds,
-  });
+  let inserted;
+  try {
+    inserted = await insertSessionRequest({
+      studentId: student.id,
+      tutorId: v.tutorId,
+      subjectId: v.subjectId ?? null,
+      message: v.message?.trim() || null,
+      durationMinutes: v.durationMinutes,
+      priceCredits,
+      ttlSeconds,
+    });
+  } catch (err) {
+    // Two requests sent at the same moment both passed the check above; the
+    // database let one land (drizzle/0022). Same answer as the check gives.
+    if (err instanceof PendingRequestExistsError) return { error: ALREADY_WAITING };
+    throw err;
+  }
 
   return {
     ok: true,

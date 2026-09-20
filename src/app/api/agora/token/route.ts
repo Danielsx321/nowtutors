@@ -3,7 +3,7 @@ import { authErrorResponse, requireApiUser } from "@/lib/auth/api-guards";
 import { checkSessionAccess, type AgoraRole } from "@/lib/agora/session-access";
 import { parseTokenBody } from "@/lib/agora/token-body";
 import { agoraUid } from "@/lib/agora/uid";
-import { tokenExpiresAt } from "@/lib/agora/token-request";
+import { sessionTokenLifetime, tokenExpiresAt } from "@/lib/agora/token-request";
 import {
   agoraAppId,
   AgoraConfigError,
@@ -86,7 +86,8 @@ export async function POST(request: Request) {
   // tests/unit/agora-session-access.test.ts. A booking that does not exist and
   // one belonging to somebody else come back identical, so the endpoint cannot
   // be used to discover booking ids.
-  const access = checkSessionAccess(await getSessionBooking(bookingId), user.id);
+  const booking = await getSessionBooking(bookingId);
+  const access = checkSessionAccess(booking, user.id);
   if (!access.ok) {
     if (access.elapsed) {
       // The booked duration ran out (§7.4). Close the booking out on the way
@@ -136,7 +137,15 @@ export async function POST(request: Request) {
 
   // The client can retry a failure here without anything having been
   // half-done: the join stamp above is idempotent.
-  const minted = await mintToken(stamp.agoraChannel, access.role, { bookingId });
+  // The token runs out with the session (§7.4): the time left once the pair has
+  // met, the booked duration before that. `stamp.startedAt` and not the read
+  // above, because this very join may be the one that started the clock.
+  const issuedAt = new Date();
+  const life = sessionTokenLifetime(
+    { startedAt: stamp.startedAt, durationMinutes: booking?.durationMinutes ?? null },
+    issuedAt,
+  );
+  const minted = await mintToken(stamp.agoraChannel, access.role, { bookingId }, life.ttlSeconds);
   if (!minted.ok) return minted.response;
 
   return NextResponse.json({
@@ -146,8 +155,9 @@ export async function POST(request: Request) {
     appId: minted.appId,
     channel: stamp.agoraChannel,
     // Deliberately earlier than the token's real expiry, so the renewal (§9
-    // step 6) begins while this token is still valid.
-    expiresAt: tokenExpiresAt(new Date()).toISOString(),
+    // step 6) begins while this token is still valid. For a token capped at the
+    // deadline this IS the deadline: there is nothing to renew into.
+    expiresAt: new Date(issuedAt.getTime() + life.renewAfterSeconds * 1000).toISOString(),
     // Server-derived, and the reason the client needs no id comparison of its
     // own: it decides which tracks to publish from this, not from who it thinks
     // it is. Both parties hold a publisher token (§9 step 2) — the asymmetry is
@@ -208,10 +218,11 @@ async function mintToken(
   channel: string,
   role: AgoraRole,
   context: Record<string, string>,
+  ttlSeconds?: number,
 ): Promise<Minted> {
   try {
     const appId = agoraAppId();
-    const token = await fetchRtcToken(channel, role);
+    const token = await fetchRtcToken(channel, role, ttlSeconds);
     return { ok: true, token, appId };
   } catch (err) {
     if (err instanceof AgoraConfigError) {

@@ -124,6 +124,11 @@ export type SettleResult =
 
 export type MarkResult =
   | { status: "updated"; paymentId: string }
+  /**
+   * A `PAYMENT.CAPTURE.REFUNDED` for less than the payment. The payload is
+   * kept, `payments.status` is left alone: see {@link markStatus}.
+   */
+  | { status: "partial_refund"; paymentId: string; refundedUsd: string; amountUsd: string }
   | { status: "unknown_order" };
 
 /** Wallet-history text for a purchase (SPEC §7.10 shows this in the ledger). */
@@ -330,10 +335,41 @@ export async function settleCapture(
  */
 export async function markStatus(
   store: PaymentStore,
-  ref: PaymentRef & { status: "failed" | "refunded"; rawPayload?: unknown },
+  ref: PaymentRef & {
+    status: "failed" | "refunded";
+    /** PayPal's running refunded total for the capture, when the event gave one. */
+    refundedUsd?: string;
+    rawPayload?: unknown;
+  },
 ): Promise<MarkResult> {
   const payment = await store.lock(ref);
   if (!payment) return { status: "unknown_order" };
+
+  // **`refunded` means refunded IN FULL (§7.6).** That status is what arms
+  // "Reverse this refund" on /admin/payments, which takes back every credit the
+  // payment minted or cancels the whole booking. PayPal sends the same event
+  // for a $5 goodwill refund as for the whole payment, so the amount decides: a
+  // refunded total short of `amount_usd` keeps the payload for the admin to
+  // read and leaves the status where it was. Partial refunds stay a manual,
+  // audited credit adjustment (§7.6). Compared in integer cents, never floats.
+  // An event with no amount at all is treated as it always was.
+  if (ref.status === "refunded" && ref.refundedUsd !== undefined) {
+    const refunded = usdToCents(ref.refundedUsd);
+    const paid = usdToCents(payment.amountUsd);
+    if (refunded !== null && paid !== null && refunded < paid) {
+      await store.update(payment.id, {
+        providerCaptureId:
+          ref.providerCaptureId?.trim() || payment.providerCaptureId,
+        ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
+      });
+      return {
+        status: "partial_refund",
+        paymentId: payment.id,
+        refundedUsd: ref.refundedUsd,
+        amountUsd: payment.amountUsd,
+      };
+    }
+  }
 
   await store.update(payment.id, {
     status: ref.status,
@@ -343,4 +379,11 @@ export async function markStatus(
   });
 
   return { status: "updated", paymentId: payment.id };
+}
+
+/** `"39.99"` → `3999`. Null for anything that isn't a plain non-negative amount. */
+function usdToCents(value: string): number | null {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+  if (!match) return null;
+  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
 }

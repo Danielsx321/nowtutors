@@ -16,7 +16,11 @@ import {
   PAYPAL_UNAVAILABLE_STATUS,
   withPayPalConfigBoundary,
 } from "@/lib/paypal/config-boundary";
-import { PayPalApiError, PayPalConfigError } from "@/lib/paypal/client";
+import {
+  PayPalApiError,
+  PayPalConfigError,
+  PayPalTimeoutError,
+} from "@/lib/paypal/client";
 import {
   markPaymentStatus,
   recordPendingCapture,
@@ -114,6 +118,17 @@ async function capture(params: Promise<{ orderId: string }>) {
       return NextResponse.json(
         { error: "Payments aren't available right now." },
         { status: 503 },
+      );
+    } else if (err instanceof PayPalTimeoutError) {
+      // PayPal didn't answer, which is not a decline: the capture may have gone
+      // through. Say so, so the buyer doesn't pay twice; if it did complete, the
+      // PAYMENT.CAPTURE.COMPLETED webhook settles it (§7.6).
+      return NextResponse.json(
+        {
+          error:
+            "PayPal is taking too long to confirm this payment. Please don't pay again: if it went through, it will show up here within a few minutes.",
+        },
+        { status: 504 },
       );
     } else if (err instanceof PayPalApiError) {
       return NextResponse.json(

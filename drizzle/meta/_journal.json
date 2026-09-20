@@ -155,6 +155,20 @@
       "when": 1789941448783,
       "tag": "0021_close_direct_rest_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789945341260,
+      "tag": "0022_one_pending_request_per_student",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789945654230,
+      "tag": "0023_presence_guard_trusted_server",
+      "breakpoints": true
     }
   ]
 }

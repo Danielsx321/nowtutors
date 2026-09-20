@@ -130,7 +130,17 @@ async function applyDelta(
     // opens the account at zero first (then the update below lands the balance).
     if (p.delta < 0) throw new InsufficientCreditsError(0, -p.delta);
     await ex.createWallet(p.userId);
-    current = 0;
+    // Lock and read again rather than assume 0. There was no row to lock the
+    // first time, so nothing stopped another transaction opening this wallet
+    // and crediting it in the meantime; `createWallet` is ON CONFLICT DO
+    // NOTHING, which waits for that commit and then does nothing. Carrying on
+    // from 0 would overwrite their balance and write a wrong `balance_after`
+    // into an append-only table (code review 2026-09-20, M3). Now the row
+    // exists, so this lock is real and the read is the committed balance.
+    current = await ex.lockWallet(p.userId);
+    if (current === null) {
+      throw new Error("Wallet row missing immediately after it was created.");
+    }
   }
 
   const balanceAfter = current + p.delta;

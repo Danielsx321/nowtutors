@@ -141,7 +141,11 @@ export function settleCapturedOrder(
 
 /** Move a payment to `failed` / `refunded` without touching the wallet. */
 export function markPaymentStatus(
-  ref: PaymentRef & { status: "failed" | "refunded"; rawPayload?: unknown },
+  ref: PaymentRef & {
+    status: "failed" | "refunded";
+    refundedUsd?: string;
+    rawPayload?: unknown;
+  },
 ): Promise<MarkResult> {
   return db.transaction((tx) => markStatus(paymentStore(tx), ref));
 }

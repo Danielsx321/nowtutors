@@ -259,6 +259,49 @@ describe("markStatus — DENIED and REFUNDED never credit", () => {
     expect(s.ledger.balances.get("alice")).toBe(40);
   });
 
+  it("a FULL refund (refunded total covers the payment) marks it refunded", async () => {
+    const s = store(purchase({ status: "captured", providerCaptureId: CAPTURE_ID }));
+    const result = await markStatus(s, {
+      providerCaptureId: CAPTURE_ID,
+      status: "refunded",
+      refundedUsd: "39.99",
+    });
+    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID });
+    expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded");
+  });
+
+  it("a PARTIAL refund does not mark the payment refunded (code review M5)", async () => {
+    // `refunded` is what arms "Reverse this refund" on /admin/payments, which
+    // takes back every minted credit or cancels the whole booking (§7.6). A $5
+    // goodwill refund on a $39.99 package must not arm it.
+    const s = store(purchase({ status: "captured", providerCaptureId: CAPTURE_ID }), {
+      alice: 40,
+    });
+    const result = await markStatus(s, {
+      providerCaptureId: CAPTURE_ID,
+      status: "refunded",
+      refundedUsd: "5.00",
+      rawPayload: { event_type: "PAYMENT.CAPTURE.REFUNDED" },
+    });
+    expect(result).toEqual({
+      status: "partial_refund",
+      paymentId: PAYMENT_ID,
+      refundedUsd: "5.00",
+      amountUsd: "39.99",
+    });
+    expect(s.rows.get(PAYMENT_ID)!.status).toBe("captured");
+    expect(s.ledger.rows).toHaveLength(0);
+  });
+
+  it("partial refunds that add up to the full amount mark it refunded", async () => {
+    // PayPal reports the running total on each refund event.
+    const s = store(purchase({ status: "captured", providerCaptureId: CAPTURE_ID }));
+    await markStatus(s, { providerCaptureId: CAPTURE_ID, status: "refunded", refundedUsd: "20.00" });
+    expect(s.rows.get(PAYMENT_ID)!.status).toBe("captured");
+    await markStatus(s, { providerCaptureId: CAPTURE_ID, status: "refunded", refundedUsd: "39.99" });
+    expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded");
+  });
+
   it("returns unknown_order for a payment we don't hold", async () => {
     const s = store(purchase());
     const result = await markStatus(s, {

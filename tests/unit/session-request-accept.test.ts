@@ -284,6 +284,25 @@ describe("acceptSessionRequest — guards that must not charge", () => {
     expect(store.ledger.rows).toHaveLength(0);
   });
 
+  it("believes the database's clock over this server's when it is given one", async () => {
+    // `expires_at` is written by Postgres (`now() + ttl`), so Postgres is the
+    // clock that says whether it has passed (§7.4; code review R4). This server
+    // thinks there are 50 seconds left; the database says the deadline is gone.
+    const late = new InMemoryAccept(
+      [request({ expiresAt: at(50_000), expiredByDatabase: true })],
+      { [STUDENT]: 50 },
+    );
+    expect(await accept(late)).toEqual({ status: "expired" });
+    expect(late.ledger.rows).toHaveLength(0);
+
+    // And the other way round: a fast app clock must not refuse a live request.
+    const live = new InMemoryAccept(
+      [request({ expiresAt: at(-1), expiredByDatabase: false })],
+      { [STUDENT]: 50 },
+    );
+    expect((await accept(live)).status).toBe("accepted");
+  });
+
   it("refuses a request that is no longer pending, without touching it", async () => {
     const store = new InMemoryAccept([request({ status: "declined" })], {
       [STUDENT]: 50,

@@ -189,6 +189,47 @@ describe("webhook — event routing", () => {
     );
   });
 
+  it("REFUNDED passes PayPal's running refunded total through, so a partial refund can be told from a full one", async () => {
+    const d = deps();
+    const event = {
+      id: "WH-10",
+      event_type: "PAYMENT.CAPTURE.REFUNDED",
+      resource: {
+        id: "REFUND-PARTIAL",
+        status: "COMPLETED",
+        // This refund was $5.00; $12.50 has been refunded on the capture so far.
+        amount: { currency_code: "USD", value: "5.00" },
+        seller_payable_breakdown: {
+          total_refunded_amount: { currency_code: "USD", value: "12.50" },
+        },
+        supplementary_data: {
+          related_ids: { order_id: ORDER_ID, capture_id: CAPTURE_ID },
+        },
+      },
+    };
+    await handlePayPalWebhook(JSON.stringify(event), headers(), d);
+    expect(d.markPaymentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "refunded", refundedUsd: "12.50" }),
+    );
+  });
+
+  it("REFUNDED falls back to the refund's own amount when no running total is sent", async () => {
+    const d = deps();
+    const event = {
+      id: "WH-11",
+      event_type: "PAYMENT.CAPTURE.REFUNDED",
+      resource: {
+        id: "REFUND-ONE",
+        amount: { currency_code: "USD", value: "5.00" },
+        supplementary_data: { related_ids: { order_id: ORDER_ID, capture_id: CAPTURE_ID } },
+      },
+    };
+    await handlePayPalWebhook(JSON.stringify(event), headers(), d);
+    expect(d.markPaymentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ refundedUsd: "5.00" }),
+    );
+  });
+
   it("REFUNDED marks the payment refunded and never credits", async () => {
     const d = deps();
     const event = {
