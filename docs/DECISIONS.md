@@ -5059,3 +5059,14 @@ Found by the full code review (`docs/review/2026-09-20-summary.md`, findings A1 
 5. **Not in this migration:** a tutor can still `PATCH` their own `tutor_profiles.last_seen_at` into the future and stay in `live_tutors` with no heartbeat (review A4). No money moves, so it goes with the low-severity batch.
 6. **Production:** the Data API is enabled on the production project (checked in the dashboard 2026-09-20), so these were reachable there. `0021` has to be applied to production with `pnpm db:migrate` when this merges.
 
+
+## Earnings are owed by state, not by who closed the session (`fix-review-criticals`, 2026-09-20)
+
+Code review findings M1 and M2 (`docs/review/2026-09-20-pass-1-money.md`).
+
+1. **The bug.** `complete-sessions` built earnings rows from the list of bookings that same run had transitioned. Three other actors close an instant session (`getSessionState` at the deadline, `endSession`, the token route) and none writes earnings, so every session that ended with someone in the room, the common case, left the tutor unpaid for good. A marker in `db/queries/session-requests.ts` (`TODO(Phase 6 Part 3C): end-session writes tutor_earnings`) shows the intent was dropped between Part 3B and 3C. Confirmed on production on 2026-09-20: 4 completed instant bookings, 1 with an earnings row, 45 gross credits unpaid. The one that was paid is the one the cron closed itself.
+2. **Why no test caught it.** Every case in `complete-sessions.test.ts` started from a row the sweep transitions, and E2E 4 inserts its earnings row with SQL.
+3. **The fix is one read, not three writes.** Writing earnings at each of the three close sites would have put a money rule in four places. Instead the sweep asks the database what is owed: `completed` or `no_show_student`, no `tutor_earnings` row. That also covers a run that dies between its transitions and its insert (M2), which had the same permanent result.
+4. **Locked, in one transaction.** The read is `FOR UPDATE SKIP LOCKED` on the bookings and the insert shares its transaction. Force-cancel locks the booking first as well, so a cancel can no longer land between the read and the insert, refund the student and still see the tutor paid.
+5. **Paying late is still paying.** `available_at` comes from `ended_at`, so a backlog row's hold is already over and it releases on the next `release-earnings` run. No time limit on how old an owed booking may be: the money was taken from the student and is owed.
+6. **Tests.** Four added, three of which failed before the change: closed by the deadline actor, ended early by a participant, a `completed` row left without earnings by a dead run, and a cancelled booking that must not be paid. Sweep suite 17 of 17, admin-bookings, release-earnings, session-end and dashboard-stats 43 of 43, unit 775 of 775.

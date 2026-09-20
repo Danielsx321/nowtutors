@@ -269,7 +269,12 @@ export interface FixtureBookingOptions {
   /** Booked duration. Defaults to 30. */
   durationMinutes?: number;
   /** Defaults to `in_progress`, as the accept transaction leaves it. */
-  status?: "in_progress" | "completed" | "confirmed" | "pending_payment";
+  status?:
+    | "in_progress"
+    | "completed"
+    | "confirmed"
+    | "pending_payment"
+    | "cancelled_by_tutor";
   /** Defaults to `instant`. `scheduled` needs the window options below. */
   type?: "instant" | "scheduled";
   /**

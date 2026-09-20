@@ -4,11 +4,10 @@ import {
   findElapsedInstantSessionIds,
   sweepElapsedScheduledSessions,
   sweepInstantNoShows,
+  writeOwedEarnings,
   type SweptBooking,
 } from "@/db/queries/complete-sessions";
-import { insertHeldEarnings, type HeldEarning } from "@/db/queries/earnings";
 import { splitEarnings } from "@/lib/credits/fees";
-import { statusEarnsPayout } from "./completion";
 import { getEarningsSettings } from "@/lib/settings";
 
 /**
@@ -86,48 +85,47 @@ export async function runCompleteSessionsSweep(): Promise<CompleteSessionsResult
   swept.push(...(await sweepInstantNoShows()));
   swept.push(...(await sweepElapsedScheduledSessions()));
 
-  const earnings: HeldEarning[] = [];
-  const earningsSkippedNoPriceIds: string[] = [];
+  // 4. Earnings, for every booking that is owed them and has none: read from
+  //    the database, not from `swept`. A session a participant or the deadline
+  //    actor closed is `completed` before this run ever sees it, and so is
+  //    whatever an earlier run transitioned and then died before paying. See
+  //    `writeOwedEarnings`.
+  const { createdIds: earningsCreatedIds, withheldIds: earningsSkippedNoPriceIds } =
+    await writeOwedEarnings((row) => {
+      // `price_credits` is written on every booking at creation, by both the
+      // accept transaction and the scheduled booking action, so a NULL here means
+      // a row that predates that guarantee. **Do not coalesce it to 0.**
+      // `tutor_earnings.booking_id` is UNIQUE with `ON CONFLICT DO NOTHING` (§7.11),
+      // so a zero-credit row written now would occupy that booking's one earnings
+      // slot permanently — nothing can ever insert the correct one over it — and a
+      // silent zero is indistinguishable from a session that was legitimately
+      // free. Withholding the row is recoverable (it is reported on every run
+      // until someone sets the price); writing a wrong zero is not.
+      if (row.priceCredits === null) {
+        console.error(
+          "[cron/complete-sessions] booking has NULL price_credits, skipping its earnings row",
+          { bookingId: row.bookingId, status: row.status },
+        );
+        return null;
+      }
 
-  for (const row of swept) {
-    if (!statusEarnsPayout(row.status)) continue;
-
-    // `price_credits` is written on every booking at creation, by both the
-    // accept transaction and the scheduled booking action, so a NULL here means
-    // a row that predates that guarantee. **Do not coalesce it to 0.**
-    // `tutor_earnings.booking_id` is UNIQUE with `ON CONFLICT DO NOTHING` (§7.11),
-    // so a zero-credit row written now would occupy that booking's one earnings
-    // slot permanently — nothing can ever insert the correct one over it — and a
-    // silent zero is indistinguishable from a session that was legitimately
-    // free. Skipping the row is recoverable (a later manual insert can still
-    // land); writing a wrong zero is not.
-    if (row.priceCredits === null) {
-      console.error(
-        "[cron/complete-sessions] booking has NULL price_credits, skipping its earnings row",
-        { bookingId: row.bookingId, status: row.status },
-      );
-      earningsSkippedNoPriceIds.push(row.bookingId);
-      continue;
-    }
-
-    const split = splitEarnings(row.priceCredits, platformFeePercent);
-    // Every sweep above sets `ended_at` in the same statement that sets the
-    // status, so this fallback does not fire. It exists because a null
-    // `available_at` would be silently invisible to Phase 8's release sweep.
-    const endedAt = row.endedAt ?? new Date();
-    earnings.push({
-      bookingId: row.bookingId,
-      tutorId: row.tutorId,
-      grossCredits: split.grossCredits,
-      platformFeeCredits: split.platformFeeCredits,
-      netCredits: split.netCredits,
-      availableAt: new Date(
-        endedAt.getTime() + earningsHoldHours * 60 * 60 * 1000,
-      ),
+      const split = splitEarnings(row.priceCredits, platformFeePercent);
+      // Every transition sets `ended_at` in the same statement that sets the
+      // status, so this fallback does not fire. It exists because a null
+      // `available_at` would be silently invisible to the release sweep.
+      const endedAt = row.endedAt ?? new Date();
+      return {
+        bookingId: row.bookingId,
+        tutorId: row.tutorId,
+        grossCredits: split.grossCredits,
+        platformFeeCredits: split.platformFeeCredits,
+        netCredits: split.netCredits,
+        availableAt: new Date(
+          endedAt.getTime() + earningsHoldHours * 60 * 60 * 1000,
+        ),
+      };
     });
-  }
 
-  const earningsCreatedIds = await insertHeldEarnings(earnings);
   const idsWith = (status: string) =>
     swept.filter((row) => row.status === status).map((row) => row.bookingId);
 
