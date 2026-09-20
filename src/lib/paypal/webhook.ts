@@ -130,6 +130,32 @@ export function paymentRefFromEvent(event: unknown): PaymentRef {
   };
 }
 
+/**
+ * How much of the capture has been refunded so far, as PayPal's 2-decimal
+ * string, or null when the event doesn't say.
+ *
+ * `PAYMENT.CAPTURE.REFUNDED` fires for a partial refund exactly as it does for
+ * a full one, and its `resource` is the *refund*: `resource.amount` is this
+ * refund alone, while `seller_payable_breakdown.total_refunded_amount` is the
+ * running total across every refund on the capture. The total is preferred, so
+ * two partial refunds that add up to the whole payment read as a full refund on
+ * the second event. Settlement compares it with `payments.amount_usd`
+ * (`markStatus`); nothing here decides what "full" means.
+ */
+export function refundedTotalFromEvent(event: unknown): string | null {
+  if (!isRecord(event) || !isRecord(event.resource)) return null;
+  const resource = event.resource;
+  const breakdown = isRecord(resource.seller_payable_breakdown)
+    ? resource.seller_payable_breakdown
+    : null;
+  const total =
+    breakdown && isRecord(breakdown.total_refunded_amount)
+      ? str(breakdown.total_refunded_amount.value)
+      : null;
+  const own = isRecord(resource.amount) ? str(resource.amount.value) : null;
+  return total ?? own;
+}
+
 export interface WebhookDeps {
   /** `PAYPAL_WEBHOOK_ID`; null/blank means the server cannot verify anything. */
   webhookId: string | null;
@@ -141,7 +167,11 @@ export interface WebhookDeps {
   }): Promise<boolean>;
   settleCapturedOrder(ref: PaymentRef & { rawPayload?: unknown }): Promise<SettleResult>;
   markPaymentStatus(
-    ref: PaymentRef & { status: "failed" | "refunded"; rawPayload?: unknown },
+    ref: PaymentRef & {
+      status: "failed" | "refunded";
+      refundedUsd?: string;
+      rawPayload?: unknown;
+    },
   ): Promise<MarkResult>;
 }
 
@@ -221,9 +251,18 @@ export async function handlePayPalWebhook(
     return { status: 200, body: { received: true, result: result.status } };
   }
 
+  if (eventType === "PAYMENT.CAPTURE.DENIED") {
+    const result = await deps.markPaymentStatus({ ...ref, status: "failed", rawPayload: event });
+    return { status: 200, body: { received: true, result: result.status } };
+  }
+
+  // REFUNDED. The amount goes with it: a partial refund must not be recorded as
+  // a refunded payment (see `markStatus`).
+  const refundedUsd = refundedTotalFromEvent(event);
   const result = await deps.markPaymentStatus({
     ...ref,
-    status: eventType === "PAYMENT.CAPTURE.DENIED" ? "failed" : "refunded",
+    status: "refunded",
+    ...(refundedUsd === null ? {} : { refundedUsd }),
     rawPayload: event,
   });
   return { status: 200, body: { received: true, result: result.status } };

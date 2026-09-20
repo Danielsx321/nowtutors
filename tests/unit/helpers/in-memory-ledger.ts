@@ -64,8 +64,15 @@ export class InMemoryLedger implements LedgerExecutor {
     const mine = new Promise<void>((r) => (releaseMine = r));
     this.tail.set(userId, prev.then(() => mine));
     await prev; // wait for any earlier holder to release (serialization)
+    if (!this.balances.has(userId)) {
+      // `SELECT ... FOR UPDATE` on a row that does not exist locks nothing, and
+      // the model says so: the ledger locks again once it has created the row
+      // (code review 2026-09-20, M3), which a held mutex here would deadlock.
+      releaseMine();
+      return null;
+    }
     this.release.set(userId, releaseMine);
-    return this.balances.has(userId) ? this.balances.get(userId)! : null;
+    return this.balances.get(userId)!;
   }
 
   async createWallet(userId: string): Promise<void> {

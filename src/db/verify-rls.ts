@@ -195,6 +195,31 @@ async function main() {
       .select("user_id");
     assert(!error && (data ?? []).length === 1, "tutor CAN update own non-approval fields");
   }
+  {
+    // Presence is written by the heartbeat route and the go-live action on the
+    // trusted connection. Over REST a tutor could pin `last_seen_at` in the
+    // future and stay in `live_tutors` with no heartbeat, the stale-live bug
+    // SPEC §3.1 exists to prevent (code review 2026-09-20, A4; drizzle/0023).
+    const before = check(
+      await createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+        .from("tutor_profiles")
+        .select("is_live, last_seen_at, live_mode")
+        .eq("user_id", tid)
+        .maybeSingle(),
+      "read tutor presence",
+    ) as { is_live: boolean; last_seen_at: string | null; live_mode: string | null };
+    const { error } = await tutor
+      .from("tutor_profiles")
+      .update({ is_live: true, last_seen_at: "2099-01-01T00:00:00Z" })
+      .eq("user_id", tid);
+    assert(!!error, "tutor cannot set own is_live / last_seen_at over REST (presence guard)");
+    if (!error) {
+      await createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+        .from("tutor_profiles")
+        .update(before)
+        .eq("user_id", tid);
+    }
+  }
   if (otherUserId && otherUserId !== tid) {
     const { data } = await tutor
       .from("tutor_profiles")

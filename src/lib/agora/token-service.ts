@@ -81,8 +81,9 @@ export function agoraAppId(): string {
 export async function fetchRtcToken(
   channel: string,
   role: AgoraRole,
+  ttlSeconds: number = TOKEN_TTL_SECONDS,
 ): Promise<string> {
-  const path = rtcTokenPath(channel, role, TOKEN_TTL_SECONDS);
+  const path = rtcTokenPath(channel, role, ttlSeconds);
 
   let res: Response;
   try {

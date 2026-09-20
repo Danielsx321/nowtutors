@@ -8,7 +8,7 @@ import {
   tutorProfiles,
 } from "@/db/schema";
 import { liveTutors, publicProfiles } from "@/db/schema/views";
-import { walletExecutor } from "@/lib/credits/ledger";
+import { pgErrorCode, walletExecutor } from "@/lib/credits/ledger";
 import {
   acceptSessionRequest,
   type AcceptResult,
@@ -237,7 +237,33 @@ export interface CreateRequestRow {
  * against the same clock every later read and both crons compare with, so a
  * skewed app server cannot hand out a deadline the database disagrees about.
  */
+/**
+ * Raised when `session_requests_one_pending_per_student` (`drizzle/0022`)
+ * refuses an insert: the student already has a `pending` request. The action's
+ * own check catches the ordinary case; this is the one where two requests were
+ * sent at the same moment and both got past it.
+ */
+export class PendingRequestExistsError extends Error {
+  readonly code = "pending_request_exists" as const;
+  constructor(readonly studentId: string) {
+    super("This student already has a pending session request.");
+    this.name = "PendingRequestExistsError";
+  }
+}
+
 export async function insertSessionRequest(
+  row: CreateRequestRow,
+): Promise<{ id: string; expiresAt: Date }> {
+  try {
+    return await insertSessionRequestRow(row);
+  } catch (err) {
+    // The only unique index on this table is the one-pending one.
+    if (pgErrorCode(err) === "23505") throw new PendingRequestExistsError(row.studentId);
+    throw err;
+  }
+}
+
+async function insertSessionRequestRow(
   row: CreateRequestRow,
 ): Promise<{ id: string; expiresAt: Date }> {
   const [inserted] = await db
@@ -392,6 +418,8 @@ function acceptTx(tx: DbTransaction): AcceptTx {
           priceCredits: sessionRequests.priceCredits,
           status: sessionRequests.status,
           expiresAt: sessionRequests.expiresAt,
+          // Decided on the clock that wrote the deadline, not this server's.
+          expiredByDatabase: sql<boolean>`${sessionRequests.expiresAt} <= now()`,
         })
         .from(sessionRequests)
         .where(eq(sessionRequests.id, requestId))

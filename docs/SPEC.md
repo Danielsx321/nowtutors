@@ -159,7 +159,7 @@ A cron sweep also exists (Section 12) to tidy the underlying rows, but correctne
 
 **3.6 Credits are an append-only ledger.** Balance is never edited in place. Every change is a row. This makes the reconciliation problems that plagued the current build tractable: any balance can be explained by replaying its transactions.
 
-**3.7 Agora tokens are authorized.** The Render token service is reused as-is, but the browser never calls it. `/api/agora/token` checks that the signed-in user is actually a participant in that booking (or that the broadcast is public) before requesting a token, and issues `subscriber` rather than `publisher` where appropriate. Currently any client that knows a channel name can publish to it.
+**3.7 Agora tokens are authorized.** The Render token service is reused as-is, but the browser never calls it. `/api/agora/token` checks that the signed-in user is actually a participant in that booking (or that the broadcast is public) before requesting a token, and issues `subscriber` rather than `publisher` where appropriate. Currently any client that knows a channel name can publish to it. **A session token runs out with the session** (`sessionTokenLifetime`, `lib/agora/token-request.ts`): once the pair has met it lasts the time left plus 60 seconds, before that the booked duration, never more than an hour. Every token used to last 3,600 seconds whatever was booked, so a 30-minute session's token worked for 60.
 
 ---
 
@@ -585,7 +585,7 @@ Policy summary:
 | Table | Read | Write |
 |---|---|---|
 | profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`) |
-| tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role |
+| tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role; presence (`is_live`, `last_seen_at`, `live_mode`) only by the trusted server (`tutor_presence_guard`, `drizzle/0023`) |
 | bookings | participants only (`student_id = auth.uid() or tutor_id = auth.uid()`) | **server only** (`drizzle/0021`): no `anon`/`authenticated` write. Price, slot, debit and status transitions are rules RLS can't express (Section 7) |
 | session_requests | participants only | **server actions only** (`drizzle/0021`): no `anon`/`authenticated` write; `price_credits` is never client-chosen |
 | wallets, credit_transactions | owner only | **service role only** — no client writes, ever |
@@ -830,8 +830,8 @@ Student                          Server                           Tutor
 
 Rules:
 
-- **Expiry is enforced server-side.** The client countdown is cosmetic. Accepting an expired request fails with a clear error — and moves the row to `expired` there and then, so the student's waiting modal stops waiting immediately rather than at the next cron pass. A cron pass (`/api/cron/expire-requests`, §12, built in Part 2) also sweeps `pending` rows past `expires_at` to `expired` every minute so dashboards stay clean; nothing about correctness waits on it.
-- A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest.
+- **Expiry is enforced server-side, on the database's clock.** `expires_at` is written by Postgres, and the accept transaction reads `expires_at <= now()` in the same statement that locks the row, so the app server's clock never decides whether a student is charged. The client countdown is cosmetic. Accepting an expired request fails with a clear error — and moves the row to `expired` there and then, so the student's waiting modal stops waiting immediately rather than at the next cron pass. A cron pass (`/api/cron/expire-requests`, §12, built in Part 2) also sweeps `pending` rows past `expires_at` to `expired` every minute so dashboards stay clean; nothing about correctness waits on it.
+- A student may have at most one `pending` request at a time. A tutor may have several incoming; accepting one auto-declines the rest. **The database enforces it** (`session_requests_one_pending_per_student`, a partial unique index on `student_id WHERE status = 'pending'`, `drizzle/0022`): the action checks first, and when two requests are sent at the same moment and both pass that check, the index lets one land and the other gets the same "you already have a request waiting" answer. Before `0022` both landed, two tutors could accept, and the student was charged twice with no refund path. There is no student-side cancel in v1 (`cancelled` is unused), so the message doesn't offer one.
 - **The tutor's queue is not fed by the Realtime event alone.** `IncomingRequests` reads every still-`pending`, not-yet-expired request addressed to it on mount and again after each successful (re)subscribe, and deduplicates against what it already holds by request id. A subscription carries only what happens after it is bound, so an event missed while the channel was down or still connecting was previously lost for good — and refreshing did not help, because the refresh only re-subscribed. See §8 for the subscription's own retry.
 - Declining is explicit and free; the student sees "Tutor is unavailable right now" and a list of other live tutors.
 - If the tutor's presence goes stale while a request is pending, the request expires immediately.
@@ -1101,7 +1101,7 @@ Sandbox and live are switched by `PAYPAL_ENV`. Uninstalling the old Copilot plug
 >
 > - A direct payment whose `booking_debit` still stands (no `booking_refund`) **cancels that booking** through the force-cancel path with no credits refund, because the money already went back through PayPal. The mint and the debit already net to zero, and the tutor side follows §7.3.
 > - Otherwise (a credit package, retained direct-pay credits, or a booking already refunded in credits) a `purchase_reversal` debit takes back the minted credits, capped at the student's balance. Any shortfall (credits already spent) is absorbed and recorded.
-> - Partial refunds aren't automated: the admin uses the audited credit adjustment on `/admin/users/[id]`.
+> - Partial refunds aren't automated: the admin uses the audited credit adjustment on `/admin/users/[id]`. **The webhook tells the two apart by amount.** PayPal sends `PAYMENT.CAPTURE.REFUNDED` for a partial refund exactly as for a full one. The handler reads the running refunded total (`seller_payable_breakdown.total_refunded_amount`, else the refund's own `amount`) and `markStatus` compares it with `payments.amount_usd` in integer cents: short of the full amount, the payload is kept and the status is left alone (`partial_refund`), so **Reverse this refund** is never armed by a partial refund. Partial refunds that add up to the whole payment mark it `refunded` on the event that gets there. An event with no amount is treated as a full refund, as before.
 
 > **Known constraint:** real-card testing can't be completed from Port Harcourt due to PayPal availability. Plan for a supervised live test with a real end user, and build an admin "reconcile payment" view (`/admin/payments`) that lets an admin look up a PayPal order id and see exactly what the system did with it. That view is how you'll debug the one transaction you can't run yourself.
 
@@ -1335,7 +1335,7 @@ async function creditWallet(tx, { userId, delta, type, referenceType, referenceI
 async function debitWallet(tx, { userId, amount, type, referenceType, referenceId, description })
 ```
 
-Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the wallet, reject debits that would go negative, insert the ledger row, and update the cached balance. **Nothing else in the codebase touches `wallets.credit_balance`.** Enforce with a lint rule or a code-review note in `CLAUDE.md`.
+Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the wallet, reject debits that would go negative, insert the ledger row, and update the cached balance. A credit into a wallet that doesn't exist yet creates the row and then **locks and reads it again** before applying the delta: there was nothing to lock the first time, so another transaction may have opened and credited the wallet in between. **Nothing else in the codebase touches `wallets.credit_balance`.** Enforce with a lint rule or a code-review note in `CLAUDE.md`.
 
 ### 7.11 Earnings and withdrawals
 
