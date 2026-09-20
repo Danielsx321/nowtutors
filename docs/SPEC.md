@@ -584,10 +584,10 @@ Policy summary:
 
 | Table | Read | Write |
 |---|---|---|
-| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only |
+| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`) |
 | tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role |
-| bookings | participants only (`student_id = auth.uid() or tutor_id = auth.uid()`) | participants, status transitions restricted (Section 7) |
-| session_requests | participants only | student inserts; tutor updates status |
+| bookings | participants only (`student_id = auth.uid() or tutor_id = auth.uid()`) | **server only** (`drizzle/0021`): no `anon`/`authenticated` write. Price, slot, debit and status transitions are rules RLS can't express (Section 7) |
+| session_requests | participants only | **server actions only** (`drizzle/0021`): no `anon`/`authenticated` write; `price_credits` is never client-chosen |
 | wallets, credit_transactions | owner only | **service role only** — no client writes, ever |
 | payments | owner only | service role only |
 | tutor_earnings | owning tutor | service role only |
@@ -602,6 +602,8 @@ Policy summary:
 | student_subjects | owning student only (no public read) | owning student inserts/deletes own (no update) |
 
 > **`tutor_profiles.approval_status` immutability is enforced by a trigger, not a column grant.** The column-level `REVOKE UPDATE (approval_status, approval_note, approved_at)` in `drizzle/0005` is **ineffective** — the same migration grants table-level `UPDATE` to `authenticated`, and in PostgreSQL a table-level privilege overrides a column REVOKE, so a tutor could self-approve via a direct REST call (found by `db:verify-rls`). The `tutor_approval_guard` trigger (`drizzle/0010`, mirroring `profiles_guard`) blocks any non-admin change to the approval columns. Admins change them through their authenticated session (`is_admin()`); system/service writes disable the trigger, as the seed does for `profiles_guard`.
+
+> **Direct REST writes closed (`drizzle/0021`, code review 2026-09-20).** Three paths let a signed-in user skip the app by calling PostgREST with the public key and their own JWT, each proven on the test project first: a new account (role NULL) could `PATCH` its own `profiles.role` to `admin`, because `profiles_guard` only refused a change when the old role was not NULL; a student could insert or update `bookings` (flip `pending_payment` to `confirmed` and skip PayPal, or fabricate a finished booking the crons then paid out); and a student could insert a `session_requests` row with a `price_credits` of their choosing, which the accept transaction charges as pinned (§7.4). `0021` makes `role` settable only by an admin session or the trusted server (onboarding already writes through it), and removes every client write on `bookings` and `session_requests`, policies and privileges both, as `0015` and `0018` did. Reads and Realtime are unchanged. `db:verify-rls` asserts all three through PostgREST, including the role-NULL case the earlier assertion missed.
 
 > **The admin write path (`drizzle/0012`).** RLS on `tutor_profiles` is owner-only, so an admin's *own* session cannot update another tutor's row, and `audit_log` is service-role write — meaning the approval queue had no legal path: the session is blocked by RLS, the server-side connection was blocked by the approval trigger. The guards now block `authenticated` (the real attack — a tutor self-approving via PostgREST) while recognising the **trusted server-side connection** via `public.is_trusted_server()`. Authorization for that path is Layer 2: every admin action calls `requireRole('admin')` first and writes `audit_log`.
 >

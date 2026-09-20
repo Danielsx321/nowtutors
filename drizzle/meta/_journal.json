@@ -148,6 +148,13 @@
       "when": 1789475430184,
       "tag": "0020_one_live_broadcast",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789941448783,
+      "tag": "0021_close_direct_rest_writes",
+      "breakpoints": true
     }
   ]
 }
