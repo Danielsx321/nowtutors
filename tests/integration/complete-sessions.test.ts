@@ -490,4 +490,87 @@ describe("complete-sessions sweep (test project)", () => {
 
     expect(await readEarnings(conn, bookingId)).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // Earnings are owed by the booking's STATE, not by who closed it
+  // (code review 2026-09-20, M1 and M2)
+  // -------------------------------------------------------------------------
+
+  it("pays a session the deadline actor already closed before the sweep ran", async () => {
+    // The common way an instant session ends: both people are in the room when
+    // the time runs out, the client asks `getSessionState`, and that closes the
+    // row through this exact statement. The sweep never sees it `in_progress`.
+    const { endElapsedInstantSession } = await import("@/db/queries/sessions");
+    const { bookingId, tutorId } = await seed({
+      startedMinutesAgo: 50,
+      durationMinutes: 30,
+      priceCredits: 50,
+    });
+    expect(await endElapsedInstantSession(bookingId)).not.toBeNull();
+    expect(await readEarnings(conn, bookingId)).toBeNull();
+
+    const result = await runCompleteSessionsSweep();
+
+    // Not this run's transition, so not in its completed list...
+    expect(result.completedIds).not.toContain(bookingId);
+    // ...but the tutor is owed all the same.
+    expect(result.earningsCreatedIds).toContain(bookingId);
+    const earning = await readEarnings(conn, bookingId);
+    expect(earning).not.toBeNull();
+    expect(earning!.tutorId).toBe(tutorId);
+    expect(earning!.status).toBe("held");
+    expect(earning!.netCredits).toBe(splitEarnings(50, feePercent).netCredits);
+
+    const row = await readClassification(conn, bookingId);
+    const expectedAvailable = row.endedAt!.getTime() + holdHours * 60 * 60 * 1000;
+    expect(Math.abs(earning!.availableAt!.getTime() - expectedAvailable)).toBeLessThan(1000);
+  });
+
+  it("pays a session a participant ended early", async () => {
+    const { endInstantSessionByParticipant } = await import("@/db/queries/sessions");
+    const { bookingId, studentId } = await seed({
+      startedMinutesAgo: 10,
+      durationMinutes: 30,
+      priceCredits: 40,
+    });
+    expect(await endInstantSessionByParticipant(bookingId, studentId)).not.toBeNull();
+
+    const result = await runCompleteSessionsSweep();
+
+    expect(result.earningsCreatedIds).toContain(bookingId);
+    const earning = await readEarnings(conn, bookingId);
+    // Flat billing, no partial refund (§7.4): the tutor earns on the full price.
+    expect(earning!.grossCredits).toBe(40);
+  });
+
+  it("pays on a later run when an earlier run died between the transition and the insert", async () => {
+    // What a timeout between the two steps leaves behind: the status moved, the
+    // earnings row never landed, and the row has left every `in_progress` set.
+    const { bookingId } = await seed({
+      startedMinutesAgo: 50,
+      durationMinutes: 30,
+      priceCredits: 50,
+      status: "completed",
+    });
+    expect(await readEarnings(conn, bookingId)).toBeNull();
+
+    const result = await runCompleteSessionsSweep();
+
+    expect(result.earningsCreatedIds).toContain(bookingId);
+    expect(await readEarnings(conn, bookingId)).not.toBeNull();
+  });
+
+  it("does not pay a completed booking that was cancelled before the sweep reached it", async () => {
+    const { bookingId } = await seed({
+      startedMinutesAgo: 50,
+      durationMinutes: 30,
+      priceCredits: 50,
+      status: "cancelled_by_tutor",
+    });
+
+    const result = await runCompleteSessionsSweep();
+
+    expect(result.earningsCreatedIds).not.toContain(bookingId);
+    expect(await readEarnings(conn, bookingId)).toBeNull();
+  });
 });

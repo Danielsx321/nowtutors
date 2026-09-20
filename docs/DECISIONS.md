@@ -5046,3 +5046,27 @@ Asked for by Daniels after seeing Part F live: every signed-in page should share
 3. **Measured on the same server and test database:** 20-wide burst, 3 rounds: 60 of 60 complete, none hung, slowest 30.9 s (queueing on a loaded Mac), no statement timeouts, no UNSAFE_TRANSACTION. Integration 116/116 including the guard test. Withdrawal and messaging E2E pass; the release-earnings cron released 2 rows, 0 failed.
 4. **Not verified on this machine: the broadcast E2E.** Two runs, two different timing failures, neither with a database error: once the end-broadcast action took 12 s under load and the redirect landed 14 s after the click (budget 20 s), once the tutor sign-in stalled at 15 s. Load average was 40 to 190 throughout. It wants a quiet machine or CI.
 
+
+
+## Direct REST writes closed (`fix-review-criticals`, 2026-09-20)
+
+Found by the full code review (`docs/review/2026-09-20-summary.md`, findings A1 to A3). The app layer was sound; the gaps were in what the database allows a signed-in user to do through PostgREST, which the app never exercises because it writes as the trusted server.
+
+1. **Proven before fixed.** Seven probes were added to `src/db/verify-rls.ts` and run against the test project. Six failed: a throwaway account with role NULL set itself to `admin`, and `student1` inserted a `confirmed` booking, updated one of its bookings, and inserted a 120-minute session request at 1 credit. Every probe removes what it wrote, so a failure leaves nothing behind. The session-request probe is inserted already expired, so no tutor on the test project sees a popup.
+2. **`profiles_guard` no longer has a NULL exception.** It was there "for onboarding", but onboarding writes through the trusted connection and never needed it. The only caller that could use it was the attack. `role` now changes only for an admin session or `is_trusted_server()`.
+3. **`bookings` and `session_requests`: no client writes at all.** Same decision as `0015` (withdrawals) and `0018` (messages, broadcasts), for the same reason: the rules that make a write valid (price, slot, balance, status order) can't be written as RLS. Policies are dropped and the privileges revoked, so a permissive policy added later doesn't reopen it.
+4. **Checked after:** `db:verify-rls:test` passes in full; the integration suite passes 116 of 116 against the test project with `0021` applied, so booking, request, settlement and onboarding writes are unaffected.
+5. **Not in this migration:** a tutor can still `PATCH` their own `tutor_profiles.last_seen_at` into the future and stay in `live_tutors` with no heartbeat (review A4). No money moves, so it goes with the low-severity batch.
+6. **Production:** the Data API is enabled on the production project (checked in the dashboard 2026-09-20), so these were reachable there. `0021` has to be applied to production with `pnpm db:migrate` when this merges.
+
+
+## Earnings are owed by state, not by who closed the session (`fix-review-criticals`, 2026-09-20)
+
+Code review findings M1 and M2 (`docs/review/2026-09-20-pass-1-money.md`).
+
+1. **The bug.** `complete-sessions` built earnings rows from the list of bookings that same run had transitioned. Three other actors close an instant session (`getSessionState` at the deadline, `endSession`, the token route) and none writes earnings, so every session that ended with someone in the room, the common case, left the tutor unpaid for good. A marker in `db/queries/session-requests.ts` (`TODO(Phase 6 Part 3C): end-session writes tutor_earnings`) shows the intent was dropped between Part 3B and 3C. Confirmed on production on 2026-09-20: 4 completed instant bookings, 1 with an earnings row, 45 gross credits unpaid. The one that was paid is the one the cron closed itself.
+2. **Why no test caught it.** Every case in `complete-sessions.test.ts` started from a row the sweep transitions, and E2E 4 inserts its earnings row with SQL.
+3. **The fix is one read, not three writes.** Writing earnings at each of the three close sites would have put a money rule in four places. Instead the sweep asks the database what is owed: `completed` or `no_show_student`, no `tutor_earnings` row. That also covers a run that dies between its transitions and its insert (M2), which had the same permanent result.
+4. **Locked, in one transaction.** The read is `FOR UPDATE SKIP LOCKED` on the bookings and the insert shares its transaction. Force-cancel locks the booking first as well, so a cancel can no longer land between the read and the insert, refund the student and still see the tutor paid.
+5. **Paying late is still paying.** `available_at` comes from `ended_at`, so a backlog row's hold is already over and it releases on the next `release-earnings` run. No time limit on how old an owed booking may be: the money was taken from the student and is owed.
+6. **Tests.** Four added, three of which failed before the change: closed by the deadline actor, ended early by a participant, a `completed` row left without earnings by a dead run, and a cancelled booking that must not be paid. Sweep suite 17 of 17, admin-bookings, release-earnings, session-end and dashboard-stats 43 of 43, unit 775 of 775.

@@ -1,7 +1,9 @@
 import "server-only";
-import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, notExists, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { bookings } from "@/db/schema";
+import { bookings, tutorEarnings } from "@/db/schema";
+import { insertHeldEarnings, type HeldEarning } from "@/db/queries/earnings";
+import { EARNING_STATUSES } from "@/lib/sessions/completion";
 import {
   endElapsedInstantSession,
   sessionElapsedSql,
@@ -199,4 +201,85 @@ export async function sweepElapsedScheduledSessions(): Promise<SweptBooking[]> {
       ),
     )
     .returning(sweptColumns);
+}
+
+/** A booking whose status earns a payout (§7.11) and that has no earnings row. */
+export interface OwedBooking {
+  bookingId: string;
+  tutorId: string;
+  status: string;
+  priceCredits: number | null;
+  endedAt: Date | null;
+}
+
+/** Bookings one run will pay. A bound on the run's length; the rest wait 15 minutes. */
+export const OWED_EARNINGS_BATCH = 500;
+
+/**
+ * Write the `held` earnings row for every booking that is owed one and has
+ * none (SPEC §7.11; code review 2026-09-20, M1 and M2).
+ *
+ * **What is owed is read from the database, never carried over from the
+ * transitions this run happened to make.** The sweep is not the only thing that
+ * closes a session: `getSessionState` closes it at the deadline with both people
+ * in the room (the common case), `endSession` closes it on an early exit, and
+ * the token route closes it on a late re-entry. Those rows are `completed`
+ * before any sweep sees them, so a sweep that only paid what it transitioned
+ * itself never paid them. The same read covers a run that died between its
+ * transitions and its insert: the rows have left every `in_progress` work set,
+ * but they are still `completed` with no earnings row, and the next run finds
+ * them here.
+ *
+ * **One transaction, with the booking rows locked.** An admin force-cancel
+ * locks the booking first too (`applyForceCancel`), so the two serialize: a
+ * cancel that wins leaves a status this predicate no longer matches and nothing
+ * is written; a cancel that loses finds the `held` row and reverses it (§7.3).
+ * Reading the list and inserting outside one lock let a cancel land in between,
+ * refund the student, and still see the tutor paid. `SKIP LOCKED` so a booking
+ * someone is working on waits for the next run instead of holding this one up.
+ *
+ * `build` turns a row into the earnings to write, or `null` to withhold it (a
+ * NULL `price_credits`; see the sweep). It is a parameter so the fee split stays
+ * in `lib/credits/fees.ts` and this file stays a statement of how rows reach
+ * Postgres. `ON CONFLICT DO NOTHING` in `insertHeldEarnings` remains the
+ * guarantee that no booking is paid twice.
+ */
+export async function writeOwedEarnings(
+  build: (row: OwedBooking) => HeldEarning | null,
+): Promise<{ createdIds: string[]; withheldIds: string[] }> {
+  return db.transaction(async (tx) => {
+    const owed = await tx
+      .select({
+        bookingId: bookings.id,
+        tutorId: bookings.tutorId,
+        status: bookings.status,
+        priceCredits: bookings.priceCredits,
+        endedAt: bookings.endedAt,
+      })
+      .from(bookings)
+      .where(
+        and(
+          inArray(bookings.status, [...EARNING_STATUSES]),
+          notExists(
+            tx
+              .select({ one: sql`1` })
+              .from(tutorEarnings)
+              .where(eq(tutorEarnings.bookingId, bookings.id)),
+          ),
+        ),
+      )
+      // Oldest first, so a backlog larger than one batch pays in order.
+      .orderBy(asc(bookings.endedAt))
+      .limit(OWED_EARNINGS_BATCH)
+      .for("update", { of: bookings, skipLocked: true });
+
+    const rows: HeldEarning[] = [];
+    const withheldIds: string[] = [];
+    for (const row of owed) {
+      const earning = build(row);
+      if (earning) rows.push(earning);
+      else withheldIds.push(row.bookingId);
+    }
+    return { createdIds: await insertHeldEarnings(rows, tx), withheldIds };
+  });
 }

@@ -453,7 +453,8 @@ function acceptTx(tx: DbTransaction): AcceptTx {
         // (§4.3). `stampSessionJoin` (db/queries/sessions.ts, Part 3A) stamps
         // student_joined_at / tutor_joined_at on arrival and sets started_at only
         // on the write that makes BOTH non-null.
-        // TODO(Phase 6 Part 3C): end-session writes tutor_earnings.
+        // Earnings are not written here or at end-session: `complete-sessions`
+        // pays every `completed` booking that has no earnings row (§7.11).
       });
     },
 

@@ -13,8 +13,12 @@ import { cronHandler } from "@/lib/cron/handler";
  * `getSessionState`, the token route, the end-session action, and the room's
  * server read, which refuses but deliberately does not write). This handler is
  * what closes the case where **both parties walked away** — nobody is present,
- * so nothing else is going to fire — and it is the only writer of
- * `tutor_earnings` in the codebase today.
+ * so nothing else is going to fire — and, with admin force-complete, it is the
+ * only writer of `tutor_earnings`. **It pays by the booking's state, not by who
+ * closed it**: every `completed` or `no_show_student` booking with no earnings
+ * row gets one here, including the sessions those four actors closed and
+ * anything an earlier run transitioned and then died before paying
+ * (`writeOwedEarnings`; code review 2026-09-20).
  *
  * A late run costs a tutor nothing. `ended_at` records when the session ended,
  * not when this noticed: the instant path writes `started_at + duration_minutes`

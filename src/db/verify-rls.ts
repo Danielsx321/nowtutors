@@ -557,6 +557,121 @@ async function main() {
     }
   }
 
+  // ── Direct REST writes that skip the app (review 2026-09-20: A1, A2, A3) ────
+  // The app writes bookings, session requests and roles through the trusted
+  // server connection, after its own checks (SPEC §5 Layer 2). A signed-in user
+  // calling PostgREST directly skips all of them, so the database has to refuse
+  // on its own. Anything these probes manage to write is removed with the
+  // service role, so a FAIL here leaves no fixture behind.
+  console.log("direct REST writes that skip the app — must be DENIED:");
+  {
+    const admin = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // A1: a fresh account has role NULL, the one case profiles_guard let through.
+    const email = `rolecheck-${Date.now()}@nowtutors.dev`;
+    const created = await admin.auth.admin.createUser({
+      email,
+      password: "Password123!",
+      email_confirm: true,
+    });
+    if (created.error) {
+      assert(false, `could not create role probe user: ${created.error.message}`);
+    } else {
+      const probeId = created.data.user!.id;
+      const probe = createClient(url, anonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const signedIn = await probe.auth.signInWithPassword({ email, password: "Password123!" });
+      if (signedIn.error) {
+        assert(false, `could not sign in role probe user: ${signedIn.error.message}`);
+      } else {
+        for (const role of ["admin", "tutor", "student"] as const) {
+          const { error } = await probe.from("profiles").update({ role }).eq("id", probeId);
+          assert(!!error, `a new account (role NULL) cannot set its own role to ${role} over REST`);
+        }
+        const after = check(
+          await admin.from("profiles").select("role").eq("id", probeId).maybeSingle(),
+          "read probe role",
+        ) as { role: string | null } | null;
+        assert(after?.role == null, "the new account's role is still NULL");
+        await probe.auth.signOut();
+      }
+      await admin.auth.admin.deleteUser(probeId);
+    }
+
+    // A2 and A3: bookings and session_requests, as the seeded student.
+    const s2 = createClient(url, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const s2In = await s2.auth.signInWithPassword({
+      email: "student1@nowtutors.dev",
+      password: "Password123!",
+    });
+    if (s2In.error || !s2In.data.user || !otherUserId) {
+      assert(false, "could not set up the bookings probe (student1 sign-in or a tutor id)");
+    } else {
+      const sid = s2In.data.user.id;
+      const start = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 60 * 60 * 1000);
+      {
+        const { data, error } = await s2
+          .from("bookings")
+          .insert({
+            student_id: sid,
+            tutor_id: otherUserId,
+            type: "scheduled",
+            status: "confirmed",
+            scheduled_start_at: start.toISOString(),
+            scheduled_end_at: end.toISOString(),
+            duration_minutes: 60,
+            price_credits: 1,
+            payment_method: "credits",
+          })
+          .select("id");
+        assert(!!error, "student cannot INSERT a confirmed booking over REST (no debit, no slot check)");
+        for (const r of data ?? []) await admin.from("bookings").delete().eq("id", (r as { id: string }).id);
+      }
+      {
+        const mine = check(
+          await admin.from("bookings").select("id, student_notes").eq("student_id", sid).limit(1),
+          "read a seeded booking",
+        ) as { id: string; student_notes: string | null }[];
+        if (mine.length === 0) {
+          assert(false, "no seeded booking for student1 to probe (run db:seed:test)");
+        } else {
+          const { data, error } = await s2
+            .from("bookings")
+            .update({ student_notes: "rls-probe" })
+            .eq("id", mine[0].id)
+            .select("id");
+          assert(!!error || (data ?? []).length === 0, "student cannot UPDATE their own booking over REST");
+          if (!error && (data ?? []).length > 0) {
+            await admin.from("bookings").update({ student_notes: mine[0].student_notes }).eq("id", mine[0].id);
+          }
+        }
+      }
+      {
+        const { data, error } = await s2
+          .from("session_requests")
+          .insert({
+            student_id: sid,
+            tutor_id: otherUserId,
+            duration_minutes: 120,
+            price_credits: 1,
+            expires_at: new Date(Date.now() - 60_000).toISOString(),
+          })
+          .select("id");
+        assert(!!error, "student cannot INSERT a session request with a made-up price over REST");
+        for (const r of data ?? []) {
+          await admin.from("session_requests").delete().eq("id", (r as { id: string }).id);
+        }
+      }
+      await s2.auth.signOut();
+    }
+  }
+
   // ── Same-email identity linking (SPEC §7.1) ────────────────────────────────
   // The no-duplicate-accounts guarantee for "Google sign-in on an existing
   // password account" rests on a Supabase dashboard setting ("Allow multiple
