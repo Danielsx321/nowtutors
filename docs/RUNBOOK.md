@@ -667,3 +667,11 @@ environment (dev, and production before launch) — it is a per-project setting.
 - **Never run `pnpm test:db:test` and `pnpm test:e2e` at the same time.** Both use the test project; integration fixtures (live broadcasts, bookings) change what the E2E sees and break it.
 - **Hanging pages under load** used to mean the database client pipelining through the transaction pooler (fixed, DECISIONS 2026-09-19). If it comes back, check `pg_stat_activity` through `DIRECT_URL` for `active` queries waiting on `Client/ClientRead`.
 
+
+## E2E runs: turn the VPN off first (2026-09-20)
+
+The test project's database is in Paris. Through a VPN with a US exit, every statement took 420 ms instead of
+126 ms from Lagos, and a transaction such as starting a broadcast (about nine round trips plus a cold
+connection) ran past the specs' 20 s budgets. It looked like a hung server action and like machine load; it was
+neither. Check with `curl -s https://ipinfo.io/json` before a run. A network change during a run
+(`net::ERR_NETWORK_CHANGED`) fails the spec in flight; re-run that spec alone.

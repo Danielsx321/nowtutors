@@ -2,7 +2,25 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-19)
+## Current state (2026-09-20)
+
+**LIVE-GLOBE REBUILD COMPLETE (SPEC Phase 9.5).** Parts A to I are merged and live; `main` is `f97c6f4`.
+Everything marked "in review" below has since merged: PRs #100 to #103 (database clients) and Part I PR 1 (#101).
+- **Part I PR 2 (PR #104):** `tests/e2e/design-smoke.spec.ts` (7 public pages and 3 dashboards at 1440 and 360),
+  six sideways-scroll boxes given `relative`, an `h1` on the 404, and three accessibility fixes (Money's
+  announcement moved from a prohibited `aria-label` to sr-only text, an sr-only `h2` above the browse results,
+  the sort button named by its visible text). Lighthouse accessibility 100 on `/`, `/tutors`, a profile, `/login`.
+- **Functions moved to `cdg1` (PR #105).** They ran in `iad1` while Supabase is in eu-west-3, so every statement
+  crossed the Atlantic. Public pages now answer in about 1 s from Lagos.
+- **Acceptance:** all five E2E specs pass on Daniels' Mac. The broadcast E2E's failures were never the app:
+  a US VPN exit put 420 ms on every statement (126 ms without it), which pushed Go live past its 20 s budget.
+  **Run E2E with the VPN off.** A network change mid-run fails whatever spec is running (`ERR_NETWORK_CHANGED`).
+- The before-and-after set for the client is approved; Daniels sends it.
+
+**Next:** Phase 10 (email, polish, launch prep). Live checks still owed are in the workspace memory
+`nowtutors-pending-live-tests`.
+
+## Earlier on 2026-09-19 (database clients, Part I PR 1)
 
 **IN REVIEW (`fix-db-hang-split-clients`): the real fix for pages hanging under load.** Two database clients:
 plain queries with no pipelining, transactions on their own client. 20-wide burst 60/60 with none hung (the
