@@ -21,8 +21,42 @@ export const homeFor: Record<Role, string> = {
   admin: "/admin",
 };
 
-/** Current auth user (validates the JWT, not just the cookie). Memoized/request. */
-export const getUser = cache(async () => {
+/** Who the verified token says is signed in. Everything the app reads from a user. */
+export interface SessionUser {
+  id: string;
+  email: string | null;
+}
+
+/**
+ * The signed-in user, from the access token's claims. `getClaims()` verifies
+ * the token's signature against the project's public key (ES256, cached JWKS)
+ * and its expiry, locally: about 1 ms against 220 ms for `auth.getUser()`,
+ * which asks the auth server over HTTP on every call (performance review P1;
+ * DECISIONS, "Performance review: local session checks"). It is still a
+ * validated JWT, not a trusted cookie. If the project ever signs with the
+ * legacy shared secret, `getClaims()` falls back to the auth server by itself.
+ *
+ * What this cannot see is a session revoked before its token expires (a sign
+ * out elsewhere, a deleted auth user) for up to the token's lifetime, one hour.
+ * Suspension and role are not affected: they are read from `profiles` on every
+ * request. Anything that spends money or goes live uses `getVerifiedUser`.
+ * Memoized per request.
+ */
+export const getUser = cache(async (): Promise<SessionUser | null> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims || typeof claims.sub !== "string" || !claims.sub) return null;
+  return { id: claims.sub, email: typeof claims.email === "string" ? claims.email : null };
+});
+
+/**
+ * The user as the auth server knows them right now: one HTTP call. For the
+ * email-verification gate only (bookings, paid requests, going live), which
+ * needs `email_confirmed_at` and must not act for a revoked session.
+ * Memoized per request.
+ */
+export const getVerifiedUser = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   return data.user ?? null;
@@ -50,7 +84,8 @@ export function isEmailVerified(
  * hiding the button. Returns the verified user or throws EmailNotVerifiedError.
  */
 export async function requireVerifiedEmail() {
-  const user = await requireUser();
+  const user = await getVerifiedUser();
+  if (!user) redirect("/login");
   if (!isEmailVerified(user)) throw new EmailNotVerifiedError();
   return user;
 }

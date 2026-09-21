@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import {
   getSessionProfile,
-  getUser,
+  getVerifiedUser,
   isEmailVerified,
   type Role,
   type SessionProfile,
@@ -56,7 +56,7 @@ export async function requireApiRole(role: Role): Promise<SessionProfile> {
  * rather than leaving a paid-up student unable to book (docs/DECISIONS.md).
  */
 export async function requireApiVerifiedEmail(): Promise<void> {
-  const user = await getUser();
+  const user = await getVerifiedUser();
   if (!isEmailVerified(user)) {
     throw new ApiAuthError(403, "Please verify your email address to continue.");
   }
