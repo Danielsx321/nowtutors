@@ -163,7 +163,7 @@ Money confirms (withdraw, refund, reversal) use `AlertDialog` and restate the ex
 
 ## Wordmark
 
-`<Wordmark />`: Noora's lowercase "nowtutors" logo, one SVG path in `currentColor`. Ink on light; `tone="onDark"` gives white for footers and rooms. Sizes set the height (`sm` 20px, `md` 28px, `lg` 36px). The logo is single-colour: never put it on a teal or green block to "brand" it. `<Monogram />` (the logo's "n") is for the collapsed sidebar rail only.
+`<Wordmark />`: Noora's lowercase "nowtutors" logo, one SVG path painted in `currentColor`. The path is a static file (`public/brand/wordmark.v1.svg`) used as a CSS mask, never inline: it is 34 KB (DECISIONS, "Performance review: the logo"). Ink on light; `tone="onDark"` gives white for footers and rooms. Sizes set the height (`sm` 20px, `md` 28px, `lg` 36px). The logo is single-colour: never put it on a teal or green block to "brand" it. `<Monogram />` (the logo's "n") is for the collapsed sidebar rail only.
 
 ## Tables
 

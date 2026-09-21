@@ -21,6 +21,17 @@ const nextConfig: NextConfig = {
         ]
       : [],
   },
+  // Brand files are versioned in their names (`wordmark.v1.svg`), so they can be
+  // cached for good. Without this, `public/` files are revalidated on every
+  // page load (performance review P4).
+  async headers() {
+    return [
+      {
+        source: "/brand/:file*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
 };
 
 // Only wrap with Sentry when a DSN is configured. With a blank SENTRY_DSN the
