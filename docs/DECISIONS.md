@@ -5083,3 +5083,11 @@ Second PR from the code review (`docs/review/2026-09-20-summary.md`). Each fix s
 6. **PayPal calls time out after 20 seconds (T4).** A timeout is its own error (`PayPalTimeoutError`), because it says nothing about what PayPal did. The capture route answers 504 and tells the buyer not to pay again; the webhook settles a capture that did go through.
 7. **First credit to a missing wallet re-locks (M3).** After `createWallet`, the ledger locks and reads again. The in-memory ledger's lock was changed to match Postgres: locking a row that doesn't exist locks nothing. It used to hold a mutex there, which hid the race in the fake and would have deadlocked the fix.
 8. **Left for launch decisions, not fixed here:** late `PAYMENT.CAPTURE.COMPLETED` still mints on a refunded payment (M4, pinned by a test as current behaviour), direct-pay re-prices from the tutor's current rate (M6), `platform_fee_percent = 100` (M7), unpaid holds are uncapped (R3), chargebacks unhandled (M10), and the unauthenticated Render token service (T2), which needs the Agora App Certificate from the client.
+
+## Performance review: the globe (`perf-globe-buffer`, 2026-09-21)
+
+Performance review findings P2 and P3 (`docs/review/2026-09-21-performance.md`). Both started as failing tests in `tests/dom/globe.test.tsx`.
+
+1. **The device ratio is applied once, by cobe.** `cobe` 2.0.1 sets `canvas.width = width * devicePixelRatio` itself (`dist/index.esm.js`). The globe passed a width it had already multiplied by the ratio, the convention from cobe's older examples, so a retina screen got the ratio twice: a 1100 px globe drew into a 4400 x 4400 buffer (read from the live canvas on production), four times the pixels the screen can show. `createGlobe` and the resize handler now pass the CSS size. The ratio stays capped at 2.
+2. **The globe only turns while it is on screen.** An `IntersectionObserver` on the canvas stops the frame loop when the hero scrolls away and starts it again when it comes back. Without the observer (old browsers, jsdom) it turns all the time, as before. Reduced motion and no-WebGL behaviour are unchanged.
+3. **No SPEC change.** SPEC §10 describes what the globe shows, not how many pixels it draws. No new dependency, no migration.

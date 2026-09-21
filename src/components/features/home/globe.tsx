@@ -70,14 +70,18 @@ export function Globe({ markers, className }: { markers: GlobeMarker[]; classNam
     let frame = 0;
     let destroy: (() => void) | undefined;
     let resize: ResizeObserver | undefined;
+    let inView: IntersectionObserver | undefined;
 
     import("cobe")
       .then(({ default: createGlobe }) => {
         const canvas = canvasRef.current;
         if (cancelled || !canvas) return;
 
+        // cobe 2 multiplies width and height by `devicePixelRatio` itself, so
+        // it gets the CSS size. Passing pixels drew 4x the buffer on a retina
+        // screen (DECISIONS, "Performance review: the globe").
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const sizeOf = () => Math.max(1, canvas.getBoundingClientRect().width * dpr);
+        const sizeOf = () => Math.max(1, Math.round(canvas.getBoundingClientRect().width));
         let size = sizeOf();
         let phi = 0.2;
 
@@ -109,13 +113,27 @@ export function Globe({ markers, className }: { markers: GlobeMarker[]; classNam
           resize.observe(canvas);
         }
 
-        // cobe 2 has no loop of its own: turn it here, one step per frame.
+        // cobe 2 has no loop of its own: turn it here, one step per frame,
+        // and only while the globe is on screen. Scrolled away, it draws nothing.
+        let visible = true;
         const tick = () => {
+          if (!visible) return;
           phi += SPIN_PER_FRAME;
           globe.update({ phi });
           frame = requestAnimationFrame(tick);
         };
         frame = requestAnimationFrame(tick);
+
+        if (typeof IntersectionObserver === "function") {
+          inView = new IntersectionObserver(([entry]) => {
+            const next = entry?.isIntersecting ?? true;
+            if (next === visible) return;
+            visible = next;
+            cancelAnimationFrame(frame);
+            if (visible) frame = requestAnimationFrame(tick);
+          });
+          inView.observe(canvas);
+        }
         setState("ready");
       })
       .catch(() => {
@@ -126,6 +144,7 @@ export function Globe({ markers, className }: { markers: GlobeMarker[]; classNam
       cancelled = true;
       cancelAnimationFrame(frame);
       resize?.disconnect();
+      inView?.disconnect();
       destroy?.();
       globeRef.current = null;
     };

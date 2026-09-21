@@ -108,6 +108,81 @@ describe("Globe", () => {
     expect(opts.markers).toEqual([]);
   });
 
+  it("draws one buffer pixel per screen pixel: the device ratio is applied once, by cobe", async () => {
+    // cobe 2 sets canvas.width = width * devicePixelRatio itself. Passing a
+    // width already multiplied by the ratio made the buffer 4x too large on a
+    // retina screen (4400 x 4400 for an 1100 px globe; performance review P2).
+    setReducedMotion(false);
+    setWebGL(true);
+    vi.stubGlobal("devicePixelRatio", 2);
+    vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 500, height: 500, top: 0, left: 0, right: 500, bottom: 500, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const { container } = render(<Globe markers={[]} />);
+    await waitFor(() =>
+      expect(container.firstElementChild!.getAttribute("data-globe-state")).toBe("ready"),
+    );
+    const [, opts] = createGlobe.mock.calls[0] as [
+      HTMLCanvasElement,
+      { width: number; height: number; devicePixelRatio: number },
+    ];
+    expect(opts.width * opts.devicePixelRatio).toBe(1000);
+    expect(opts.height * opts.devicePixelRatio).toBe(1000);
+    vi.unstubAllGlobals();
+  });
+
+  it("stops turning while it is scrolled out of view, and starts again when it comes back", async () => {
+    setReducedMotion(false);
+    setWebGL(true);
+
+    // Frames by hand, so the test decides when one runs.
+    let queued: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => queued.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      queued[id - 1] = () => {};
+    });
+    const runFrame = () => {
+      const due = queued;
+      queued = [];
+      due.forEach((cb) => cb(0));
+    };
+
+    let notify: (visible: boolean) => void = () => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+          notify = (visible) => cb([{ isIntersecting: visible }]);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+
+    const { container } = render(<Globe markers={[]} />);
+    await waitFor(() =>
+      expect(container.firstElementChild!.getAttribute("data-globe-state")).toBe("ready"),
+    );
+    const turns = () => update.mock.calls.filter(([s]) => "phi" in (s as object)).length;
+
+    runFrame();
+    runFrame();
+    const whileVisible = turns();
+    expect(whileVisible).toBeGreaterThan(0);
+
+    notify(false);
+    runFrame();
+    runFrame();
+    runFrame();
+    expect(turns()).toBe(whileVisible);
+
+    notify(true);
+    runFrame();
+    runFrame();
+    expect(turns()).toBeGreaterThan(whileVisible);
+    vi.unstubAllGlobals();
+  });
+
   it("is hidden from assistive tech", () => {
     setReducedMotion(false);
     setWebGL(false);
