@@ -23,7 +23,11 @@ for Noora's yes on the two mockups (`outputs/nowtutors/round-3-mockups/`, sent 2
   the blue search band, the `lg` sidebar (Live now, Subjects with counts, Price, Languages), the Live now
   carousel, the grid with the promise tile, the chip row below `lg`. The v2 home blocks and the globe are
   parked. New DOM tests for the sidebar and carousel (10/10); the design smoke asserts the sidebar at
-  1440 and the chip row at 360. **Next:** Daniels merges D then C; Part E (profile); Part F.
+  1440 and the chip row at 360. PR #115.
+- **Part E (`design-v3-profile`, stacked on C) IN REVIEW.** The profile opens on the stage (photo, the
+  broadcast player for a signed-in student, or the LIVE overlay); identity block with the sessions line and
+  subject chips under the name; panel and bottom bar untouched. Stage DOM test 4/4; the design smoke asserts
+  `[data-stage]`. **Next:** Daniels merges D, C, E in order; Part F (acceptance).
 
 ## Earlier: state on 2026-09-20
 

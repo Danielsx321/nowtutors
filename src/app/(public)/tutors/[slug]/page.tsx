@@ -11,7 +11,8 @@ import {
   getPublicBookingCalendar,
   getWalletBalance,
 } from "@/db/queries/bookings";
-import { getViewer } from "@/lib/auth/guards";
+import { getSessionProfile, getViewer } from "@/lib/auth/guards";
+import { agoraUid } from "@/lib/agora/uid";
 import { getBookingSettings, getInstantRequestTtlSeconds, getUsdPerCredit } from "@/lib/settings";
 import { TRUST_GUARANTEE, TRUST_GUARANTEE_CONFIRMED, TRUST_PAYMENT } from "@/lib/copy/trust";
 import { countryName } from "@/lib/geo/country-centroids";
@@ -20,11 +21,10 @@ import { BookingWidget, type BookingMode } from "@/components/features/booking/b
 import { InstantRequestWidget } from "@/components/features/booking/instant-request-widget";
 import { LiveChip } from "@/components/ui/live-chip";
 import { Money } from "@/components/ui/money";
-import { StatRow } from "@/components/ui/stat-row";
-import { TutorPhoto } from "@/components/features/tutor-photo";
+import { ProfileStage, type StageMode } from "@/components/features/tutor/profile-stage";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { FavouriteHeart, type FavouriteMode } from "@/components/features/favourite-heart";
+import type { FavouriteMode } from "@/components/features/favourite-heart";
 import { MessageTutorButton } from "@/components/features/messaging/message-tutor-button";
 import { cn } from "@/lib/utils";
 
@@ -59,16 +59,19 @@ export async function generateMetadata({
  *
  * NO ratings or reviews anywhere: they come after launch (§18).
  *
- * Layout (live-globe rebuild Part D; pages.html, Tutor profile): a header with
- * the square photo (a green ring outside a ground-coloured gap when the tutor
- * can be requested now), the live chip, the name at display size and a meta
- * line (country, languages, first subjects); the proof row; About, Subjects,
- * This week (open slots per day, from the same calendar the panel books
- * from) and Background as white blocks; then a sticky panel on `lg` (rate,
- * Start now when instant-available, Book a session, Message, trust lines) and
- * a sticky bottom bar on smaller screens that jumps to it. One primary action:
- * when "Start now" is on offer it is the teal one and booking steps back to
- * outline.
+ * Layout (design round 3 Part E, DESIGN.md v3 "Public pages", after Oranum's
+ * expert page): the left column opens on the stage (the photo at 16:9 with the
+ * on-air ring when the tutor can be requested now, or the broadcast player for
+ * a signed-in student when the tutor is live, or the dimmed photo with a LIVE
+ * chip and "Watch live" for everyone else), then the identity block (name at
+ * display size with the live chip, the pitch, country and languages, the
+ * sessions-and-experience line that used to be the proof row, the subject
+ * chips), then About, This week (open slots per day, from the same calendar
+ * the panel books from) and Background as white blocks. The right column is
+ * the sticky panel on `lg` (rate, Start now when instant-available, Book a
+ * session, Message, trust lines), unchanged, and a sticky bottom bar on
+ * smaller screens jumps to it. One primary action: when "Start now" is on
+ * offer it is the blue one and booking steps back to outline.
  *
  * Live treatment derives from live_tutors membership (§3.1), never from
  * is_live: the query LEFT JOINs the view and hands us liveStatus, exactly as
@@ -134,6 +137,19 @@ export default async function TutorProfilePage({
   const canRequestNow = tutor.liveStatus === "online" && tutor.acceptsInstant;
   const broadcasting = tutor.liveStatus === "live" && !!tutor.liveBroadcastId;
 
+  // The stage (Part E). A signed-in, unsuspended student gets the player here,
+  // the same audience the /live page admits; the host, tutors, admins and
+  // signed-out visitors get the photo with a LIVE overlay and the link. The
+  // token route re-checks all of it before any video plays.
+  let stageMode: StageMode = { kind: "photo" };
+  if (broadcasting && tutor.liveBroadcastId) {
+    const session = viewer?.role === "student" ? await getSessionProfile() : null;
+    stageMode =
+      session && !session.isSuspended && session.id !== tutor.userId
+        ? { kind: "embed", broadcastId: tutor.liveBroadcastId, viewerKey: String(agoraUid(session.id)) }
+        : { kind: "overlay", broadcastId: tutor.liveBroadcastId };
+  }
+
   const name = tutor.displayName ?? "Tutor";
   const firstName = name.trim().split(/\s+/)[0] || name;
   const country = countryName(tutor.country);
@@ -156,101 +172,65 @@ export default async function TutorProfilePage({
     <div className="mx-auto w-full max-w-[var(--container-page)] px-4 pb-28 pt-6 md:px-6 lg:pb-20">
       <div className="grid gap-8 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="grid min-w-0 gap-[18px]">
-          <header className="grid gap-6 sm:grid-cols-[220px_1fr] sm:items-end">
-            <div
-              className={cn(
-                "relative w-44 rounded-[24px] sm:w-full",
-                canRequestNow && "ring-[3px] ring-live ring-offset-[3px] ring-offset-ground",
-              )}
-            >
-              <TutorPhoto
-                src={tutor.avatarUrl}
-                name={name}
-                sizes="220px"
-                className="aspect-square w-full rounded-[24px]"
-                initialsClassName="text-display"
-              />
-              <div className="absolute right-3 top-3">
-                <FavouriteHeart
-                  tutorId={tutor.userId}
-                  initialFavourited={tutor.isFavourited}
-                  mode={favouriteMode}
-                  loginHref={loginHref}
-                />
-              </div>
-            </div>
-            <div className="min-w-0">
-              {(canRequestNow || broadcasting) && (
-                <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                  {canRequestNow && <LiveChip />}
-                  {broadcasting && (
-                    <Link
-                      href={`/live/${tutor.liveBroadcastId}`}
-                      aria-label={`LIVE, watch ${name}'s broadcast`}
-                      className="focus-ring inline-flex rounded-full"
-                    >
-                      <LiveChip label="LIVE" />
-                    </Link>
-                  )}
-                </div>
-              )}
-              <h1 className="mb-2 font-display text-[clamp(38px,5vw,60px)] font-medium leading-none tracking-[-0.035em] text-text">
+          <ProfileStage
+            mode={stageMode}
+            tutorId={tutor.userId}
+            tutorName={name}
+            tutorSlug={slug}
+            avatarUrl={tutor.avatarUrl}
+            instantAvailable={canRequestNow}
+            isFavourited={tutor.isFavourited}
+            favouriteMode={favouriteMode}
+            loginHref={loginHref}
+          />
+
+          <header className="min-w-0 px-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="font-display text-[clamp(32px,4vw,44px)] font-semibold leading-none tracking-[-0.03em] text-text">
                 {name}
               </h1>
-              {tutor.headline && <p className="mb-2 text-body-lg text-text">{tutor.headline}</p>}
-              <MetaLine
-                items={[country, tutor.languages.length > 0 ? tutor.languages.join(", ") : null]}
-                tags={subjects.slice(0, 2).map((s) => s.name)}
-              />
+              {canRequestNow && <LiveChip />}
+              {broadcasting && (
+                <Link
+                  href={`/live/${tutor.liveBroadcastId}`}
+                  aria-label={`LIVE, watch ${name}'s broadcast`}
+                  className="focus-ring inline-flex rounded-full"
+                >
+                  <LiveChip label="LIVE" />
+                </Link>
+              )}
             </div>
+            {tutor.headline && <p className="mt-2 text-body-lg text-text">{tutor.headline}</p>}
+            <MetaLine
+              items={[country, tutor.languages.length > 0 ? tutor.languages.join(", ") : null]}
+              tags={[]}
+            />
+            <p data-numeric className="mt-1 text-body text-text-muted">
+              {tutor.completedSessions > 0
+                ? `${tutor.completedSessions.toLocaleString()} ${tutor.completedSessions === 1 ? "session" : "sessions"}`
+                : "No sessions yet"}
+              {" · "}
+              {tutor.yearsExperience && tutor.yearsExperience > 0
+                ? `${tutor.yearsExperience}y experience`
+                : "New tutor"}
+            </p>
+            {subjects.length > 0 && (
+              <ul aria-label="Subjects" className="mt-3 flex flex-wrap gap-2">
+                {subjects.map((s) => (
+                  <li key={s.slug}>
+                    <Tag>
+                      {s.name}
+                      {s.level && ` · ${LEVEL_LABEL[s.level] ?? s.level}`}
+                    </Tag>
+                  </li>
+                ))}
+              </ul>
+            )}
           </header>
-
-          <StatRow
-            className="bg-surface-raised"
-            stats={[
-              {
-                label: "Experience",
-                value:
-                  tutor.yearsExperience && tutor.yearsExperience > 0
-                    ? `${tutor.yearsExperience} ${tutor.yearsExperience === 1 ? "year" : "years"}`
-                    : "New",
-              },
-              {
-                label: "Sessions",
-                value: tutor.completedSessions > 0 ? tutor.completedSessions.toLocaleString() : "New",
-              },
-              {
-                label: "Rate",
-                value: (
-                  <Money
-                    credits={tutor.hourlyRateCredits}
-                    usdPerCredit={usdPerCredit ?? undefined}
-                    showUsd={usdPerCredit != null}
-                    per="hr"
-                    size="md"
-                    stacked
-                  />
-                ),
-              },
-            ]}
-          />
 
           {tutor.about && (
             <Block title={`About ${firstName}`}>
               <p className="max-w-[68ch] whitespace-pre-line text-body text-text">{tutor.about}</p>
-            </Block>
-          )}
-
-          {subjects.length > 0 && (
-            <Block title="Subjects">
-              <div className="flex flex-wrap gap-2">
-                {subjects.map((s) => (
-                  <Tag key={s.slug}>
-                    {s.name}
-                    {s.level && ` · ${LEVEL_LABEL[s.level] ?? s.level}`}
-                  </Tag>
-                ))}
-              </div>
             </Block>
           )}
 

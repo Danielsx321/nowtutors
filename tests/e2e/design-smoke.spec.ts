@@ -54,6 +54,10 @@ for (const w of WIDTHS) {
         await expect(page.getByRole("banner").first()).toBeVisible({ timeout: 30_000 });
         await expect(page.getByRole("contentinfo")).toBeVisible();
         await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+        if (p.name === "profile") {
+          // Round 3 Part E: the profile opens on the stage.
+          await expect(page.locator("[data-stage]")).toBeVisible();
+        }
         if (p.name === "browse" || p.name === "home") {
           // Round 3 Part C: the sidebar filters from lg, the chip row below it.
           const sidebar = page.getByRole("navigation", { name: "Filters" });

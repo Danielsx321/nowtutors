@@ -5160,3 +5160,14 @@ The public shape after Oranum. No migration, no dependency, no change to what a 
 6. **No texture on the band.** InstaEDU's hero has a faint grid; a background image or gradient is decoration the banned-tells rule exists to refuse, and the token test would catch a gradient. Solid `primary`.
 7. **The v2 home is parked, not deleted.** `components/features/home/{hero,globe,app-fan,steps,proof-wall,proof-strip,closing-block,section-heading}.tsx`, `tests/dom/globe.test.tsx`, `getHomeProof`, `getLiveTutorCountries`, `toGlobeMarkers` and the `cobe` dependency stay in the repo unused, on Daniels' call (2026-09-26). `cobe` was only ever loaded by the globe, so it leaves every bundle. The gradient allowlist keeps the globe file so the parked code still passes the test.
 8. **The public container is 1360px** (Part B), which fits 220px of sidebar and four 275px cards at 1440.
+
+## Design round 3, Part E: the profile stage (`design-v3-profile`, 2026-09-26)
+
+Left column only; the sticky panel, the bottom bar and every E2E string are untouched. No migration, no dependency.
+
+1. **The stage is the photo, the player, or the photo with a LIVE overlay.** Oranum's left column is the live video. Ours is the tutor's photo at 16:9 most of the time; when the tutor is broadcasting, a signed-in, unsuspended student who is not the host gets the same `ViewerStage` the `/live` page mounts, with the same `viewerKey`, inside a `.theme-dark` island; everyone else gets the dimmed photo with a LIVE chip and an orange "Watch live" link to `/live/[id]`, which keeps sign-in and the token route as the only door. The embed is presentation: the token route re-checks the viewer before any video plays.
+2. **The proof row became a sentence.** "312 sessions · 6y experience" under the name, in muted text, instead of three cells. The card lost the row in Part D; the profile is where a student who has clicked through reads it.
+3. **The Subjects block merged into the identity block** as chips under the name (with the level where set), because Oranum shows topics and expertise right under the name and a second "Subjects" heading further down repeated them.
+4. **No ratings.** Oranum shows a ratings count; SPEC §18 says none until reviews exist after launch.
+5. **The player on the profile counts as a viewer once.** It uses the same Presence key (`agoraUid(profile.id)`) as the `/live` page, so a student with the profile and the live page open counts once, as before.
+6. **The bottom bar on phones is unchanged**; the stage sits above the fold and the bar still jumps to `#start-now` or `#book`.
