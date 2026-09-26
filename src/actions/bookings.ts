@@ -10,7 +10,8 @@ import {
   requireRole,
   requireVerifiedEmail,
 } from "@/lib/auth/guards";
-import { getSlotComputationData } from "@/db/queries/bookings";
+import { countOpenPaymentHolds, getSlotComputationData } from "@/db/queries/bookings";
+import { canOpenPaymentHold, PAYMENT_HOLD_LIMIT_MESSAGE } from "@/lib/bookings/payment-holds";
 import { getBookingSettings } from "@/lib/settings";
 import { isSlotOpen } from "@/lib/availability/validate-slot";
 import { PENDING_PAYMENT_HOLD_MINUTES } from "@/lib/availability/compute-slots";
@@ -43,6 +44,11 @@ export type CreateBookingInput = z.input<typeof inputSchema>;
 
 /** Postgres SQLSTATE for an exclusion-constraint violation (bookings_no_overlap). */
 const EXCLUSION_VIOLATION = "23P01";
+
+/** Thrown inside the booking transaction when the student is at the hold cap (R3). */
+class PaymentHoldLimitError extends Error {
+  readonly code = "payment_hold_limit" as const;
+}
 
 /**
  * Create a scheduled booking paid in credits (SPEC §7.3, credits path).
@@ -148,6 +154,15 @@ export async function createScheduledBooking(
           ),
         );
 
+      // R3: at most MAX_OPEN_PAYMENT_HOLDS unpaid holds per student. Counted
+      // inside the transaction, after the sweep above, so a hold that just
+      // expired no longer counts and two simultaneous requests still see each
+      // other's rows once the first commits.
+      if (payWithPayPal) {
+        const open = await countOpenPaymentHolds(tx, student.id, PENDING_PAYMENT_HOLD_MINUTES);
+        if (!canOpenPaymentHold(open)) throw new PaymentHoldLimitError();
+      }
+
       // Insert first: the GiST exclusion rejects a slot won since re-validation
       // before we touch the wallet. If the debit then fails, this rolls back too.
       const [inserted] = await tx
@@ -189,6 +204,9 @@ export async function createScheduledBooking(
     revalidatePath("/tutor/bookings");
     return { ok: true, bookingId };
   } catch (err) {
+    if (err instanceof PaymentHoldLimitError) {
+      return { error: PAYMENT_HOLD_LIMIT_MESSAGE };
+    }
     if (err instanceof InsufficientCreditsError) {
       return { error: "You don't have enough credits for this session. Top up and try again." };
     }

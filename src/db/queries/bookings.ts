@@ -1,5 +1,5 @@
 import "server-only";
-import { aliasedTable, and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { aliasedTable, and, asc, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   availabilityExceptions,
@@ -445,4 +445,29 @@ export async function getBookingDetailForParticipant(
       : (row.studentName ?? row.studentFullName ?? null),
     otherPartyAvatarUrl: isStudent ? row.tutorAvatarUrl : row.studentAvatarUrl,
   };
+}
+
+/**
+ * The student's scheduled bookings still holding a slot without payment: in
+ * `pending_payment` and younger than the hold window (R3). Older rows are
+ * dead holds the expire-unpaid cron will sweep, and never count. Runs on the
+ * caller's executor so the booking action can count inside its transaction.
+ */
+export async function countOpenPaymentHolds(
+  executor: Pick<typeof db, "select">,
+  studentId: string,
+  holdMinutes: number,
+): Promise<number> {
+  const [row] = await executor
+    .select({ n: sql<number>`count(*)::int` })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(bookings.type, "scheduled"),
+        eq(bookings.status, "pending_payment"),
+        gt(bookings.createdAt, sql`now() - make_interval(mins => ${holdMinutes})`),
+      ),
+    );
+  return row?.n ?? 0;
 }

@@ -25,20 +25,19 @@ function paymentStore(tx: DbTransaction): PaymentStore {
     async lock(ref: PaymentRef) {
       const orderId = ref.providerOrderId?.trim();
       const captureId = ref.providerCaptureId?.trim();
-      if (!orderId && !captureId) return null;
+      const paymentId = ref.paymentId?.trim();
+      if (!orderId && !captureId && !paymentId) return null;
 
       // The order id is the primary key into `payments`; the capture id is the
       // fallback for events (notably PAYMENT.CAPTURE.REFUNDED) that carry the
-      // capture but not the order.
-      const match =
-        orderId && captureId
-          ? or(
-              eq(payments.providerOrderId, orderId),
-              eq(payments.providerCaptureId, captureId),
-            )
-          : orderId
-            ? eq(payments.providerOrderId, orderId)
-            : eq(payments.providerCaptureId, captureId!);
+      // capture but not the order; our own id (PayPal's `custom_id`) is the
+      // fallback for a row whose order id was never stamped (M11).
+      const clauses = [
+        ...(orderId ? [eq(payments.providerOrderId, orderId)] : []),
+        ...(captureId ? [eq(payments.providerCaptureId, captureId)] : []),
+        ...(paymentId ? [eq(payments.id, paymentId)] : []),
+      ];
+      const match = clauses.length === 1 ? clauses[0] : or(...clauses);
 
       const [row] = await tx
         .select({
@@ -52,6 +51,7 @@ function paymentStore(tx: DbTransaction): PaymentStore {
           providerCaptureId: payments.providerCaptureId,
           capturedAt: payments.capturedAt,
           bookingId: payments.bookingId,
+          providerOrderId: payments.providerOrderId,
         })
         .from(payments)
         .where(match)
@@ -74,6 +74,9 @@ function paymentStore(tx: DbTransaction): PaymentStore {
           ...(patch.capturedAt === undefined
             ? {}
             : { capturedAt: patch.capturedAt }),
+          ...(patch.providerOrderId === undefined
+            ? {}
+            : { providerOrderId: patch.providerOrderId }),
           updatedAt: sql`now()`,
         })
         .where(eq(payments.id, paymentId));

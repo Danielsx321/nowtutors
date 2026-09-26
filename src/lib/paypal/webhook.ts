@@ -49,7 +49,33 @@ export function readSignatureHeaders(
   return { authAlgo, certUrl, transmissionId, transmissionSig, transmissionTime };
 }
 
-/** The request body PayPal's verify-webhook-signature endpoint expects. */
+/**
+ * The verify-webhook-signature request as the exact bytes to send (launch fix
+ * M8). PayPal verifies the signature against the event **as it was
+ * transmitted**; parsing the body and serialising it again can change
+ * whitespace, unicode escapes and number formatting, and a buyer whose name
+ * carries an accent would then fail verification for days of retries. So the
+ * raw body is spliced into the request untouched, and only the five header
+ * values and the webhook id are serialised here.
+ */
+export function verificationBody(
+  headers: PayPalSignatureHeaders,
+  webhookId: string,
+  rawBody: string,
+): string {
+  const fields = {
+    auth_algo: headers.authAlgo,
+    cert_url: headers.certUrl,
+    transmission_id: headers.transmissionId,
+    transmission_sig: headers.transmissionSig,
+    transmission_time: headers.transmissionTime,
+    webhook_id: webhookId,
+  };
+  const head = JSON.stringify(fields);
+  return `${head.slice(0, -1)},"webhook_event":${rawBody.trim()}}`;
+}
+
+/** The verify request as an object. Kept for callers that log or inspect it; the route sends {@link verificationBody}. */
 export function verificationPayload(
   headers: PayPalSignatureHeaders,
   webhookId: string,
@@ -80,6 +106,11 @@ export const HANDLED_EVENT_TYPES = [
   "PAYMENT.CAPTURE.COMPLETED",
   "PAYMENT.CAPTURE.DENIED",
   "PAYMENT.CAPTURE.REFUNDED",
+  // A chargeback or dispute PayPal decided against us (launch fix M10). The
+  // money is gone in full, so it is recorded exactly as a full refund: the
+  // payment goes `refunded`, which arms "Reverse this refund" on
+  // /admin/payments, and the event type stays in the payload for the admin.
+  "PAYMENT.CAPTURE.REVERSED",
 ] as const;
 
 export type HandledEventType = (typeof HANDLED_EVENT_TYPES)[number];
@@ -111,9 +142,15 @@ function orderIdFromLinks(resource: Record<string, unknown>): string | null {
  * whose `resource` is a *refund* (so `resource.id` is the refund id, not the
  * capture) and which does not always carry the order id.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function paymentRefFromEvent(event: unknown): PaymentRef {
   if (!isRecord(event) || !isRecord(event.resource)) return {};
   const resource = event.resource;
+  // Our own payment id rides along as `custom_id` on every order we create
+  // (M11). Only a well-formed uuid is trusted; anything else is not ours.
+  const customId = str(resource.custom_id);
+  const paymentId = customId && UUID.test(customId) ? customId : null;
   const related = isRecord(resource.supplementary_data)
     ? isRecord(resource.supplementary_data.related_ids)
       ? resource.supplementary_data.related_ids
@@ -127,6 +164,7 @@ export function paymentRefFromEvent(event: unknown): PaymentRef {
     providerCaptureId: isRefund
       ? (related ? str(related.capture_id) : null)
       : ((related ? str(related.capture_id) : null) ?? str(resource.id)),
+    ...(paymentId ? { paymentId } : {}),
   };
 }
 
@@ -164,6 +202,8 @@ export interface WebhookDeps {
     headers: PayPalSignatureHeaders;
     webhookId: string;
     event: unknown;
+    /** The body exactly as PayPal sent it; what the signature covers (M8). */
+    rawBody: string;
   }): Promise<boolean>;
   settleCapturedOrder(ref: PaymentRef & { rawPayload?: unknown }): Promise<SettleResult>;
   markPaymentStatus(
@@ -229,6 +269,7 @@ export async function handlePayPalWebhook(
     headers: signature,
     webhookId,
     event,
+    rawBody,
   });
   if (!verified) {
     // Not processed: no lookup, no status change, no credit.
@@ -241,7 +282,7 @@ export async function handlePayPalWebhook(
   }
 
   const ref = paymentRefFromEvent(event);
-  if (!ref.providerOrderId && !ref.providerCaptureId) {
+  if (!ref.providerOrderId && !ref.providerCaptureId && !ref.paymentId) {
     return { status: 200, body: { received: true, result: "unidentifiable" } };
   }
 
@@ -253,6 +294,14 @@ export async function handlePayPalWebhook(
 
   if (eventType === "PAYMENT.CAPTURE.DENIED") {
     const result = await deps.markPaymentStatus({ ...ref, status: "failed", rawPayload: event });
+    return { status: 200, body: { received: true, result: result.status } };
+  }
+
+  if (eventType === "PAYMENT.CAPTURE.REVERSED") {
+    // M10: a chargeback is a refund PayPal made for us, in full. The capture
+    // resource's own amount is the whole payment, so `markStatus` never reads
+    // it as partial; the event type stays in the payload for the admin.
+    const result = await deps.markPaymentStatus({ ...ref, status: "refunded", rawPayload: event });
     return { status: 200, body: { received: true, result: result.status } };
   }
 

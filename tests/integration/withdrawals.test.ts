@@ -336,7 +336,7 @@ describe("admin transitions under concurrency", () => {
 });
 
 describe("mark paid and earnings rows", () => {
-  it("flips only earnings credited before the request", async () => {
+  it("flips the rows the request claimed, and leaves a release that came after it available (M12)", async () => {
     const before = await createFixtureBooking(alpha, { startedMinutesAgo: 120, status: "completed" });
     bookingIds.push(before.bookingId);
     const earlyEarning = await createFixtureEarning(alpha, {

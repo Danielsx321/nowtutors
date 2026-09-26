@@ -33,6 +33,13 @@ export type PaymentStatus = (typeof paymentStatus.enumValues)[number];
 export interface PaymentRef {
   providerOrderId?: string | null;
   providerCaptureId?: string | null;
+  /**
+   * Our own `payments.id`, which every order carries to PayPal as `custom_id`
+   * and every capture event carries back (launch fix M11). The fallback for a
+   * row whose `provider_order_id` was never stamped because the process died
+   * between creating the order and saving its id.
+   */
+  paymentId?: string | null;
 }
 
 /** The `payments` columns settlement reads. */
@@ -48,11 +55,15 @@ export interface PaymentRecord {
   capturedAt: Date | null;
   /** Set when `purpose = 'booking'` (direct-pay, Part 2). */
   bookingId?: string | null;
+  /** `payments.provider_order_id`; a `pending:<id>` placeholder until the order is stamped (M11). */
+  providerOrderId?: string | null;
 }
 
 export interface PaymentPatch {
   status?: PaymentStatus;
   providerCaptureId?: string | null;
+  /** Stamp the real order id over a `pending:` placeholder (M11). */
+  providerOrderId?: string;
   rawPayload?: unknown;
   capturedAt?: Date;
 }
@@ -120,6 +131,8 @@ export type SettleResult =
       bookingId: string;
       credits: number;
     }
+  /** M4: the payment was refunded before this (late) COMPLETED arrived. Nothing written, nothing credited. */
+  | { status: "refunded_not_credited"; paymentId: string }
   | { status: "unknown_order" };
 
 export type MarkResult =
@@ -163,16 +176,28 @@ export async function settleCapture(
   const payment = await store.lock(ref);
   if (!payment) return { status: "unknown_order" };
 
-  // A late COMPLETED must not resurrect a payment we have since refunded.
-  if (payment.status !== "refunded") {
-    await store.update(payment.id, {
-      status: "captured",
-      providerCaptureId:
-        ref.providerCaptureId?.trim() || payment.providerCaptureId,
-      ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
-      capturedAt: payment.capturedAt ?? now(),
-    });
+  // A late COMPLETED must not resurrect a payment we have since refunded, and
+  // must not credit it either (launch fix M4): the money went back to the
+  // buyer, so there is nothing to mint. Nothing is written; the event is
+  // answered so PayPal stops retrying, and the result says what happened.
+  if (payment.status === "refunded") {
+    return { status: "refunded_not_credited", paymentId: payment.id };
   }
+
+  // M11: a row found by our own id (custom_id) whose order id was never
+  // stamped gets it now, so the admin lookup and any later event find it.
+  const orderId = ref.providerOrderId?.trim();
+  const stampOrderId =
+    orderId && payment.providerOrderId?.startsWith("pending:") ? { providerOrderId: orderId } : {};
+
+  await store.update(payment.id, {
+    status: "captured",
+    providerCaptureId:
+      ref.providerCaptureId?.trim() || payment.providerCaptureId,
+    ...stampOrderId,
+    ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
+    capturedAt: payment.capturedAt ?? now(),
+  });
 
   // Booking direct-pay (Part 2). Deliberately the SAME settlement path, branched
   // on `payments.purpose`, so client capture and webhook stay one code path.

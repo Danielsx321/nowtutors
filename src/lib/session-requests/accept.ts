@@ -99,6 +99,13 @@ export interface AcceptTx {
     now: Date,
     windowEnd: Date,
   ): Promise<boolean>;
+  /**
+   * Is the tutor already inside an instant session (`instant` / `in_progress`)?
+   * Launch fix M9: a tutor who stayed listed as live during a session could
+   * accept a second request and the second student was charged in full for a
+   * session nobody could give.
+   */
+  hasInstantSessionInProgress(tutorId: string): Promise<boolean>;
   insertBooking(row: InstantBookingInsert): Promise<void>;
   /** request → `accepted`, with `booking_id` and `responded_at`. */
   markAccepted(requestId: string, bookingId: string, at: Date): Promise<void>;
@@ -141,6 +148,8 @@ export type AcceptResult =
   /** Past `expires_at`. The row is moved to `expired` as a side effect. */
   | { status: "expired" }
   | { status: "scheduled_collision" }
+  /** M9: the tutor is in an instant session right now. Nothing charged, request left pending. */
+  | { status: "tutor_in_session" }
   /** Q5 (Phase 9 Part 3): the tutor is live-broadcasting. Nothing charged, request left pending. */
   | { status: "tutor_broadcasting" }
   /**
@@ -173,7 +182,8 @@ export interface AcceptParams {
  *     request moved to `expired` right here rather than left `pending` for the
  *     cron — it is already expired by the only clock that counts, and moving it
  *     now is what lets the student's waiting modal stop waiting immediately.
- *  3. **Scheduled collision** (§7.4, Phase 6 pre-build). Application-level
+ *  3. **Scheduled collision** (§7.4, Phase 6 pre-build), then **an instant
+ *     session already in progress** (M9). Application-level
  *     guarded read, deliberately **not** a database constraint:
  *     `bookings_no_overlap` (§4.3) excludes instant bookings, which have no time
  *     range to exclude against. **No buffer or gap** — Bubble has no such check
@@ -220,6 +230,9 @@ export async function acceptSessionRequest(
       const windowEnd = new Date(at.getTime() + request.durationMinutes * 60_000);
       if (await tx.hasCollidingScheduledBooking(request.tutorId, at, windowEnd)) {
         return { status: "scheduled_collision" } as const;
+      }
+      if (await tx.hasInstantSessionInProgress(request.tutorId)) {
+        return { status: "tutor_in_session" } as const;
       }
 
       pinnedPrice = request.priceCredits;

@@ -9,7 +9,12 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 - **Still to see on production with a live tutor:** the Live now carousel and the profile's live overlay and embedded player (workspace memory `nowtutors-pending-live-tests`).
 - The v2 home blocks and the globe are parked in `components/features/home/`, not deleted.
 
-**Next:** Phase 10 (email, polish, launch prep), after the code-review launch decisions (M4, M6, R3, M10, T2).
+- **Launch fixes (`launch-fixes`) IN REVIEW.** M4, M10, M11, M8 (PayPal), M6 (pinned direct-pay price),
+  R3 (two unpaid holds per student), M9 (no accept mid-session), M12 (earnings claimed by request id,
+  `drizzle/0024`). **`pnpm db:migrate` on production before the deploy.** Still with Noora: the Agora App
+  Certificate (T2) and the co-host token setting (T5).
+
+**Next:** Phase 10 (email, polish, launch prep).
 
 ## Earlier on 2026-09-26 (round 3 in progress)
 

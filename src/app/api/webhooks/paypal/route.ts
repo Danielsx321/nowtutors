@@ -4,7 +4,7 @@ import { markPaymentStatus, settleCapturedOrder } from "@/lib/paypal/fulfilment"
 import {
   handlePayPalWebhook,
   isVerificationSuccess,
-  verificationPayload,
+  verificationBody,
 } from "@/lib/paypal/webhook";
 import {
   PAYPAL_UNAVAILABLE_BODY,
@@ -37,10 +37,11 @@ export async function POST(request: Request) {
     () =>
       handlePayPalWebhook(rawBody, request.headers, {
         webhookId: process.env.PAYPAL_WEBHOOK_ID ?? null,
-        async verifySignature({ headers, webhookId, event }) {
+        async verifySignature({ headers, webhookId, rawBody }) {
+          // The event goes to PayPal as the exact bytes it sent (M8).
           const response = await paypalFetch<unknown>(
             "/v1/notifications/verify-webhook-signature",
-            { method: "POST", body: verificationPayload(headers, webhookId, event) },
+            { method: "POST", rawBody: verificationBody(headers, webhookId, rawBody) },
           );
           return isVerificationSuccess(response);
         },

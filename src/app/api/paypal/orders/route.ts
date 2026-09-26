@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { bookings, payments, tutorProfiles } from "@/db/schema";
+import { bookings, payments } from "@/db/schema";
 import {
   authErrorResponse,
   requireApiRole,
@@ -209,9 +209,9 @@ async function resolveCreditPurchase(packageId: string): Promise<ResolvedOrder> 
 
 /**
  * Booking direct-pay (SPEC §7.3 step 4b, §7.6). The booking must belong to the
- * caller and still be awaiting payment; the price is **re-derived** from the
- * tutor's current rate and the booking's duration, never read from the booking
- * row and never from the client. USD comes from the direct-pay basis package.
+ * caller and still be awaiting payment; the price is the one **pinned on the
+ * booking** when the slot was taken (M6), never from the client. USD comes
+ * from the direct-pay basis package.
  */
 async function resolveBookingDirectPay(
   bookingId: string,
@@ -224,10 +224,9 @@ async function resolveBookingDirectPay(
       status: bookings.status,
       type: bookings.type,
       durationMinutes: bookings.durationMinutes,
-      hourlyRateCredits: tutorProfiles.hourlyRateCredits,
+      priceCredits: bookings.priceCredits,
     })
     .from(bookings)
-    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, bookings.tutorId))
     .where(eq(bookings.id, bookingId))
     .limit(1);
 

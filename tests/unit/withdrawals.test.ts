@@ -31,8 +31,8 @@ interface FakeEarning {
   id: string;
   tutorId: string;
   status: "held" | "available" | "withdrawn";
-  /** When its `session_earning` credit was written. */
-  creditedAt: Date;
+  /** The request that claimed it (M12), or none. */
+  withdrawalRequestId?: string | null;
 }
 
 class FakeWithdrawals {
@@ -84,19 +84,35 @@ class FakeWithdrawals {
         const r = this.requests.find((x) => x.id === id)!;
         Object.assign(r, patch);
       },
-      markEarningsWithdrawn: async (tutorId, requestedAt) => {
-        const flipped: string[] = [];
+      claimAvailableEarnings: async (tutorId, requestId) => {
+        const ids: string[] = [];
         for (const e of this.earnings) {
-          if (
-            e.tutorId === tutorId &&
-            e.status === "available" &&
-            e.creditedAt.getTime() <= requestedAt.getTime()
-          ) {
-            e.status = "withdrawn";
-            flipped.push(e.id);
+          if (e.tutorId === tutorId && e.status === "available" && !e.withdrawalRequestId) {
+            e.withdrawalRequestId = requestId;
+            ids.push(e.id);
           }
         }
-        return flipped;
+        return ids;
+      },
+      markEarningsWithdrawn: async (requestId) => {
+        const ids: string[] = [];
+        for (const e of this.earnings) {
+          if (e.withdrawalRequestId === requestId && e.status === "available") {
+            e.status = "withdrawn";
+            ids.push(e.id);
+          }
+        }
+        return ids;
+      },
+      releaseClaimedEarnings: async (requestId) => {
+        const ids: string[] = [];
+        for (const e of this.earnings) {
+          if (e.withdrawalRequestId === requestId && e.status === "available") {
+            e.withdrawalRequestId = null;
+            ids.push(e.id);
+          }
+        }
+        return ids;
       },
       insertAudit: async (entry) => {
         this.audits.push(entry);
@@ -293,16 +309,24 @@ describe("approve and mark paid", () => {
     expect(f.statusOf(w.id)).toBe("approved");
   });
 
-  it("marks paid with NO ledger row, and flips only earnings inside the hold", async () => {
-    const before = new Date("2026-09-14T11:00:00Z");
-    const after = new Date("2026-09-14T13:00:00Z");
+  it("marks paid with NO ledger row, and flips exactly the rows the request claimed (M12)", async () => {
     f.earnings = [
-      { id: "e-old", tutorId: TUTOR, status: "available", creditedAt: before },
-      { id: "e-new", tutorId: TUTOR, status: "available", creditedAt: after },
-      { id: "e-held", tutorId: TUTOR, status: "held", creditedAt: before },
-      { id: "e-other", tutorId: "tutor-2", status: "available", creditedAt: before },
+      { id: "e-old", tutorId: TUTOR, status: "available" },
+      { id: "e-held", tutorId: TUTOR, status: "held" },
+      { id: "e-other", tutorId: "tutor-2", status: "available" },
     ];
     const w = await requestOk();
+    // Claimed at request time, under the wallet lock.
+    expect(f.earnings.find((e) => e.id === "e-old")!.withdrawalRequestId).toBe(w.id);
+    expect(f.audits[0]).toMatchObject({
+      action: "withdrawal.request",
+      payload: expect.objectContaining({ earnings_claimed: ["e-old"] }),
+    });
+    // A release that lands after the request is a later row: unclaimed, and
+    // it stays available after the payout. This is the M12 case, which the old
+    // timestamp comparison got wrong when the release committed inside the
+    // request's transaction window.
+    f.earnings.push({ id: "e-new", tutorId: TUTOR, status: "available" });
     await approveWithdrawal(f.run, { id: w.id, adminId: ADMIN });
     const rowsBefore = f.ledger.rows.length;
 
@@ -322,13 +346,13 @@ describe("approve and mark paid", () => {
     });
     expect(f.earnings.map((e) => [e.id, e.status])).toEqual([
       ["e-old", "withdrawn"],
-      ["e-new", "available"],
       ["e-held", "held"],
       ["e-other", "available"],
+      ["e-new", "available"],
     ]);
     expect(f.audits.at(-1)).toMatchObject({
       action: "withdrawal.mark_paid",
-      payload: expect.objectContaining({ external_reference: "PP-123" }),
+      payload: expect.objectContaining({ external_reference: "PP-123", earnings_withdrawn: ["e-old"] }),
     });
     // Paid is terminal.
     expect(
@@ -338,6 +362,18 @@ describe("approve and mark paid", () => {
         externalReference: "PP-123",
       }),
     ).toEqual({ ok: false, reason: "wrong_status", status: "paid" });
+  });
+
+  it("M12: a rejected request releases its claim, and the next request takes the rows", async () => {
+    f.earnings = [{ id: "e-1", tutorId: TUTOR, status: "available" }];
+    const first = await requestOk();
+    expect(f.earnings[0].withdrawalRequestId).toBe(first.id);
+    expect(await rejectWithdrawal(f.run, { id: first.id, adminId: ADMIN, note: "Wrong email" })).toEqual({ ok: true });
+    expect(f.earnings[0]).toMatchObject({ status: "available", withdrawalRequestId: null });
+    expect(f.audits.at(-1)!.payload).toMatchObject({ earnings_released: ["e-1"] });
+
+    const second = await requestOk();
+    expect(f.earnings[0].withdrawalRequestId).toBe(second.id);
   });
 
   it("reports an unknown id", async () => {

@@ -34,11 +34,17 @@ class InMemoryPayments implements PaymentStore {
     this.lockCount++;
     const orderId = ref.providerOrderId?.trim();
     const captureId = ref.providerCaptureId?.trim();
+    const paymentId = ref.paymentId?.trim();
     for (const row of this.rows.values()) {
-      if (orderId && this.orderIds.get(row.id) === orderId) return { ...row };
-      if (captureId && row.providerCaptureId === captureId) return { ...row };
+      if (orderId && this.orderIds.get(row.id) === orderId) return this.record(row);
+      if (captureId && row.providerCaptureId === captureId) return this.record(row);
+      if (paymentId && row.id === paymentId) return this.record(row);
     }
     return null;
+  }
+
+  private record(row: PaymentRecord): PaymentRecord {
+    return { ...row, providerOrderId: this.orderIds.get(row.id) ?? null };
   }
 
   /** payments.provider_order_id, kept beside the record the store returns. */
@@ -56,6 +62,7 @@ class InMemoryPayments implements PaymentStore {
         : { providerCaptureId: patch.providerCaptureId }),
       ...(patch.capturedAt === undefined ? {} : { capturedAt: patch.capturedAt }),
     });
+    if (patch.providerOrderId !== undefined) this.orderIds.set(paymentId, patch.providerOrderId);
   }
 
   /** SAVEPOINT: rolls back only `fn` on throw, leaving the outer tx usable. */
@@ -214,13 +221,46 @@ describe("settleCapture — duplicate capture (client + webhook both fire)", () 
     expect(s.ledger.rows).toHaveLength(1);
   });
 
-  it("a refunded payment is not resurrected by a late COMPLETED", async () => {
-    const s = store(purchase({ status: "refunded" }));
-    const result = await settleCapture(s, { providerOrderId: ORDER_ID });
-    expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded"); // no status write
+  it("M4: a late COMPLETED on a refunded payment writes nothing and credits nothing", async () => {
+    // The money went back to the buyer, so there is nothing to mint. The old
+    // behaviour skipped only the status write and credited the wallet in full.
+    const s = store(purchase({ status: "refunded" }), { alice: 5 });
+    const result = await settleCapture(s, { providerOrderId: ORDER_ID, providerCaptureId: CAPTURE_ID });
+    expect(result).toEqual({ status: "refunded_not_credited", paymentId: PAYMENT_ID });
+    expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded");
     expect(s.patches).toHaveLength(0);
-    // The credit itself is still guarded by the ledger's unique index.
+    expect(s.ledger.rows).toHaveLength(0);
+    expect(s.ledger.balances.get("alice")).toBe(5);
+  });
+
+  it("M4: the same holds for a refunded direct-pay booking payment", async () => {
+    const s = store(purchase({ status: "refunded", purpose: "booking", bookingId: "b1" }), { alice: 0 });
+    const result = await settleCapture(s, { providerOrderId: ORDER_ID });
+    expect(result.status).toBe("refunded_not_credited");
+    expect(s.ledger.rows).toHaveLength(0);
+  });
+
+  it("M11: a row whose order id was never stamped is found by our own id, and stamped now", async () => {
+    const s = store(purchase());
+    s.orderIds.set(PAYMENT_ID, `pending:${PAYMENT_ID}`); // the process died before the stamp
+    expect(await settleCapture(s, { providerOrderId: ORDER_ID })).toEqual({ status: "unknown_order" });
+
+    const result = await settleCapture(s, {
+      providerOrderId: ORDER_ID,
+      providerCaptureId: CAPTURE_ID,
+      paymentId: PAYMENT_ID,
+    });
     expect(result.status).toBe("credited");
+    expect(s.orderIds.get(PAYMENT_ID)).toBe(ORDER_ID);
+    // And from now on the order id alone finds it, as for any other payment.
+    expect((await settleCapture(s, { providerOrderId: ORDER_ID })).status).toBe("already_credited");
+  });
+
+  it("M11: a stamped order id is never overwritten by a later event", async () => {
+    const s = store(purchase());
+    await settleCapture(s, { providerOrderId: ORDER_ID, paymentId: PAYMENT_ID });
+    await settleCapture(s, { providerOrderId: "SOMEONE-ELSES-ORDER", paymentId: PAYMENT_ID });
+    expect(s.orderIds.get(PAYMENT_ID)).toBe(ORDER_ID);
   });
 });
 
