@@ -11,33 +11,41 @@ import {
 } from "@/lib/tutors/filters";
 import { redirect } from "next/navigation";
 import { browseHref, matchSubject, toSearchParams } from "@/lib/tutors/browse-url";
-import { browseTutors, countBrowseTutors, getSubjectTutorCounts } from "@/db/queries/tutors";
+import {
+  browseTutors,
+  countBrowseTutors,
+  getLiveTutorCount,
+  getSubjectTutorCounts,
+} from "@/db/queries/tutors";
 import { getViewer } from "@/lib/auth/guards";
 import { getUsdPerCredit } from "@/lib/settings";
-import { TRUST_GUARANTEE, TRUST_GUARANTEE_CONFIRMED, TRUST_PAYMENT } from "@/lib/copy/trust";
 import { TutorCard } from "@/components/features/tutor-card";
-import { SubjectSearch, TutorFilterChips } from "@/components/features/tutor-filters";
+import { ResultSort, TutorFilterChips } from "@/components/features/tutor-filters";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { FavouriteMode } from "@/components/features/favourite-heart";
+import { BrowseLayout } from "@/components/features/browse/browse-layout";
+import { BrowseSidebar } from "@/components/features/browse/browse-sidebar";
+import { LiveCarousel } from "@/components/features/browse/live-carousel";
+import { SearchBand } from "@/components/features/browse/search-band";
+import { TutorGrid } from "@/components/features/browse/tutor-grid";
 
 export const dynamic = "force-dynamic"; // reads cookies (viewer) + live-derived data
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** How many subjects get their own chip; the search pill reaches the rest. */
+/** How many subjects get their own chip below `lg`; the search and the sidebar reach the rest. */
 const CHIP_SUBJECTS = 5;
 
-/** The promise tile sits after this many cards, where a student is deciding (pages.html, Browse). */
-const PROMISE_AFTER = 3;
-
 /**
- * `/tutors` is browse (live-globe rebuild Part C, SPEC §6/§7.2; pages.html,
- * Browse): search pill, filter chips led by Live now, the count and sort, and
- * the card grid with the no-show promise after the third card. Filters live in
- * the query string, so links are shareable, and `/?filter` links from before
- * Part C land here through the home page's redirect. Anonymous browsing works.
+ * `/tutors` is browse (design round 3 Part C, DESIGN.md v3 "Public pages",
+ * SPEC §6/§7.2): the blue search band, the sidebar from `lg` (the chip row
+ * below), the live row when anyone is live and the filter isn't already "live",
+ * then the filtered grid with the count and sort, the promise tile after the
+ * third card, and paging. Filters live in the query string, so links are
+ * shareable, and `/?filter` links from before the home split land here through
+ * the home page's redirect. Anonymous browsing works.
  *
  * E2E contract: the presence spec visits `/tutors?live=1` and counts
  * `a[href^="/tutors/<slug>"]`; every card still links to its profile.
@@ -45,9 +53,9 @@ const PROMISE_AFTER = 3;
 export default async function BrowsePage({ searchParams }: { searchParams: SearchParams }) {
   const params = toSearchParams(await searchParams);
 
-  // `?q=` is free text from the app's topbar search (Part E). It resolves to a
-  // subject here, on the server, the same way the search pill does in the
-  // browser: a match becomes `?subject=`, and a miss is said out loud.
+  // `?q=` is free text from the header's search and the app's topbar search.
+  // It resolves to a subject here, on the server, the same way the search band
+  // does in the browser: a match becomes `?subject=`, and a miss is said out loud.
   let searchMiss: string | null = null;
   const q = params.get("q")?.trim();
   if (params.has("q")) {
@@ -75,7 +83,7 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
   } catch (e) {
     if (e instanceof SearchParamError) {
       return (
-        <div className="mx-auto w-full max-w-[var(--container-page)] px-4 py-8 md:px-6">
+        <div className="mx-auto w-full max-w-[1360px] px-4 py-8 md:px-6">
           <Alert variant="danger" title="That link has an invalid filter">
             <p>{e.message}</p>
             <div className="mt-3">
@@ -91,17 +99,25 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
   }
 
   const viewer = await getViewer();
-  const [subjectRows, { cards, nextCursor }, total, usdPerCredit, subjectCounts] = await Promise.all([
-    db
-      .select({ slug: subjectsTable.slug, name: subjectsTable.name })
-      .from(subjectsTable)
-      .where(eq(subjectsTable.isActive, true))
-      .orderBy(asc(subjectsTable.sortOrder)),
-    browseTutors(query, { viewerId: viewer?.userId ?? null }),
-    countBrowseTutors(query),
-    getUsdPerCredit(),
-    getSubjectTutorCounts(),
-  ]);
+  const viewerId = viewer?.userId ?? null;
+  const [subjectRows, { cards, nextCursor }, total, usdPerCredit, subjectCounts, liveCount, live] =
+    await Promise.all([
+      db
+        .select({ slug: subjectsTable.slug, name: subjectsTable.name })
+        .from(subjectsTable)
+        .where(eq(subjectsTable.isActive, true))
+        .orderBy(asc(subjectsTable.sortOrder)),
+      browseTutors(query, { viewerId }),
+      countBrowseTutors(query),
+      getUsdPerCredit(),
+      getSubjectTutorCounts(),
+      getLiveTutorCount().catch(() => 0),
+      // The live row: everyone live, whatever the grid is filtered to. Skipped
+      // when the grid itself is the live list, so nobody appears twice.
+      query.liveNow
+        ? Promise.resolve({ cards: [] })
+        : browseTutors(parseTutorSearchParams(new URLSearchParams("live=1")), { viewerId }),
+    ]);
 
   const favouriteMode: FavouriteMode = !viewer
     ? "anon"
@@ -115,25 +131,34 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
 
   const chipSubjects = subjectCounts.slice(0, CHIP_SUBJECTS).map(({ slug, name }) => ({ slug, name }));
   const cardProps = { favouriteMode, loginHref, usdPerCredit };
-  const promiseAfter = TRUST_GUARANTEE_CONFIRMED && cards.length > PROMISE_AFTER ? PROMISE_AFTER : -1;
 
   return (
-    <div className="mx-auto w-full max-w-[var(--container-page)] px-4 pb-[90px] pt-5 md:px-6">
-      <section aria-labelledby="browse-title">
-        <span className="mb-3 block text-small font-semibold uppercase tracking-[0.12em] text-accent">
-          Find a tutor
-        </span>
-        <h1
+    <BrowseLayout
+      band={
+        <SearchBand
           id="browse-title"
-          className="mb-[22px] font-display text-[clamp(30px,3.6vw,46px)] font-medium leading-[1.05] tracking-[-0.03em] text-text"
-        >
-          Who do you want to learn with?
-        </h1>
+          heading="Browse online tutors"
+          subline="Whether you'd like a hand this minute or want to set up regular lessons, there is a tutor here for it."
+          subjects={subjectRows}
+          initialMiss={searchMiss}
+        />
+      }
+      sidebar={<BrowseSidebar subjects={subjectCounts} />}
+      chips={<TutorFilterChips subjects={subjectRows} chipSubjects={chipSubjects} resultCount={total} />}
+    >
+      <LiveCarousel
+        liveCount={liveCount}
+        items={live.cards.map((tutor) => (
+          <TutorCard key={tutor.userId} tutor={tutor} {...cardProps} />
+        ))}
+      />
 
-        <SubjectSearch subjects={subjectRows} initialMiss={searchMiss} />
-
-        <div className="mb-[22px] mt-6">
-          <TutorFilterChips subjects={subjectRows} chipSubjects={chipSubjects} resultCount={total} />
+      <section aria-labelledby="browse-results-title">
+        <div className="mb-3.5 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="browse-results-title" className="font-display text-h2 font-semibold text-text">
+            {query.liveNow ? "Live now" : "All tutors"}
+          </h2>
+          <ResultSort resultCount={total} className="hidden lg:flex" />
         </div>
 
         {cards.length === 0 ? (
@@ -149,22 +174,7 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
           />
         ) : (
           <>
-            {/* The cards' names are h3; without this the page jumps h1 to h3. */}
-            <h2 className="sr-only">Tutors</h2>
-            <ul className="hidden gap-[18px] md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {cards.map((tutor, i) => (
-                <GridItem key={tutor.userId} showPromise={i === promiseAfter}>
-                  <TutorCard tutor={tutor} {...cardProps} />
-                </GridItem>
-              ))}
-            </ul>
-            <ul className="grid gap-3 md:hidden">
-              {cards.map((tutor, i) => (
-                <GridItem key={tutor.userId} showPromise={i === promiseAfter}>
-                  <TutorCard tutor={tutor} {...cardProps} variant="row" />
-                </GridItem>
-              ))}
-            </ul>
+            <TutorGrid cards={cards} cardProps={cardProps} />
             {nextCursor && (
               <div className="mt-8 flex justify-center">
                 <Button asChild variant="outline">
@@ -175,25 +185,6 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
           </>
         )}
       </section>
-    </div>
-  );
-}
-
-/** A grid cell, with the teal promise tile placed before it when due. */
-function GridItem({ showPromise, children }: { showPromise: boolean; children: React.ReactNode }) {
-  return (
-    <>
-      {showPromise && (
-        <li className="flex flex-col justify-between gap-4 rounded-card bg-primary p-6 text-on-primary">
-          <b className="font-display text-[28px] font-medium leading-[1.1] tracking-[-0.02em]">
-            {TRUST_GUARANTEE}
-          </b>
-          <p className="text-small text-on-primary/75">
-            The no-show promise on every session · {TRUST_PAYMENT}
-          </p>
-        </li>
-      )}
-      <li className="list-none">{children}</li>
-    </>
+    </BrowseLayout>
   );
 }

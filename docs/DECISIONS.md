@@ -5147,3 +5147,16 @@ One component, no data change (`subjects` was already capped at three by the que
 3. **Up to three subject chips, two in the row variant.** The chips are a `ul` named "Subjects" so a screen reader gets the list, not three floating words. No chips when a tutor has none, rather than an empty row.
 4. **States and the action are unchanged**, so the presence E2E (card links) and the profile's `#start-now` anchor keep working. Blue "Request now" (the page's primary), outline "Watch live", ink "Book a session".
 5. **The favourites page and the profile editor's preview** render the same component: checked at their widths (the row variant in favourites, the grid card in the editor's preview column).
+
+## Design round 3, Part C: home and browse (`design-v3-home-browse`, 2026-09-26)
+
+The public shape after Oranum. No migration, no dependency, no change to what a query returns.
+
+1. **One layout, two routes.** `/` and `/tutors` render the same `BrowseLayout` (band, sidebar from `lg`, chip row below, main column). Both routes stay: old shared `/?subject=` links still forward to `/tutors` (live-globe Part C), the presence E2E reads `/tutors?live=1`, and a home page that is its own URL is what search engines and Noora's links expect. Home shows the live row and the eight most-taught tutors with "See all tutors"; browse shows the live row (unless the grid is already the live list) and the filtered grid with paging.
+2. **The sidebar writes the query string through the chip row's own hook** (`useFilterParams`, now exported), so a filter is one thing whichever control sets it, links stay shareable and `cursor` resets on every change. Below `lg` the chip row stays, so nothing is reachable at one width only.
+3. **The count and sort live in one place per width.** `ResultSort` was pulled out of the chip row; the chip row still carries it below `lg`, and the main column's heading carries it from `lg`, where the chip row is hidden.
+4. **The carousel is CSS scroll-snap with two buttons**, no library (SPEC §2). It renders nothing when nobody is live, which is what the test project shows; the live row and its buttons are covered by the DOM test and a look on production.
+5. **The search band's submit is the orange act-now fill** ("See tutors"), the one place on the page besides Sign up that carries `highlight`. `SubjectSearch` gained `submitLabel`, `submitVariant`, `placeholder` and `onDark` for it; the header's search (Part B) is the plain form and stays as it is.
+6. **No texture on the band.** InstaEDU's hero has a faint grid; a background image or gradient is decoration the banned-tells rule exists to refuse, and the token test would catch a gradient. Solid `primary`.
+7. **The v2 home is parked, not deleted.** `components/features/home/{hero,globe,app-fan,steps,proof-wall,proof-strip,closing-block,section-heading}.tsx`, `tests/dom/globe.test.tsx`, `getHomeProof`, `getLiveTutorCountries`, `toGlobeMarkers` and the `cobe` dependency stay in the repo unused, on Daniels' call (2026-09-26). `cobe` was only ever loaded by the globe, so it leaves every bundle. The gradient allowlist keeps the globe file so the parked code still passes the test.
+8. **The public container is 1360px** (Part B), which fits 220px of sidebar and four 275px cards at 1440.

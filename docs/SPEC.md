@@ -629,6 +629,8 @@ Admin access is by `profiles.role = 'admin'` only. There is no admin signup rout
 
 ## 6. Routes
 
+> **Round 3 Part C (2026-09-26):** `/` (home) and `/tutors` (browse) render one shared layout, `BrowseLayout` (search band, sidebar from `lg`, live row, grid). Both routes remain; `/?<result key>` still forwards to `/tutors`. The v2 home blocks are parked (DECISIONS).
+
 ```
 PUBLIC
 /                                  Home landing (amended 2026-09-18, live-globe rebuild Part C): hero with

@@ -24,8 +24,8 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 
 export type { Subject };
 
-/** The URL-backed filter state and its setters. Filters live in the query string so links are shareable (SPEC §7.2). */
-function useFilterParams() {
+/** The URL-backed filter state and its setters. Filters live in the query string so links are shareable (SPEC §7.2). Shared by the chip row and the browse sidebar (round 3 Part C). */
+export function useFilterParams() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -96,10 +96,20 @@ function useFilterParams() {
 export function SubjectSearch({
   subjects,
   initialMiss = null,
+  submitLabel = "Search",
+  submitVariant = "primary",
+  placeholder = "Search a subject, like Maths or IELTS",
+  onDark = false,
 }: {
   subjects: Subject[];
   /** Text from a `?q=` search that matched no subject, shown on arrival. */
   initialMiss?: string | null;
+  /** The submit button's label and fill; the search band uses the orange act-now fill (round 3 Part C). */
+  submitLabel?: string;
+  submitVariant?: "primary" | "highlight";
+  placeholder?: string;
+  /** On the blue band the miss line reads on the band, not the canvas. */
+  onDark?: boolean;
 }) {
   const f = useFilterParams();
   const selectedName =
@@ -149,7 +159,7 @@ export function SubjectSearch({
             setText(e.target.value);
             setMiss(null);
           }}
-          placeholder="Search a subject, like Maths or IELTS"
+          placeholder={placeholder}
           autoComplete="off"
           aria-describedby={miss ? "subject-search-miss" : undefined}
           className="min-w-0 flex-1 bg-transparent text-body-lg font-medium text-text outline-none placeholder:font-normal placeholder:text-text-muted"
@@ -159,12 +169,16 @@ export function SubjectSearch({
             <option key={s.slug} value={s.name} />
           ))}
         </datalist>
-        <Button type="submit" size="sm">
-          Search
+        <Button type="submit" size="sm" variant={submitVariant}>
+          {submitLabel}
         </Button>
       </div>
       {miss && (
-        <p id="subject-search-miss" role="status" className="mt-2 pl-5 text-small text-text-muted">
+        <p
+          id="subject-search-miss"
+          role="status"
+          className={cn("mt-2 pl-5 text-small", onDark ? "text-on-primary/85" : "text-text-muted")}
+        >
           No subject matches &ldquo;{miss}&rdquo;. Try a broader word, or pick a subject below.
         </p>
       )}
@@ -236,13 +250,11 @@ export function TutorFilterChips({
       : f.selectedLangs.length === 1
         ? f.selectedLangs[0]!
         : `${f.selectedLangs.length} languages`;
-  const sortLabel = SORT_OPTIONS.find((o) => o.value === f.sort)?.label ?? "Relevance";
-
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+    <div data-filter-chips className="flex flex-col gap-3 lg:flex-row lg:items-center">
       <div
         role="group"
-        aria-label="Filters"
+        aria-label="Filter chips"
         className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0"
       >
         <button
@@ -308,31 +320,44 @@ export function TutorFilterChips({
         </DropdownChip>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 whitespace-nowrap lg:ml-auto">
-        <p data-numeric className="text-small text-text-muted" aria-live="polite">
-          {resultCount.toLocaleString()} {resultCount === 1 ? "tutor" : "tutors"}
-        </p>
-        <span aria-hidden className="text-text-muted">·</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="focus-ring inline-flex items-center gap-1 rounded-full text-small text-text-muted hover:text-text"
-          >
-            Sort: <span className="font-medium text-text">{sortLabel}</span>
-            <ChevronDown className="size-4" aria-hidden />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {SORT_OPTIONS.map((o) => (
-              <DropdownMenuCheckboxItem
-                key={o.value}
-                checked={f.sort === o.value}
-                onCheckedChange={() => f.setValue("sort", o.value === "relevance" ? null : o.value)}
-              >
-                {o.label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <ResultSort resultCount={resultCount} className="lg:ml-auto" />
+    </div>
+  );
+}
+
+/**
+ * The result count and the sort menu. Inside the chip row below `lg`; in the
+ * main column's heading beside the sidebar from `lg` (round 3 Part C), so the
+ * sort is never on the page twice at one width.
+ */
+export function ResultSort({ resultCount, className }: { resultCount: number; className?: string }) {
+  const f = useFilterParams();
+  const sortLabel = SORT_OPTIONS.find((o) => o.value === f.sort)?.label ?? "Relevance";
+  return (
+    <div className={cn("flex shrink-0 items-center gap-3 whitespace-nowrap", className)}>
+      <p data-numeric className="text-small text-text-muted" aria-live="polite">
+        {resultCount.toLocaleString()} {resultCount === 1 ? "tutor" : "tutors"}
+      </p>
+      <span aria-hidden className="text-text-muted">·</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="focus-ring inline-flex items-center gap-1 rounded-full text-small text-text-muted hover:text-text"
+        >
+          Sort: <span className="font-medium text-text">{sortLabel}</span>
+          <ChevronDown className="size-4" aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {SORT_OPTIONS.map((o) => (
+            <DropdownMenuCheckboxItem
+              key={o.value}
+              checked={f.sort === o.value}
+              onCheckedChange={() => f.setValue("sort", o.value === "relevance" ? null : o.value)}
+            >
+              {o.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

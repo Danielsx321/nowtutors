@@ -18,7 +18,12 @@ for Noora's yes on the two mockups (`outputs/nowtutors/round-3-mockups/`, sent 2
 - **Noora said yes to the mockups (2026-09-26, relayed by Daniels).** Parts C to E unblocked.
 - **Part D (`design-v3-card`) IN REVIEW.** Landscape 16:10 card with the name strip on the photo, rate
   beside up to three subject chips, one action; proof row gone (to the profile in Part E). Card test
-  14/14. **Next:** Part C (home and browse), then E (profile), then F.
+  14/14. PR #114.
+- **Part C (`design-v3-home-browse`, stacked on D) IN REVIEW.** `/` and `/tutors` share `BrowseLayout`:
+  the blue search band, the `lg` sidebar (Live now, Subjects with counts, Price, Languages), the Live now
+  carousel, the grid with the promise tile, the chip row below `lg`. The v2 home blocks and the globe are
+  parked. New DOM tests for the sidebar and carousel (10/10); the design smoke asserts the sidebar at
+  1440 and the chip row at 360. **Next:** Daniels merges D then C; Part E (profile); Part F.
 
 ## Earlier: state on 2026-09-20
 
