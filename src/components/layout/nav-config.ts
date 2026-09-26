@@ -43,17 +43,14 @@ export const publicNav: { label: string; href: string }[] = [
 ];
 
 /**
- * The pill nav in the site header (DESIGN.md v2). "Teach" points at signup,
- * which is where a tutor starts (answered with the rebuild plan's open
- * questions, 2026-09-17). "How it works" scrolls to the home page's app-screens
- * section (`id="how"`), added with it in Part C: §10.3 means a nav item waits
- * for its target.
+ * The site header's links (DESIGN.md v3, design round 3 Part B). Two links,
+ * both into browse: the live list first, then everyone. "Teach" moved to the
+ * footer ("Become a tutor"); "How it works" went with the v2 home blocks it
+ * pointed at (parked in round 3 Part C).
  */
 export const siteNav: { label: string; href: string }[] = [
-  { label: "Find tutors", href: "/tutors" },
-  { label: "Live now", href: "/live" },
-  { label: "How it works", href: "/#how" },
-  { label: "Teach", href: "/signup" },
+  { label: "Live tutors", href: "/tutors?live=1" },
+  { label: "All tutors", href: "/tutors" },
 ];
 
 /**
