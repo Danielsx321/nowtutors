@@ -96,6 +96,16 @@ Rating is not in the row until reviews exist, which comes after launch (SPEC §1
 
 Cards separate from the canvas by their border, not a shadow. A card that is one big link lifts 3px with `shadow-lift` on hover and holds still under reduced motion.
 
+## Public pages (v3)
+
+The public shape is Oranum's, in the InstaEDU colours (design round 3, 2026-09-26).
+
+- **Header (Part B).** A 56px navy bar, a dark island: wordmark left; "Live tutors" and "All tutors" as text links, the current one underlined in `accent` (no pills); a subject search (a plain form to `/tutors?q=`) on `/tutors`, since home has its own search band and a profile's point is the panel; Log in as text, Sign up as the `highlight` orange fill. Signed in, the actions become the avatar and a `highlight` link to the person's home. Below `md`, a menu button with the same links, the search and the same actions.
+- **Footer (Part B).** Navy, a dark island. Brand and the real live count, then "For tutors" and "Help" link columns and the trust pair, then the bottom bar. A Legal column arrives with Phase 10. Every href is checked against `lib/routes.ts`.
+- **Home and browse (Part C).** One layout, two routes: a blue search band, a 220px sidebar at `lg` (Live now, Subjects with counts, Price, Languages) beside a "Live now" carousel and an "All tutors" grid four across at 1440; the chip row below `lg`. The globe and the v2 home blocks are parked.
+- **Tutor card (Part D).** Landscape photo with the live chip and the heart on it and the name and country on a navy strip along its bottom edge; under the photo the stacked rate and up to three subject chips; one action.
+- **Profile (Part E).** A stage on the left (the photo, or the broadcast player for a signed-in student when the tutor is live), the identity block and the white blocks under it, the sticky panel on the right unchanged.
+
 ## Icons
 
 Plain line icons, stroke 1.8, drawn in `currentColor` or teal. No icon sits on a tinted tile, a coloured circle or a rounded square of its own. An icon next to text takes the text's colour unless it is the live signal.

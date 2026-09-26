@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 
 /**
- * The site footer (design v2 Part B, DESIGN.md "Tokens / dark islands" and
+ * The site footer (design round 3 Part B, DESIGN.md v3 "Dark islands" and
  * SPEC §10.3).
  *
  * Asserted: every column renders; **every link points at a route the app
@@ -36,12 +36,14 @@ describe("SiteFooter", () => {
 
   it("renders every column", () => {
     render(<SiteFooter liveCount={0} />);
-    for (const heading of ["Learn", "Teach", "Account", "Trust"]) {
+    for (const heading of ["For tutors", "Help", "Trust"]) {
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     }
-    const learn = screen.getByRole("navigation", { name: "Learn" });
-    expect(within(learn).getByRole("link", { name: "Find tutors" }).getAttribute("href")).toBe("/tutors");
-    expect(within(learn).getByRole("link", { name: "Live now" }).getAttribute("href")).toBe("/live");
+    const help = screen.getByRole("navigation", { name: "Help" });
+    expect(within(help).getByRole("link", { name: "Find a live tutor" }).getAttribute("href")).toBe("/tutors?live=1");
+    expect(within(help).getByRole("link", { name: "Live lessons" }).getAttribute("href")).toBe("/live");
+    const tutors = screen.getByRole("navigation", { name: "For tutors" });
+    expect(within(tutors).getByRole("link", { name: "Become a tutor" }).getAttribute("href")).toBe("/signup");
   });
 
   it("shows the real live count", () => {

@@ -5125,3 +5125,15 @@ Noora's third brief, relayed 2026-09-26: the page structure of oranum.com and th
 4. **`highlight` is orange with a white label**, still the second-action fill. `spark` stays marks only, `spark-text` the readable orange, and the "orange as text" test is unchanged. What relaxed: "orange as a large fill" is now allowed for `highlight` alone. Yellow left the system; the test that asserted "no yellow signal role" now asserts no token sits in the yellow band (amber `warning` excepted, alerts only).
 5. **The dark scope is navy and serves three things**: rooms, the site header and the footer (Part B). No new role for "navy"; `ink` is navy in the light theme and the dark ground is `#1B2633`, so a dark island and a room stage are the same dark.
 6. **No SPEC rule changed.** §10.1 carries a pointer to the v3 table in DESIGN.md; the v2 table stays for the record.
+
+## Design round 3, Part B: the public shell (`design-v3-shell`, 2026-09-26)
+
+Header and footer only. No layout change elsewhere, no migration, no dependency.
+
+1. **The header is a dark island.** `theme-dark bg-ground` on the `header`, so it is the same navy as a room stage and the footer, and every component inside it (buttons, avatar, drawer) re-resolves its roles with no header-specific colour code. That is the v2 dark-island rule doing its job rather than a new mechanism.
+2. **Two links, both into browse.** "Live tutors" (`/tutors?live=1`) and "All tutors" (`/tutors`). "Teach" moved to the footer as "Become a tutor"; "How it works" pointed at the v2 app-screens block, which Part C parks, so it goes now and the header stops linking at an anchor. `/#how` is gone from the footer and the tests too.
+3. **Current-page rule for two links on one path.** The header does not read the query string, so "All tutors" is current on any browse URL and "Live tutors" never is; the Live now chip on the page says which view is showing. Reading the query in a client header would re-render on every filter change for a 2px underline.
+4. **The search is a plain form.** `GET /tutors?q=` resolves to a subject on the server (live-globe Part C), so the header's search works before any script runs and needs no state. It shows on `/tutors` only: home has the search band (Part C) and a profile's point is the panel.
+5. **Sign up and "Dashboard" are `highlight` orange; Log in is `ghost`.** Green stays the live signal (Part A decision 3). If Noora wants the green Sign up from her screenshot, the two `variant="highlight"` on the header's Sign up become `variant="live"` and DESIGN.md says green means live or join.
+6. **The footer lost its two action buttons and the "Learn / Teach / Account" split** for Oranum's plainer three columns: "For tutors", "Help", and the trust pair standing in for "Legal" until Phase 10 ships the pages. The live count stays; it is the one real number a footer can show.
+7. **Widths.** The public shell's container is 1360px (was 1200px), because a 220px sidebar plus four cards needs it (Part C). The app shell is unchanged.
