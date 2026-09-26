@@ -5171,3 +5171,11 @@ Left column only; the sticky panel, the bottom bar and every E2E string are unto
 4. **No ratings.** Oranum shows a ratings count; SPEC §18 says none until reviews exist after launch.
 5. **The player on the profile counts as a viewer once.** It uses the same Presence key (`agoraUid(profile.id)`) as the `/live` page, so a student with the profile and the live page open counts once, as before.
 6. **The bottom bar on phones is unchanged**; the stage sits above the fold and the bar still jumps to `#start-now` or `#book`.
+
+## Design round 3, Part F: acceptance (`design-v3-acceptance`, 2026-09-26)
+
+1. **The "before" set is round 2's approved "after" set**, not a fresh build of `a71ee74`. It is the exact state Noora last saw and signed off, so it is the honest comparison, and it saved a throwaway worktree build on a machine that had already gone down once today.
+2. **Lighthouse ran with the desktop preset on a local production build** against the test project, from the Playwright Chromium. Accessibility 100 on `/`, `/tutors`, a profile and `/login` with no failing audits. Performance 84 on home and browse (LCP under 1 s, TBT 10 to 20 ms; the score is held by the unoptimised sample photos and local serving), 94 on the profile, 100 on login. Not a production measurement.
+3. **Hydration on browse lands about five seconds after load on this machine** (measured with Playwright while checking Part C). Lighthouse's TBT of 20 ms says the main thread is not the reason; the page's client bundle is the sidebar, the chip row and the carousel, all small. Left as an observation for Phase 10's performance pass, to measure on production rather than here.
+4. **What still needs a live tutor to be seen**: the "Live now" carousel with its buttons and the profile's overlay and embedded player. The test project has no live tutors; both are covered by DOM tests and are on the workspace's production checklist (`nowtutors-pending-live-tests`).
+5. **No kitchen-sink Browse section was added** (plan deviation): the sidebar reads the URL and would need a Suspense wrapper on the static kitchen sink. The real pages and the DOM tests are the record.

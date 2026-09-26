@@ -4,6 +4,15 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-26)
 
+**DESIGN ROUND 3 COMPLETE (SPEC Phase 9.6).** Noora's two references (Oranum structure, InstaEDU colours), plan in the workspace at `plans/2026-09-26-nowtutors-design-round-3.md`. All five parts merged in order: A palette (#111), B shell (#113), D card (#114), C home and browse (#115), E profile (#116); `main` is `e98d81a` plus the Part F docs.
+- **Acceptance (Part F, `design-v3-acceptance`):** all five E2E specs pass in one run on Daniels' Mac (25 passed, 11.4 min); token test 105/105; Lighthouse accessibility 100 on `/`, `/tutors`, a profile and `/login`; production checked serving the new pages. The before-and-after set for Noora is in the workspace (`outputs/nowtutors/before-after-round-3/`), Daniels sends it.
+- **Still to see on production with a live tutor:** the Live now carousel and the profile's live overlay and embedded player (workspace memory `nowtutors-pending-live-tests`).
+- The v2 home blocks and the globe are parked in `components/features/home/`, not deleted.
+
+**Next:** Phase 10 (email, polish, launch prep), after the code-review launch decisions (M4, M6, R3, M10, T2).
+
+## Earlier on 2026-09-26 (round 3 in progress)
+
 **DESIGN ROUND 3 IN PROGRESS** (Noora: Oranum structure, InstaEDU colours; plan in the workspace,
 `plans/2026-09-26-nowtutors-design-round-3.md`). Six parts, one PR each, from `main` (`a71ee74`):
 A palette, B public shell, C home and browse, D tutor card, E profile, F acceptance. Parts C to E wait
