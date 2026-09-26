@@ -5114,3 +5114,14 @@ Performance review finding P1 (`docs/review/2026-09-21-performance.md`). Started
 5. **`getUser()` now returns `{ id, email }`**, which is everything any caller read. Typecheck found no other use.
 6. **Not confirmed by instrumenting production.** The split between the two calls was inferred, not measured with a `Server-Timing` header, because a preview deployment can't be signed in to from the workspace. The check is the same timing run as the review, from a signed-in browser, after deploy.
 7. **SPEC §5** carries the rule, including that the access-token lifetime stays at one hour or less.
+
+## Design round 3, Part A: the v3 palette (`design-v3-palette`, 2026-09-26)
+
+Noora's third brief, relayed 2026-09-26: the page structure of oranum.com and the colours of the InstaEDU tutoring site (two screenshots, 24 Sep). Plan: workspace `plans/2026-09-26-nowtutors-design-round-3.md`. Part A is colours only; no layout, no migration, no dependency, no money or booking change.
+
+1. **Colours changed through roles, never in components.** One CSS block per theme, `tokens.ts`, the contract. Every screen, the dashboards and rooms included, took the palette with no component edit. That is what the role system was for.
+2. **The contrast test set the final values, not the screenshots.** InstaEDU's own green (`#5CB85C`, 2.48:1 with a white label) and orange (`#E8582D`, 3.58:1) fail the 4.5:1 floor, so the fills are deeper: `highlight` `#BF4019` (5.3:1) in both themes (the first dark value, `#E8582D`, failed the pair and was replaced), `live` stays `#1E7A46`. The hues are hers; the depth is the test's.
+3. **Green stays the live signal and nothing else.** InstaEDU's green Sign up would make green mean "join" too. Sign up and "See tutors" are `highlight` orange, her act-now colour (Part B draws them). If she asks for a green Sign up it is a one-word change in `site-header.tsx`, recorded then.
+4. **`highlight` is orange with a white label**, still the second-action fill. `spark` stays marks only, `spark-text` the readable orange, and the "orange as text" test is unchanged. What relaxed: "orange as a large fill" is now allowed for `highlight` alone. Yellow left the system; the test that asserted "no yellow signal role" now asserts no token sits in the yellow band (amber `warning` excepted, alerts only).
+5. **The dark scope is navy and serves three things**: rooms, the site header and the footer (Part B). No new role for "navy"; `ink` is navy in the light theme and the dark ground is `#1B2633`, so a dark island and a room stage are the same dark.
+6. **No SPEC rule changed.** §10.1 carries a pointer to the v3 table in DESIGN.md; the v2 table stays for the record.

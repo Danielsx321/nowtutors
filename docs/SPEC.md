@@ -1557,7 +1557,9 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 
 ### 10.1 Tokens
 
-Tokens are **roles, not colours**. Components reference `surface`, `text`, `primary`, `accent`, `live`... never a hue. Two themes share the same roles: light on `:root`, dark under `.theme-dark` (scoped to the live rooms and to dark islands such as the footer; no user toggle in v1). Tailwind's default palette is switched off (`--color-*: initial`).
+Tokens are **roles, not colours**. Components reference `surface`, `text`, `primary`, `accent`, `live`... never a hue. Two themes share the same roles: light on `:root`, dark under `.theme-dark` (scoped to the live rooms and to dark islands such as the header and footer; no user toggle in v1). Tailwind's default palette is switched off (`--color-*: initial`).
+
+**v3 palette (design round 3, 2026-09-26).** The values below are v2's and are kept for the record; the binding values are the v3 table in `docs/DESIGN.md` ("Tokens") and `src/lib/design/tokens.ts`. v3: navy `ink` (header, footer, dark islands), mid blue `primary` and `accent`, orange `highlight` (act now, white label), green `live` unchanged, light grey `ground`, no yellow role. Same roles, same pairs, same floors.
 
 | Token | Light | Dark (rooms) | Role |
 |---|---|---|---|

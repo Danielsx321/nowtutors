@@ -15,35 +15,37 @@
    sanctioned pair clears its WCAG floor.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  /* `ground` is the page canvas (v2: a warm off-white, not white, so white
-     cards read as cards). `surface` is kept as the older name for the same
-     colour so every existing `bg-surface` stays correct; new code uses
-     `bg-ground` for the canvas and `bg-surface-raised` for cards. */
-  --ground: #F1F1EF;
-  --surface: #F1F1EF;
+  /* v3 (design round 3, 2026-09-26): the InstaEDU palette. `ground` is the
+     light grey band from the reference, so white cards read as cards. Navy
+     is `ink`, the header, the footer and every dark island; the mid blue is
+     `primary` and `accent`; orange is `highlight`, the act-now fill; green
+     stays the live signal. `surface` is the older name for the canvas. */
+  --ground: #EFEFEF;
+  --surface: #EFEFEF;
   --surface-raised: #FFFFFF;
-  --surface-muted: #E9E9E5;
-  --surface-inverse: #15171C;
-  --text: #111214;
-  --text-muted: #63676E;
+  --surface-muted: #E4E4E4;
+  --surface-inverse: #1F2B3A;
+  --text: #1F2B3A;
+  --text-muted: #5A6472;
   --text-on-inverse: #FFFFFF;
-  --primary: #0B3A47;
+  --primary: #1C5E92;
   --on-primary: #FFFFFF;
-  --highlight: #F6C544;
-  --on-highlight: #111214;
-  --ink: #111214;
+  --highlight: #BF4019;
+  --on-highlight: #FFFFFF;
+  --ink: #1F2B3A;
   --on-ink: #FFFFFF;
-  /* `spark` is orange for marks only (globe dots, small badges). Text and
-     icons that must be readable use `spark-text`, which clears 4.5:1. */
-  --spark: #E8843A;
-  --spark-text: #A85416;
-  --accent: #0B3A47;
+  /* `spark` is the bright orange for marks only (badges, counts). Text and
+     icons that must be readable use `spark-text`; a large orange fill is
+     `highlight`, which carries a white label at 5.3:1. */
+  --spark: #E8582D;
+  --spark-text: #B83C17;
+  --accent: #1C5E92;
   --live: #1E7A46;
   --on-live: #FFFFFF;
   --live-surface: #E6F7EC;
-  --border: #E2E2DF;
-  --border-strong: #767C88;
-  --focus: #0B3A47;
+  --border: #DCDCDC;
+  --border-strong: #6F7986;
+  --focus: #1C5E92;
   --danger: #B3261E;
   --on-danger: #FFFFFF;
   --danger-surface: #FBEAE9;
@@ -53,46 +55,46 @@
   --success-surface: #E6F7EC;
 
   /* Scrim behind modals and drawers: the inverse surface at 60%. */
-  --scrim: rgb(21 23 28 / 0.6);
+  --scrim: rgb(31 43 58 / 0.6);
 
   color-scheme: light;
 }
 
 .theme-dark {
-  /* Room values re-checked against the session-room mockup: #0E0F12 stage,
-     #16181D bars and cards. */
-  --ground: #0E0F12;
-  --surface: #0E0F12;
-  --surface-raised: #16181D;
-  --surface-muted: #16181D;
-  --surface-inverse: #15171C;
-  --text: #F2F3F5;
-  --text-muted: #A4A9B4;
+  /* v3: the dark scope is navy. It serves the rooms, the site header and the
+     footer, so a room stage and the header are the same dark. */
+  --ground: #1B2633;
+  --surface: #1B2633;
+  --surface-raised: #243244;
+  --surface-muted: #243244;
+  --surface-inverse: #1F2B3A;
+  --text: #F2F4F7;
+  --text-muted: #A9B3C0;
   --text-on-inverse: #FFFFFF;
-  /* In a room the loud action stays a light fill: teal on near-black is too
-     dim to carry a button (1.5:1 against the stage). */
-  --primary: #F2F3F5;
-  --on-primary: #0E0F12;
-  --highlight: #F6C544;
-  --on-highlight: #111214;
-  --ink: #F2F3F5;
-  --on-ink: #0E0F12;
-  --spark: #E8843A;
+  /* In a room the loud action stays a light fill: the mid blue on navy is
+     too dim to carry a button (2:1 against the stage). */
+  --primary: #F2F4F7;
+  --on-primary: #1B2633;
+  --highlight: #BF4019;
+  --on-highlight: #FFFFFF;
+  --ink: #F2F4F7;
+  --on-ink: #1B2633;
+  --spark: #E8582D;
   --spark-text: #F0A868;
-  --accent: #7FC4D1;
+  --accent: #8FC6F2;
   --live: #5FD68A;
-  --on-live: #0E0F12;
-  --live-surface: #16181D;
-  --border: #2A2E37;
-  --border-strong: #767C88;
-  --focus: #7FC4D1;
+  --on-live: #1B2633;
+  --live-surface: #243244;
+  --border: #33425A;
+  --border-strong: #7A8797;
+  --focus: #8FC6F2;
   --danger: #FF8A80;
-  --on-danger: #0E0F12;
-  --danger-surface: #16181D;
+  --on-danger: #1B2633;
+  --danger-surface: #243244;
   --warning: #FFC857;
-  --warning-surface: #16181D;
+  --warning-surface: #243244;
   --success: #5FD68A;
-  --success-surface: #16181D;
+  --success-surface: #243244;
 
   --scrim: rgb(0 0 0 / 0.7);
 

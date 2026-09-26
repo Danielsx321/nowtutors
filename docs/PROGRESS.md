@@ -2,7 +2,17 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-20)
+## Current state (2026-09-26)
+
+**DESIGN ROUND 3 IN PROGRESS** (Noora: Oranum structure, InstaEDU colours; plan in the workspace,
+`plans/2026-09-26-nowtutors-design-round-3.md`). Six parts, one PR each, from `main` (`a71ee74`):
+A palette, B public shell, C home and browse, D tutor card, E profile, F acceptance. Parts C to E wait
+for Noora's yes on the two mockups (`outputs/nowtutors/round-3-mockups/`, sent 2026-09-26).
+- **Part A (`design-v3-palette`) IN REVIEW.** v3 values in both themes, the yellow test rewritten,
+  DESIGN.md v3 tokens table and banned tells, SPEC §10.1 pointer, DECISIONS. 105/105 token tests.
+  No layout change anywhere. **Next:** Daniels merges; Part B (navy header and footer).
+
+## Earlier: state on 2026-09-20
 
 **LIVE-GLOBE REBUILD COMPLETE (SPEC Phase 9.5).** Parts A to I are merged and live; `main` is `f97c6f4`.
 Everything marked "in review" below has since merged: PRs #100 to #103 (database clients) and Part I PR 1 (#101).
