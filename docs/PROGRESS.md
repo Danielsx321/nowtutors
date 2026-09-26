@@ -8,9 +8,13 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 `plans/2026-09-26-nowtutors-design-round-3.md`). Six parts, one PR each, from `main` (`a71ee74`):
 A palette, B public shell, C home and browse, D tutor card, E profile, F acceptance. Parts C to E wait
 for Noora's yes on the two mockups (`outputs/nowtutors/round-3-mockups/`, sent 2026-09-26).
-- **Part A (`design-v3-palette`) IN REVIEW.** v3 values in both themes, the yellow test rewritten,
+- **Part A (`design-v3-palette`, PR #111) IN REVIEW.** v3 values in both themes, the yellow test rewritten,
   DESIGN.md v3 tokens table and banned tells, SPEC §10.1 pointer, DECISIONS. 105/105 token tests.
-  No layout change anywhere. **Next:** Daniels merges; Part B (navy header and footer).
+  No layout change anywhere.
+- **Part B (`design-v3-shell`, stacked on Part A) IN REVIEW.** Navy header (56px, two links, subject
+  search on `/tutors`, text Log in, orange Sign up), navy three-column footer, `/#how` gone. Header and
+  footer tests rewritten. **Next:** Daniels merges A then B; Noora's yes on the mockups; then Parts C
+  (home and browse) and D (card) in parallel, E (profile), F (acceptance).
 
 ## Earlier: state on 2026-09-20
 
