@@ -52,11 +52,25 @@ describe("design tokens: contrast floors (SPEC §10.3)", () => {
     expect(bad).toEqual([]);
   });
 
-  // Yellow came back in v2 as `highlight`, the secondary button fill. It is
-  // still not a signal: green alone means live (Noora, 2026-09-16).
-  it("has no yellow signal role any more (green is live now)", () => {
+  // v3 (design round 3): yellow left the system. `highlight` is orange, the
+  // act-now fill from the InstaEDU reference. Green alone still means live.
+  it("has no yellow role: highlight is orange and no token sits in the yellow band", () => {
     expect(Object.keys(tokens)).not.toContain("signal");
     expect(css).not.toMatch(/--signal\b/);
+    expect(tokens.highlight.light.toUpperCase()).not.toBe("#F6C544");
+    const yellow: string[] = [];
+    for (const [name, v] of Object.entries(tokens)) {
+      for (const theme of themes) {
+        const hex = v[theme].replace("#", "");
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        // Yellow: red and green both high and close, blue well under both.
+        if (r > 180 && g > 150 && Math.abs(r - g) < 0.15 * r && b < 0.5 * r) yellow.push(`${name}.${theme}`);
+      }
+    }
+    // The warning colours are amber on purpose (alerts), never a fill or a signal.
+    expect(yellow.filter((n) => !n.startsWith("warning"))).toEqual([]);
   });
 });
 

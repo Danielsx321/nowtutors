@@ -2,9 +2,9 @@
 
 _The design contract. SPEC §10 says what the system is; this file says how to use it. Read it before styling anything. Values live in `src/app/globals.css` (for the browser) and `src/lib/design/tokens.ts` (for the test); the two must agree, and `tests/unit/design-tokens.test.ts` fails if they don't._
 
-Direction: **"live globe"** (v2, approved 2026-09-17; mockups in the workspace at `outputs/premium-mockup/`, research at `outputs/premium-design-research/`). The first overhaul ("On Air", 2026-09-15) fixed a dated look and left a plain one. v2 keeps its bones (roles not colours, one live signal, real faces, proof on the person) and gives the product a face: a warm off-white canvas with white cards on it, teal on the main actions, yellow on the second action beside them, orange as a mark, and a turning globe on the home page showing where tutors are live this minute.
+Direction: **v3, design round 3** (2026-09-26, Noora's two references: the page structure of oranum.com and the colours of the InstaEDU tutoring site; notes in the workspace at `outputs/nowtutors/round-3-references-2026-09-26/`, mockups at `outputs/nowtutors/round-3-mockups/`). v3 keeps v2's bones (roles not colours, one live signal, real faces, proof on the person, the same components) and changes two things: the palette, which moves to navy, mid blue, green and orange on a light grey canvas with white cards; and the shape of the public pages, which follow Oranum (a subject sidebar beside a live carousel and a card grid, a profile with a stage). The globe and the v2 home blocks are parked, not deleted (DECISIONS, round 3 Part C). Dashboards and rooms keep their v2 layout in the v3 colours.
 
-Colour has a job or it doesn't appear. Teal leads, yellow answers it, green means live and nothing else, orange marks a spot.
+Colour has a job or it doesn't appear. Blue leads, orange says act now, green means live and nothing else, navy holds the frame.
 
 ## Tokens
 
@@ -12,33 +12,33 @@ Components reference roles, never colours. `bg-surface-raised`, `text-text-muted
 
 Two themes, same roles. Light on `:root`; dark under `.theme-dark`. The dark scope exists for the live rooms (session, classroom, broadcast viewer) and for dark islands like the footer. A component never knows which theme it is in.
 
-| Token | Light | Dark (rooms) | Role, one sentence |
+| Token | Light | Dark (rooms, header, footer) | Role, one sentence |
 |---|---|---|---|
-| `ground` | `#F1F1EF` | `#0E0F12` | The page canvas. Warm off-white, so a white card reads as a card without a shadow. |
+| `ground` | `#EFEFEF` | `#1B2633` | The page canvas: the light grey band from the InstaEDU reference, so a white card reads as a card without a shadow. In the dark scope it is navy. |
 | `surface` | = ground | = ground | The older name for the canvas, kept so existing `bg-surface` code stays correct. New code uses `bg-ground`. |
-| `surface-raised` | `#FFFFFF` | `#16181D` | Cards, panels, popovers. |
-| `surface-muted` | `#E9E9E5` | `#16181D` | Grouped areas, table headers, skeletons, the quiet avatar fallback. |
-| `surface-inverse` | `#15171C` | `#15171C` | Non-interactive dark fills: the tooltip. Interactive dark areas use a dark island instead (below). |
-| `text` | `#111214` | `#F2F3F5` | Body and headings. 16.57:1 on ground. |
-| `text-muted` | `#63676E` | `#A4A9B4` | Secondary text. 5.02:1 on ground, 5.68:1 on cards. |
+| `surface-raised` | `#FFFFFF` | `#243244` | Cards, panels, popovers. |
+| `surface-muted` | `#E4E4E4` | `#243244` | Grouped areas, table headers, skeletons, the quiet avatar fallback. |
+| `surface-inverse` | `#1F2B3A` | `#1F2B3A` | Non-interactive dark fills: the tooltip. Interactive dark areas use a dark island instead (below). |
+| `text` | `#1F2B3A` | `#F2F4F7` | Body and headings, navy. 14.34:1 on white, 12.36:1 on ground. |
+| `text-muted` | `#5A6472` | `#A9B3C0` | Secondary text. Clears 4.5:1 on ground and on cards. |
 | `text-on-inverse` | `#FFFFFF` | `#FFFFFF` | Text on `surface-inverse`. |
-| `primary` | `#0B3A47` | `#F2F3F5` | The teal fill: the main action on a screen and the active nav pill. In a room it inverts to a light pill, because teal on near-black is too dim to carry a button. |
-| `on-primary` | `#FFFFFF` | `#0E0F12` | Text on `primary`. 12.28:1 light. |
-| `highlight` | `#F6C544` | `#F6C544` | The yellow fill: the second action beside a primary one ("Book for later"). Same in both themes. |
-| `on-highlight` | `#111214` | `#111214` | Text on `highlight`. 11.59:1. |
-| `ink` | `#111214` | `#F2F3F5` | A neutral solid button, for actions inside a card where teal would compete with the page's own primary. |
-| `on-ink` | `#FFFFFF` | `#0E0F12` | Text on `ink`. |
-| `spark` | `#E8843A` | `#E8843A` | Orange, for **marks only**: globe dots, a small badge, the log-out glyph. Never text, never a large fill. |
-| `spark-text` | `#A85416` | `#F0A868` | The readable orange, for the rare orange word or icon. 4.71:1 on ground. |
-| `accent` | `#0B3A47` | `#7FC4D1` | The brand teal as links, selected states and the focus ring. |
-| `live` | `#1E7A46` | `#5FD68A` | The live signal: "Live now" and "LIVE" as text, the dot, the on-air ring, the "Go live" and "Join" fills. Never on the teal accent (2.3:1). |
-| `on-live` | `#FFFFFF` | `#0E0F12` | Text on `live`. |
-| `live-surface` | `#E6F7EC` | `#16181D` | The live chip's background. `live` on it: 4.81:1. |
-| `border` | `#E2E2DF` | `#2A2E37` | Hairlines and card borders. Decorative, no floor. |
-| `border-strong` | `#767C88` | `#767C88` | Inputs, checkboxes, anything a person has to find. 3.71:1 on ground. |
+| `primary` | `#1C5E92` | `#F2F4F7` | The mid-blue fill: the main action on a screen, the search band, the active nav. 6.85:1 with a white label. In a room it inverts to a light pill, because the blue on navy is too dim to carry a button. |
+| `on-primary` | `#FFFFFF` | `#1B2633` | Text on `primary`. |
+| `highlight` | `#BF4019` | `#BF4019` | The orange fill, act now: Sign up, "See tutors", and the second action standing beside a primary one. 5.3:1 with a white label. |
+| `on-highlight` | `#FFFFFF` | `#FFFFFF` | Text on `highlight`. |
+| `ink` | `#1F2B3A` | `#F2F4F7` | Navy. The header, the footer, a neutral solid button inside a card where blue would compete with the page's own primary. |
+| `on-ink` | `#FFFFFF` | `#1B2633` | Text on `ink`. |
+| `spark` | `#E8582D` | `#E8582D` | The bright orange, for **marks only**: a small badge, an unread count, the log-out glyph. Never text. A large orange fill is `highlight`. |
+| `spark-text` | `#B83C17` | `#F0A868` | The readable orange, for the rare orange word or icon. Clears 4.5:1 on ground. |
+| `accent` | `#1C5E92` | `#8FC6F2` | The brand blue as links, selected states and the focus ring. |
+| `live` | `#1E7A46` | `#5FD68A` | The live signal: "Live now" and "LIVE" as text, the dot, the on-air ring, the "Go live" and "Join" fills. Never on the blue accent. |
+| `on-live` | `#FFFFFF` | `#1B2633` | Text on `live`. |
+| `live-surface` | `#E6F7EC` | `#243244` | The live chip's background. |
+| `border` | `#DCDCDC` | `#33425A` | Hairlines and card borders. Decorative, no floor. |
+| `border-strong` | `#6F7986` | `#7A8797` | Inputs, checkboxes, anything a person has to find. Clears 3:1 on ground. |
 | `focus` | = accent | = accent | The one focus ring. |
 | `danger` | `#B3261E` | `#FF8A80` | Destructive text and buttons, with `danger-surface` behind danger alerts. |
-| `warning` | `#8A5A00` | `#FFC857` | Warning text, on `warning-surface`. |
+| `warning` | `#8A5A00` | `#FFC857` | Warning text, on `warning-surface`. Amber on purpose, alerts only, never a fill. |
 | `success` | = live | = live | One green. A success state and a live state never compete in the same view. |
 
 Plus `scrim` (the inverse surface at 60%, 70% in rooms) behind modals and drawers.
@@ -49,7 +49,7 @@ Every pairing a component may draw is listed in `tokens.ts` with its WCAG floor,
 
 ### Dark islands
 
-The one focus ring is the accent, and the deep teal on near-black measures 1.46:1. So: **interactive content on a dark background lives inside a `.theme-dark` scope**, never on a bare `bg-surface-inverse`. Inside the scope every role re-resolves and the component code stays identical. The site footer is a dark island. A tooltip is not (nothing in it takes focus), so it can use `surface-inverse` directly.
+The one focus ring is the accent, and the mid blue on navy measures about 2:1. So: **interactive content on a dark background lives inside a `.theme-dark` scope**, never on a bare `bg-surface-inverse`. Inside the scope every role re-resolves and the component code stays identical. The site header and the site footer are dark islands (v3), and so are the rooms. A tooltip is not (nothing in it takes focus), so it can use `surface-inverse` directly.
 
 ## Type
 
@@ -74,9 +74,9 @@ Spacing on the 4px grid. Comfortable density on marketplace pages (card padding 
 
 | Variant | Fill | When |
 |---|---|---|
-| `primary` | teal | The main action on the screen, and the only teal fill. One per view. |
-| `highlight` | yellow | The second action standing beside a primary one. |
-| `ink` | near-black | A neutral action inside a card, where teal would compete with the page's primary. |
+| `primary` | blue | The main action on the screen, and the only blue fill. One per view. |
+| `highlight` | orange | Act now: Sign up in the header, "See tutors" on the search band, and the second action standing beside a primary one. |
+| `ink` | navy | A neutral action inside a card, where blue would compete with the page's primary. |
 | `outline` | bordered | Everything else that isn't the point of the screen. |
 | `ghost` | none | Toolbars, menus, table rows. |
 | `live` | green | Going on air only ("Go live", "Join", "Try another live tutor"). Rare by design. "Request now" is `primary` from Part D: the green belongs to the tutor (ring, chip), not the student's button. |
@@ -137,7 +137,7 @@ The chip is always text. A dot on its own is decoration, never the indicator. No
 
 ## Rooms
 
-Every live room is dark: `.theme-dark` on the `(session)` layout (instant session, classroom, broadcast host) and on the `/live/[id]` band under the light site header. Dialogs portal outside that wrapper, so a room's own confirms carry `className="theme-dark"` themselves.
+Every live room is dark navy (v3): `.theme-dark` on the `(session)` layout (instant session, classroom, broadcast host) and on the `/live/[id]` band under the light site header. Dialogs portal outside that wrapper, so a room's own confirms carry `className="theme-dark"` themselves.
 
 - **Lobby first.** A device check before anything joins. Join is disabled until it passes; a blocked device says exactly where to allow it.
 - **Top bar (v2, Part H).** The heading and who with on the left, a `live` "Connected" chip once the other person is in (a muted "Waiting for {name}…" before), and the clock as a pill with a thin progress line, pushed right.
@@ -174,7 +174,8 @@ Text left, numbers right (`numeric` on `TableHead` and `TableCell`), tabular fig
 Each one is a reason the first mockups read as a template rather than a product. The token test fails the build on the first two.
 
 - **Decorative gradients.** No background glow behind a hero, no gradient headline text, no gradient card fill. The only gradients in `src/` are the globe's fallback sphere and the skeleton shimmer, both in the test's allowlist.
-- **Orange as text or as a large fill.** Orange is a mark. Readable orange is `spark-text`, used rarely.
+- **Yellow anywhere.** It left the system in v3. Amber `warning` is for alerts only.
+- **Orange as text, or as any fill other than `highlight`.** `spark` is a mark. Readable orange is `spark-text`, used rarely. The act-now fill is `highlight` and nothing else is orange.
 - Tinted tiles or coloured circles behind icons.
 - Coloured side stripes on cards or alerts, and multicolour rules under a section.
 - More than one loud fill in a view, or a second teal fill competing with the primary action.
@@ -182,8 +183,8 @@ Each one is a reason the first mockups read as a template rather than a product.
 - Tracked all-caps eyebrows, and one coloured word in a headline.
 - Glassmorphism outside the home hero's single proof strip.
 - Emoji as icons.
-- Dark by default outside the rooms.
-- Live green on the teal accent, and a bare colour dot as the only live indicator.
+- Dark by default outside the rooms, the header and the footer.
+- Live green on the blue accent, and a bare colour dot as the only live indicator.
 - Invented content: ratings, awards, badges, streaks or goals the app doesn't actually have.
 - `bg-[#hex]`, `text-[#hex]`, or any raw hex outside `globals.css` and `tokens.ts` (the unit test greps for it; the Google sign-in logo is the one allowed exception).
 - "OK" and "Cancel" on a confirm.
