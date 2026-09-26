@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 /**
- * Design smoke (live-globe rebuild Part I, plan Step 10).
+ * Design smoke (live-globe rebuild Part I, plan Step 10; round 3 Part C adds the sidebar checks).
  *
  * Not a behaviour test: it asserts the v2 shell is there on every key page at
  * the two widths the rebuild was designed for, and that nothing makes the page
@@ -54,6 +54,18 @@ for (const w of WIDTHS) {
         await expect(page.getByRole("banner").first()).toBeVisible({ timeout: 30_000 });
         await expect(page.getByRole("contentinfo")).toBeVisible();
         await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+        if (p.name === "browse" || p.name === "home") {
+          // Round 3 Part C: the sidebar filters from lg, the chip row below it.
+          const sidebar = page.getByRole("navigation", { name: "Filters" });
+          const chips = page.locator("[data-filter-chips]");
+          if (w.viewport.width >= 1024) {
+            await expect(sidebar).toBeVisible();
+            await expect(chips).toBeHidden();
+          } else {
+            await expect(sidebar).toBeHidden();
+            await expect(chips).toBeVisible();
+          }
+        }
         await noSidewaysScroll(page, `${p.path} at ${w.name}`);
         await shot(page, `${w.name}-${p.name}`);
       });
