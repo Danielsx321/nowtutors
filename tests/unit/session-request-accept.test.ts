@@ -115,6 +115,11 @@ class InMemoryAccept implements AcceptStore {
         );
       },
 
+      hasInstantSessionInProgress: async (tutorId) =>
+        this.scheduled.some(
+          (b) => b.tutorId === tutorId && b.type === "instant" && b.status === "in_progress",
+        ),
+
       insertBooking: async (row) => {
         this.bookings.push({ ...row });
       },
@@ -376,12 +381,12 @@ describe("acceptSessionRequest — guards that must not charge", () => {
     expect(await accept(store)).toMatchObject({ status: "accepted" });
   });
 
-  it("does NOT count another tutor's booking, an instant one, or a cancelled one", async () => {
+  it("does NOT count another tutor's booking, another tutor's instant session, or a cancelled one", async () => {
     const store = new InMemoryAccept([request()], { [STUDENT]: 50 });
     const window = { start: at(10 * 60_000), end: at(50 * 60_000) };
     store.scheduled.push(
       { tutorId: "tutor-2", type: "scheduled", status: "confirmed", ...window },
-      { tutorId: TUTOR, type: "instant", status: "in_progress", ...window },
+      { tutorId: "tutor-2", type: "instant", status: "in_progress", ...window },
       {
         tutorId: TUTOR,
         type: "scheduled",
@@ -390,6 +395,24 @@ describe("acceptSessionRequest — guards that must not charge", () => {
       },
     );
 
+    expect(await accept(store)).toMatchObject({ status: "accepted" });
+  });
+
+  it("M9: refuses while the tutor is in an instant session, charging nothing and leaving the request pending", async () => {
+    const store = new InMemoryAccept([request()], { [STUDENT]: 50 });
+    const window = { start: at(-5 * 60_000), end: at(25 * 60_000) };
+    store.scheduled.push({ tutorId: TUTOR, type: "instant", status: "in_progress", ...window });
+
+    expect(await accept(store)).toEqual({ status: "tutor_in_session" });
+    expect(store.ledger.balances.get(STUDENT)).toBe(50);
+    expect(store.bookings).toHaveLength(0);
+    expect(store.requests.get(REQUEST_ID)!.status).toBe("pending");
+  });
+
+  it("M9: a finished instant session does not block the next accept", async () => {
+    const store = new InMemoryAccept([request()], { [STUDENT]: 50 });
+    const window = { start: at(-60 * 60_000), end: at(-30 * 60_000) };
+    store.scheduled.push({ tutorId: TUTOR, type: "instant", status: "completed", ...window });
     expect(await accept(store)).toMatchObject({ status: "accepted" });
   });
 });

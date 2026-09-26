@@ -460,6 +460,21 @@ function acceptTx(tx: DbTransaction): AcceptTx {
       return row != null;
     },
 
+    async hasInstantSessionInProgress(tutorId) {
+      const [row] = await tx
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.tutorId, tutorId),
+            eq(bookings.type, "instant"),
+            eq(bookings.status, "in_progress"),
+          ),
+        )
+        .limit(1);
+      return row != null;
+    },
+
     async insertBooking(row) {
       await tx.insert(bookings).values({
         // Application-generated (see `acceptRequestAsTutor`) so `agora_channel`

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -104,6 +105,17 @@ export const tutorEarnings = pgTable("tutor_earnings", {
   netCredits: integer("net_credits").notNull(),
   status: earningStatus("status").notNull().default("held"),
   availableAt: timestamp("available_at", { withTimezone: true }),
+  /**
+   * The withdrawal request that swept this row's credit (launch fix M12,
+   * drizzle/0024). Set at request time under the wallet lock, so "which rows
+   * did this payout cover" is a fact written once, not a timestamp comparison
+   * made later. Cleared if the request is rejected; the row flips to
+   * `withdrawn` when the request is paid.
+   */
+  withdrawalRequestId: uuid("withdrawal_request_id").references(
+    (): AnyPgColumn => withdrawalRequests.id,
+    { onDelete: "set null" },
+  ),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

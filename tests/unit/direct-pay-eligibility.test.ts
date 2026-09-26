@@ -3,7 +3,6 @@ import {
   checkDirectPayEligibility,
   type DirectPayBookingRow,
 } from "@/lib/paypal/direct-pay";
-import { sessionPriceCredits } from "@/lib/credits/pricing";
 import {
   directPayAmount,
   requireDirectPayBasisPackage,
@@ -28,7 +27,7 @@ function booking(over: Partial<DirectPayBookingRow> = {}): DirectPayBookingRow {
     status: "pending_payment",
     type: "scheduled",
     durationMinutes: 60,
-    hourlyRateCredits: 20,
+    priceCredits: 20,
     ...over,
   };
 }
@@ -83,22 +82,22 @@ describe("direct-pay eligibility — booking state", () => {
 });
 
 describe("direct-pay eligibility — the price is re-derived, never read", () => {
-  it("derives credits from the tutor's CURRENT rate × duration", () => {
-    const result = checkDirectPayEligibility(
-      booking({ hourlyRateCredits: 20, durationMinutes: 90 }),
-      OWNER,
-    );
+  it("M6: charges the price pinned on the booking, not the tutor's current rate", () => {
+    const result = checkDirectPayEligibility(booking({ priceCredits: 30, durationMinutes: 90 }), OWNER);
     expect(result).toMatchObject({ ok: true, credits: 30 });
-    expect(result).toMatchObject({ credits: sessionPriceCredits(20, 90) });
   });
 
-  it("follows a rate change rather than a stale booking snapshot", () => {
-    // Same booking, tutor has since raised their rate: the order must reflect
-    // the current rate, because nothing else is authoritative (§7.3 step 3).
-    const cheap = checkDirectPayEligibility(booking({ hourlyRateCredits: 10 }), OWNER);
-    const dear = checkDirectPayEligibility(booking({ hourlyRateCredits: 40 }), OWNER);
-    expect(cheap).toMatchObject({ credits: 10 });
-    expect(dear).toMatchObject({ credits: 40 });
+  it("M6: a rate change inside the payment hold changes nothing for this booking", () => {
+    // The booking was priced at 10 when the slot was taken. Whatever the tutor
+    // has done to their rate since, the student pays 10 and the tutor's
+    // earnings are split from 10: one number, both sides.
+    const pinned = checkDirectPayEligibility(booking({ priceCredits: 10 }), OWNER);
+    expect(pinned).toMatchObject({ credits: 10 });
+    expect(pinned).toMatchObject({ credits: booking({ priceCredits: 10 }).priceCredits });
+  });
+
+  it("M6: a booking with no pinned price cannot be paid for directly", () => {
+    expect(checkDirectPayEligibility(booking({ priceCredits: null }), OWNER)).toMatchObject({ ok: false, status: 400 });
   });
 
   it("ignores a tampered client amount end to end", () => {
@@ -107,10 +106,7 @@ describe("direct-pay eligibility — the price is re-derived, never read", () =>
     const basis = requireDirectPayBasisPackage(
       parseCreditPackages(seededSetting<unknown>("credit_packages")),
     );
-    const result = checkDirectPayEligibility(
-      booking({ hourlyRateCredits: 20, durationMinutes: 60 }),
-      OWNER,
-    );
+    const result = checkDirectPayEligibility(booking({ priceCredits: 20, durationMinutes: 60 }), OWNER);
     if (!result.ok) throw new Error("expected eligible");
 
     expect(result.credits).toBe(20);
@@ -122,7 +118,7 @@ describe("direct-pay eligibility — the price is re-derived, never read", () =>
 
   it("rejects a booking whose derived price is zero", () => {
     const result = checkDirectPayEligibility(
-      booking({ hourlyRateCredits: 0 }),
+      booking({ priceCredits: 0 }),
       OWNER,
     );
     expect(result).toMatchObject({ ok: false, status: 400 });

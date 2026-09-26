@@ -1,15 +1,17 @@
-import { sessionPriceCredits } from "@/lib/credits/pricing";
-
 /**
  * Who may open a direct-pay order for a booking, and what it costs
  * (SPEC §7.3 step 4b, §7.6, §5).
  *
  * Pure and `server-only`-free so the two guarantees that matter are assertable
  * without a database: **a booking belonging to another user is rejected**, and
- * **the price is re-derived server-side** from the tutor's current rate and the
- * booking's duration — never read from the booking row, and never from the
- * client. The route file itself cannot be imported by a test (it pulls in
- * `server-only` transitively), which is why this lives here.
+ * **the price is the one pinned on the booking** (`bookings.price_credits`,
+ * written by the server when the slot was taken), never a number from the
+ * client. Launch fix M6 (2026-09-26): it used to be re-derived from the
+ * tutor's *current* rate, so a rate change inside the 20-minute payment hold
+ * charged the student one price while the tutor's earnings were split from
+ * another. The instant path always charged its pinned quote; now both do. The
+ * route file itself cannot be imported by a test (it pulls in `server-only`
+ * transitively), which is why this lives here.
  */
 
 /** The `bookings` + `tutor_profiles` columns the check reads. */
@@ -19,8 +21,8 @@ export interface DirectPayBookingRow {
   status: string;
   type: string;
   durationMinutes: number | null;
-  /** The tutor's CURRENT rate, not whatever the booking was priced at. */
-  hourlyRateCredits: number;
+  /** The price pinned on the booking when the slot was taken (M6). Null on a row that predates it. */
+  priceCredits: number | null;
 }
 
 export type DirectPayEligibility =
@@ -48,10 +50,9 @@ export function checkDirectPayEligibility(
     return { ok: false, status: 400, message: "This booking can't be paid for directly." };
   }
 
-  // The one pricing formula, re-run server-side. `bookings.price_credits` is
-  // deliberately NOT trusted here either: it is a snapshot, and the tutor's
-  // current rate is what the student is being asked to pay.
-  const credits = sessionPriceCredits(row.hourlyRateCredits, row.durationMinutes);
+  // The pinned price, exactly what the booking row says the student agreed to
+  // and what the tutor's earnings will be split from (M6).
+  const credits = row.priceCredits ?? 0;
   if (credits <= 0) {
     return { ok: false, status: 400, message: "This booking can't be paid for directly." };
   }

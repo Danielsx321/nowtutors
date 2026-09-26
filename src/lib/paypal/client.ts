@@ -160,6 +160,8 @@ export function clearAccessTokenCache(): void {
 interface PayPalRequest {
   method?: "GET" | "POST";
   body?: unknown;
+  /** A body already serialised, sent byte for byte (the webhook verification, M8). Wins over `body`. */
+  rawBody?: string;
   /** PayPal's idempotency header; set on every mutating call. */
   requestId?: string;
 }
@@ -171,7 +173,7 @@ interface PayPalRequest {
  */
 export async function paypalFetch<T>(
   path: string,
-  { method = "POST", body, requestId }: PayPalRequest = {},
+  { method = "POST", body, rawBody, requestId }: PayPalRequest = {},
 ): Promise<T> {
   const send = async (token: string) =>
     fetchWithTimeout(`${paypalBaseUrl()}${path}`, path, {
@@ -182,7 +184,7 @@ export async function paypalFetch<T>(
         Accept: "application/json",
         ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
       cache: "no-store",
     });
 

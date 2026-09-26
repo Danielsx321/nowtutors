@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  verificationBody,
   handlePayPalWebhook,
   isVerificationSuccess,
   paymentRefFromEvent,
@@ -124,11 +125,13 @@ describe("webhook — an unverified event is rejected and not processed", () => 
     }
   });
 
-  it("verifies against the configured webhook id and the event as sent", async () => {
+  it("verifies against the configured webhook id, the event, and the raw bytes as sent", async () => {
     const d = deps();
     const event = captureEvent("PAYMENT.CAPTURE.COMPLETED");
-    await handlePayPalWebhook(JSON.stringify(event), headers(), d);
+    const rawBody = JSON.stringify(event, null, 2); // PayPal's own formatting, not ours
+    await handlePayPalWebhook(rawBody, headers(), d);
     expect(d.verifySignature).toHaveBeenCalledWith({
+      rawBody,
       headers: {
         authAlgo: SIGNED_HEADERS["paypal-auth-algo"],
         certUrl: SIGNED_HEADERS["paypal-cert-url"],
@@ -331,6 +334,61 @@ describe("webhook — verification helpers", () => {
       webhook_id: WEBHOOK_ID,
       webhook_event: event,
     });
+  });
+
+  it("M8: the verify request carries the event bytes untouched", () => {
+    const sig = readSignatureHeaders(headers())!;
+    // Pretty-printed, an escaped unicode name, a float PayPal wrote with a
+    // trailing zero: re-serialising would change every one of these.
+    const rawBody = `{\n  "id": "WH-1",\n  "resource": {"payer": "Ren\\u00e9e", "amount": {"value": "10.50"}, "n": 1.0}\n}\n`;
+    const body = verificationBody(sig, WEBHOOK_ID, rawBody);
+    expect(body.endsWith(`"webhook_event":${rawBody.trim()}}`)).toBe(true);
+    const parsed = JSON.parse(body);
+    expect(parsed.webhook_id).toBe(WEBHOOK_ID);
+    expect(parsed.transmission_sig).toBe(SIGNED_HEADERS["paypal-transmission-sig"]);
+    expect(parsed.webhook_event.id).toBe("WH-1");
+    expect(parsed.webhook_event.resource.payer).toBe("Ren\u00e9e");
+  });
+
+  it("M10: REVERSED (a chargeback) is recorded as a full refund and never credits", async () => {
+    const d = deps();
+    const event = {
+      ...captureEvent("PAYMENT.CAPTURE.REVERSED"),
+      resource: {
+        id: CAPTURE_ID,
+        status: "REVERSED",
+        amount: { value: "39.99", currency_code: "USD" },
+        supplementary_data: { related_ids: { order_id: ORDER_ID } },
+      },
+    };
+    const res = await handlePayPalWebhook(JSON.stringify(event), headers(), d);
+    expect(res.status).toBe(200);
+    expect(d.settleCapturedOrder).not.toHaveBeenCalled();
+    expect(d.markPaymentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ providerOrderId: ORDER_ID, providerCaptureId: CAPTURE_ID, status: "refunded" }),
+    );
+    // No refunded total is passed, so `markStatus` treats it as the whole payment.
+    expect(d.markPaymentStatus.mock.calls[0][0]).not.toHaveProperty("refundedUsd");
+  });
+
+  it("M11: an event carrying only our custom_id is still identifiable", async () => {
+    const d = deps();
+    const PAYMENT_ID = "11111111-1111-4111-8111-111111111111";
+    const event = {
+      id: "WH-9",
+      event_type: "PAYMENT.CAPTURE.COMPLETED",
+      resource: { id: CAPTURE_ID, status: "COMPLETED", custom_id: PAYMENT_ID },
+    };
+    expect(paymentRefFromEvent(event)).toEqual({
+      providerOrderId: null,
+      providerCaptureId: CAPTURE_ID,
+      paymentId: PAYMENT_ID,
+    });
+    // A custom_id that is not a uuid is not ours and is ignored.
+    expect(paymentRefFromEvent({ ...event, resource: { ...event.resource, custom_id: "inv-42" } })).not.toHaveProperty("paymentId");
+    const res = await handlePayPalWebhook(JSON.stringify({ ...event, resource: { custom_id: PAYMENT_ID } }), headers(), d);
+    expect(res.status).toBe(200);
+    expect(d.settleCapturedOrder).toHaveBeenCalledWith(expect.objectContaining({ paymentId: PAYMENT_ID }));
   });
 
   it("treats anything but SUCCESS as unverified", () => {

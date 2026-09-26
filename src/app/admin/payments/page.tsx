@@ -100,6 +100,12 @@ export default async function AdminPaymentsPage({
 
       {payment && <PaymentReconciliation payment={payment} timeZone={timeZone} />}
 
+      {payment?.status === "refunded" && isChargeback(payment.rawPayload) && (
+        <Alert variant="warning" title="Reversed by PayPal (dispute or chargeback)">
+          PayPal took this payment back after a dispute, so it is recorded as refunded in full.
+          The credits it minted are still in the wallet until you reverse them below.
+        </Alert>
+      )}
       {payment?.status === "refunded" && <RefundReversal paymentId={payment.id} buyerId={payment.userId} />}
 
       {!reference && (
@@ -109,5 +115,14 @@ export default async function AdminPaymentsPage({
         </Alert>
       )}
     </div>
+  );
+}
+
+/** The last event stored for a refunded payment was PayPal's own reversal (M10). */
+function isChargeback(rawPayload: unknown): boolean {
+  return (
+    typeof rawPayload === "object" &&
+    rawPayload !== null &&
+    (rawPayload as { event_type?: unknown }).event_type === "PAYMENT.CAPTURE.REVERSED"
   );
 }

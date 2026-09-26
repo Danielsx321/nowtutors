@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
 import {
   auditLog,
@@ -123,25 +123,50 @@ export function withdrawalStore(tx: DbTransaction): WithdrawalStore {
         .where(eq(withdrawalRequests.id, id));
     },
 
-    async markEarningsWithdrawn(tutorId, requestedAt) {
-      // The rows whose release credit is inside the balance the request took:
-      // written before the request, for this tutor. A row released after the
-      // request is still in the wallet and stays `available`.
-      const rows = await tx.execute<{ id: string }>(sql`
-        update tutor_earnings e
-           set status = 'withdrawn'
-         where e.tutor_id = ${tutorId}
-           and e.status = 'available'
-           and exists (
-             select 1 from credit_transactions ct
-              where ct.type = 'session_earning'
-                and ct.user_id = ${tutorId}
-                and ct.reference_id = e.booking_id
-                and ct.created_at <= ${requestedAt.toISOString()}::timestamptz
-           )
-        returning e.id
-      `);
-      return Array.from(rows, (r) => r.id);
+    async claimAvailableEarnings(tutorId, requestId) {
+      // Under the wallet lock `lockWalletBalance` took: the rows whose release
+      // credit is in the balance this request swept are exactly the tutor's
+      // `available` rows nobody else holds, at this moment.
+      const rows = await tx
+        .update(tutorEarnings)
+        .set({ withdrawalRequestId: requestId })
+        .where(
+          and(
+            eq(tutorEarnings.tutorId, tutorId),
+            eq(tutorEarnings.status, "available"),
+            isNull(tutorEarnings.withdrawalRequestId),
+          ),
+        )
+        .returning({ id: tutorEarnings.id });
+      return rows.map((r) => r.id);
+    },
+
+    async markEarningsWithdrawn(requestId) {
+      const rows = await tx
+        .update(tutorEarnings)
+        .set({ status: "withdrawn" })
+        .where(
+          and(
+            eq(tutorEarnings.withdrawalRequestId, requestId),
+            eq(tutorEarnings.status, "available"),
+          ),
+        )
+        .returning({ id: tutorEarnings.id });
+      return rows.map((r) => r.id);
+    },
+
+    async releaseClaimedEarnings(requestId) {
+      const rows = await tx
+        .update(tutorEarnings)
+        .set({ withdrawalRequestId: null })
+        .where(
+          and(
+            eq(tutorEarnings.withdrawalRequestId, requestId),
+            eq(tutorEarnings.status, "available"),
+          ),
+        )
+        .returning({ id: tutorEarnings.id });
+      return rows.map((r) => r.id);
     },
 
     async insertAudit(entry) {

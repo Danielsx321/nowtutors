@@ -271,6 +271,8 @@ export async function acceptSessionRequest(
       };
     case "tutor_broadcasting":
       return { error: "You're broadcasting right now. End your broadcast to take instant sessions." };
+    case "tutor_in_session":
+      return { error: "You're in a session right now. Finish it before accepting another request." };
     case "failed_payment":
       return {
         error: `The student no longer has the ${result.priceCredits} credits this session was quoted at, so nothing was charged.`,

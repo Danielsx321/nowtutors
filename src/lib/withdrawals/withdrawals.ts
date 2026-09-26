@@ -115,11 +115,16 @@ export interface WithdrawalStore {
     },
   ): Promise<void>;
   /**
-   * Flip to `withdrawn` every `available` earnings row of this tutor whose
-   * `session_earning` credit was written at or before `requestedAt`. Those are
-   * exactly the credits the full-balance request swept up. Returns the ids.
+   * Claim, for this request, every `available` earnings row of the tutor that
+   * no other request holds (M12). Called at request time under the wallet
+   * lock, so the claim and the balance the request swept are one snapshot.
+   * Returns the ids.
    */
-  markEarningsWithdrawn(tutorId: string, requestedAt: Date): Promise<string[]>;
+  claimAvailableEarnings(tutorId: string, requestId: string): Promise<string[]>;
+  /** Flip the rows this request claimed to `withdrawn`. Returns the ids. */
+  markEarningsWithdrawn(requestId: string): Promise<string[]>;
+  /** Release the claim on a rejected request's rows, so the next request can take them. Returns the ids. */
+  releaseClaimedEarnings(requestId: string): Promise<string[]>;
   insertAudit(entry: WithdrawalAudit): Promise<void>;
 }
 
@@ -203,6 +208,9 @@ export async function requestWithdrawal(
         referenceId: row.id,
         description: "Withdrawal requested",
       });
+      // The rows this balance came from, claimed now by id (M12). A release
+      // that lands after this lock is a later row and stays unclaimed.
+      const claimed = await store.claimAvailableEarnings(tutorId, row.id);
       await store.insertAudit({
         actorId: tutorId,
         action: "withdrawal.request",
@@ -212,6 +220,7 @@ export async function requestWithdrawal(
           amount_usd: amountUsd,
           // Snapshotted so a later rate change never re-prices this request.
           payout_usd_per_credit: rate,
+          earnings_claimed: claimed,
         },
       });
       return {
@@ -270,8 +279,9 @@ export async function markWithdrawalPaid(
       processedBy: params.adminId,
       externalReference: reference,
     });
-    // No ledger row: the hold was the debit. See the module note.
-    const flipped = await store.markEarningsWithdrawn(row.tutorId, row.createdAt);
+    // No ledger row: the hold was the debit. See the module note. The rows are
+    // the ones this request claimed when it was made (M12), never a timestamp.
+    const flipped = await store.markEarningsWithdrawn(row.id);
     await store.insertAudit({
       actorId: params.adminId,
       action: "withdrawal.mark_paid",
@@ -319,6 +329,9 @@ export async function rejectWithdrawal(
         processedBy: params.adminId,
         adminNote: note,
       });
+      // The credits are back in the wallet, so the rows go back on the table
+      // for the next request (M12).
+      const released = await store.releaseClaimedEarnings(row.id);
       await store.insertAudit({
         actorId: params.adminId,
         action: "withdrawal.reject",
@@ -328,6 +341,7 @@ export async function rejectWithdrawal(
           to: "rejected",
           note,
           amount_credits: row.amountCredits,
+          earnings_released: released,
         },
       });
       return { ok: true };
