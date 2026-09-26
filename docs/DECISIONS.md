@@ -5137,3 +5137,13 @@ Header and footer only. No layout change elsewhere, no migration, no dependency.
 5. **Sign up and "Dashboard" are `highlight` orange; Log in is `ghost`.** Green stays the live signal (Part A decision 3). If Noora wants the green Sign up from her screenshot, the two `variant="highlight"` on the header's Sign up become `variant="live"` and DESIGN.md says green means live or join.
 6. **The footer lost its two action buttons and the "Learn / Teach / Account" split** for Oranum's plainer three columns: "For tutors", "Help", and the trust pair standing in for "Legal" until Phase 10 ships the pages. The live count stays; it is the one real number a footer can show.
 7. **Widths.** The public shell's container is 1360px (was 1200px), because a 220px sidebar plus four cards needs it (Part C). The app shell is unchanged.
+
+## Design round 3, Part D: the tutor card (`design-v3-card`, 2026-09-26)
+
+One component, no data change (`subjects` was already capped at three by the query), no migration, no dependency.
+
+1. **Landscape photo with the name on it.** Oranum's card is a 16:9 picture with the name overlaid and tag chips under it. Ours is 16:10 (a face reads better a little taller than a stream thumbnail), the name and country sit on a solid translucent navy strip (`bg-ink/75`), not a gradient, which the banned-tells test would refuse anyway.
+2. **The proof row left the card.** Experience and sessions were three cells of small numbers on every card; Oranum's card carries none. They move to the profile's identity line in Part E, where a student who has clicked through is the one who reads them. The rate stays, because price is part of choosing.
+3. **Up to three subject chips, two in the row variant.** The chips are a `ul` named "Subjects" so a screen reader gets the list, not three floating words. No chips when a tutor has none, rather than an empty row.
+4. **States and the action are unchanged**, so the presence E2E (card links) and the profile's `#start-now` anchor keep working. Blue "Request now" (the page's primary), outline "Watch live", ink "Book a session".
+5. **The favourites page and the profile editor's preview** render the same component: checked at their widths (the row variant in favourites, the grid card in the editor's preview column).

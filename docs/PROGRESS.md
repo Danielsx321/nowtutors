@@ -13,8 +13,12 @@ for Noora's yes on the two mockups (`outputs/nowtutors/round-3-mockups/`, sent 2
   No layout change anywhere.
 - **Part B (`design-v3-shell`, stacked on Part A) IN REVIEW.** Navy header (56px, two links, subject
   search on `/tutors`, text Log in, orange Sign up), navy three-column footer, `/#how` gone. Header and
-  footer tests rewritten. **Next:** Daniels merges A then B; Noora's yes on the mockups; then Parts C
-  (home and browse) and D (card) in parallel, E (profile), F (acceptance).
+  footer tests rewritten. Part A merged as PR #111 (`fa77714`); Part B reopened as PR #113 after
+  GitHub closed #112 with A's deleted branch.
+- **Noora said yes to the mockups (2026-09-26, relayed by Daniels).** Parts C to E unblocked.
+- **Part D (`design-v3-card`) IN REVIEW.** Landscape 16:10 card with the name strip on the photo, rate
+  beside up to three subject chips, one action; proof row gone (to the profile in Part E). Card test
+  14/14. **Next:** Part C (home and browse), then E (profile), then F.
 
 ## Earlier: state on 2026-09-20
 
