@@ -385,7 +385,17 @@ already-running script.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).
-- [ ] Resend domain verification and DNS records — Phase 10.
+- [ ] Resend domain verification and DNS records — Phase 10 Part 6. Until then `EMAIL_FROM` can be
+  `NowTutors <onboarding@resend.dev>`, which Resend delivers only to the account owner's address.
+- [ ] **Email env vars on Vercel** — Phase 10 Part 1: `RESEND_API_KEY` (Production only; leave it unset on
+  Preview so previews never email anyone: unset means log-only), `EMAIL_FROM`, `EMAIL_REPLY_TO` (the support
+  inbox, optional), and `NEXT_PUBLIC_APP_URL` (every email link is built from it; must be the public URL of
+  that environment). Check with an admin action on production: approve or reject a test tutor and read the
+  `[email] <type> sent to <id>` line in the Vercel function log, or the `[email] ... failed` line if not.
+- [ ] **Supabase Auth over Resend SMTP** — Phase 10 Part 6: Authentication → SMTP settings, host
+  `smtp.resend.com`, port 465, user `resend`, password the API key, sender `EMAIL_FROM`; then restyle
+  Confirm signup, Reset password and Magic link to match `emails/shell.tsx` with the action links intact
+  (see "Email templates & confirmation" below). The app never sends these itself (SPEC §11).
 - [ ] DNS cutover for nowtutors.com — Phase 10.
   - **`nowtutors.vercel.app` (no `-brown`) belongs to an unrelated third party. Do NOT point
     nowtutors.com at it.**

@@ -15,6 +15,7 @@ import { AuthSection } from "./_sections/auth";
 import { OverlaysSection } from "./_sections/overlays";
 import { LayoutsPreviewSection } from "./_sections/layouts-preview";
 import { DashboardSection } from "./_sections/dashboard";
+import { EmailSection } from "./_sections/email";
 
 const sections = [
   { id: "foundations", label: "Tokens" },
@@ -29,6 +30,7 @@ const sections = [
   { id: "overlays", label: "Overlays" },
   { id: "layouts", label: "Layouts" },
   { id: "dashboard", label: "Dashboard" },
+  { id: "email", label: "Email" },
 ];
 
 export default function KitchenSink() {
@@ -95,6 +97,7 @@ export default function KitchenSink() {
         <OverlaysSection surface={surface} />
         <LayoutsPreviewSection surface={surface} />
         <DashboardSection surface={surface} />
+        <EmailSection surface={surface} />
       </main>
     </div>
   );

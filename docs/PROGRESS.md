@@ -2,19 +2,35 @@
 
 _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECISIONS.md`._
 
-## Current state (2026-09-26)
+## Current state (2026-09-29)
+
+**PHASE 10 PART 1 (email foundation) IN REVIEW on branch `phase-10-part1-email-foundation`.** Plan: workspace
+`plans/2026-09-28-nowtutors-phase-10-email-polish-launch.md` (six parts). `resend` and `@react-email/render`
+installed (the `@react-email/components` package is deprecated on npm; DECISIONS). `src/lib/email/` (types,
+preferences zod schema, transports, recipient lookup, best-effort sender, `queueEmail` via `after()`),
+`emails/` (shell, renderer, eight templates with sample props), kitchen sink Email section. The six
+`TODO(Phase 10)` hooks are wired (tutor approved and rejected, withdrawal requested, paid and rejected, plus
+the admin alerts) and tutor onboarding sends the welcome and the admin "new application". With
+`RESEND_API_KEY` unset every send is printed to the server log, nothing goes out. Gates: typecheck and lint
+clean, 843 unit (36 new), 156 DOM, build passed. **Owed before merge:** the live click-through on the dev
+server (admin rejects the seeded pending tutor, `[email]` line in the log), blocked on this machine by NordVPN.
+**Next:** Daniels merges; Part 2 (booking and payment emails).
+
+- **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
+  **Not yet verified: whether `drizzle/0021` to `0024` were applied to production** (no apply record in
+  RUNBOOK); Part 6 checks `drizzle.__drizzle_migrations` before anything else.
+
+## Earlier on 2026-09-26
 
 **DESIGN ROUND 3 COMPLETE (SPEC Phase 9.6).** Noora's two references (Oranum structure, InstaEDU colours), plan in the workspace at `plans/2026-09-26-nowtutors-design-round-3.md`. All five parts merged in order: A palette (#111), B shell (#113), D card (#114), C home and browse (#115), E profile (#116); `main` is `e98d81a` plus the Part F docs.
 - **Acceptance (Part F, `design-v3-acceptance`):** all five E2E specs pass in one run on Daniels' Mac (25 passed, 11.4 min); token test 105/105; Lighthouse accessibility 100 on `/`, `/tutors`, a profile and `/login`; production checked serving the new pages. The before-and-after set for Noora is in the workspace (`outputs/nowtutors/before-after-round-3/`), Daniels sends it.
 - **Still to see on production with a live tutor:** the Live now carousel and the profile's live overlay and embedded player (workspace memory `nowtutors-pending-live-tests`).
 - The v2 home blocks and the globe are parked in `components/features/home/`, not deleted.
 
-- **Launch fixes (`launch-fixes`) IN REVIEW.** M4, M10, M11, M8 (PayPal), M6 (pinned direct-pay price),
+- **Launch fixes (`launch-fixes`), merged as PR #118 on 2026-09-28.** M4, M10, M11, M8 (PayPal), M6 (pinned direct-pay price),
   R3 (two unpaid holds per student), M9 (no accept mid-session), M12 (earnings claimed by request id,
-  `drizzle/0024`). **`pnpm db:migrate` on production before the deploy.** Still with Noora: the Agora App
+  `drizzle/0024`). **`pnpm db:migrate` on production before the deploy** (apply status unverified, see above). Still with Noora: the Agora App
   Certificate (T2) and the co-host token setting (T5).
-
-**Next:** Phase 10 (email, polish, launch prep).
 
 ## Earlier on 2026-09-26 (round 3 in progress)
 

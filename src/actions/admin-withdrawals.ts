@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/guards";
-import { withdrawalRunner } from "@/db/queries/withdrawals";
+import { getWithdrawalById, withdrawalRunner } from "@/db/queries/withdrawals";
+import { queueEmails } from "@/lib/email";
 import {
   approveWithdrawal as approveCore,
   markWithdrawalPaid as markPaidCore,
@@ -26,6 +27,11 @@ const rejectSchema = idSchema.extend({ note: z.string().max(2000) });
  * only a redirect, §5 Layer 2). The request id is a legitimate client input; the
  * ACTOR is always the guard's user. The rules, the row lock and the audit row
  * live in `lib/withdrawals/withdrawals.ts`.
+ *
+ * Paid and rejected email the tutor (SPEC §11) only when the transition
+ * happened (`res.ok`): a refused double-click sends nothing. The row is
+ * re-read after the response because the transition result carries no
+ * amounts, by design.
  */
 
 function done(res: TransitionResult): AdminWithdrawalResult {
@@ -56,7 +62,23 @@ export async function markWithdrawalPaid(input: {
     adminId: user.id,
     externalReference: parsed.data.externalReference,
   });
-  // TODO(Phase 10): "withdrawal paid" email to the tutor (SPEC §11).
+  if (res.ok) {
+    const { id, externalReference } = parsed.data;
+    queueEmails(async () => {
+      const row = await getWithdrawalById(id);
+      if (!row) return null;
+      return {
+        type: "withdrawal-paid",
+        to: { userId: row.tutorId },
+        props: {
+          amountCredits: row.amountCredits,
+          amountUsd: row.amountUsd,
+          destination: row.payoutDestination,
+          externalReference,
+        },
+      };
+    });
+  }
   return done(res);
 }
 
@@ -72,6 +94,17 @@ export async function rejectWithdrawal(input: {
     adminId: user.id,
     note: parsed.data.note,
   });
-  // TODO(Phase 10): "withdrawal rejected" email with the note (SPEC §11).
+  if (res.ok) {
+    const { id, note } = parsed.data;
+    queueEmails(async () => {
+      const row = await getWithdrawalById(id);
+      if (!row) return null;
+      return {
+        type: "withdrawal-rejected",
+        to: { userId: row.tutorId },
+        props: { amountCredits: row.amountCredits, amountUsd: row.amountUsd, note },
+      };
+    });
+  }
   return done(res);
 }

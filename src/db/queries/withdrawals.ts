@@ -279,6 +279,12 @@ export async function countWithdrawalsByStatus(): Promise<
   return counts;
 }
 
+/** One request by id, outside any transaction. For the emails that follow a transition. */
+export async function getWithdrawalById(id: string): Promise<WithdrawalRow | null> {
+  const [row] = await db.select(rowColumns).from(withdrawalRequests).where(eq(withdrawalRequests.id, id)).limit(1);
+  return (row as WithdrawalRow | undefined) ?? null;
+}
+
 export async function getPayoutEmailFor(tutorId: string): Promise<string | null> {
   const [row] = await db
     .select({ email: tutorPayoutDetails.paypalEmail })
