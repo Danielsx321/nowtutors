@@ -28,7 +28,8 @@ describe("SiteFooter", () => {
     render(<SiteFooter liveCount={4} viewerHome="/dashboard" />);
     const hrefs = screen
       .getAllByRole("link")
-      .map((a) => a.getAttribute("href") ?? "");
+      .map((a) => a.getAttribute("href") ?? "")
+      .filter((h) => h.startsWith("/"));
     expect(hrefs.length).toBeGreaterThan(5);
     const missing = hrefs.filter((h) => !isExistingRoute(h));
     expect(missing).toEqual([]);
@@ -44,6 +45,14 @@ describe("SiteFooter", () => {
     expect(within(help).getByRole("link", { name: "Live lessons" }).getAttribute("href")).toBe("/live");
     const tutors = screen.getByRole("navigation", { name: "For tutors" });
     expect(within(tutors).getByRole("link", { name: "Become a tutor" }).getAttribute("href")).toBe("/signup");
+  });
+
+  it("links to the NowTutors Instagram in a new tab", () => {
+    render(<SiteFooter liveCount={0} />);
+    const link = screen.getByRole("link", { name: "NowTutors on Instagram" });
+    expect(link.getAttribute("href")).toBe("https://www.instagram.com/nowtutors/");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
   });
 
   it("shows the real live count", () => {
