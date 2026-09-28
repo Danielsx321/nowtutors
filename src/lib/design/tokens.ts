@@ -21,6 +21,8 @@ export const tokens = {
   "text-on-inverse": { light: "#FFFFFF", dark: "#FFFFFF" },
   primary: { light: "#1C5E92", dark: "#F2F4F7" },
   "on-primary": { light: "#FFFFFF", dark: "#1B2633" },
+  /** The search band over home and browse: the header navy in both themes. */
+  band: { light: "#1B2633", dark: "#1B2633" },
   highlight: { light: "#BF4019", dark: "#BF4019" },
   "on-highlight": { light: "#FFFFFF", dark: "#FFFFFF" },
   ink: { light: "#1F2B3A", dark: "#F2F4F7" },
@@ -68,6 +70,7 @@ export const pairs: ReadonlyArray<{
   { fg: "live", bg: "ground", floor: TEXT_FLOOR, note: "LIVE text on the page canvas" },
   { fg: "on-highlight", bg: "highlight", floor: TEXT_FLOOR, note: "orange button label (highlight)" },
   { fg: "on-ink", bg: "ink", floor: TEXT_FLOOR, note: "neutral solid button label" },
+  { fg: "on-primary", bg: "band", floor: TEXT_FLOOR, note: "search band heading and subline", themes: ["light"] },
   { fg: "spark-text", bg: "ground", floor: TEXT_FLOOR, note: "orange text or icon on canvas" },
   { fg: "spark-text", bg: "surface-raised", floor: TEXT_FLOOR, note: "orange text or icon on cards" },
   { fg: "border-strong", bg: "ground", floor: UI_FLOOR, note: "input borders on canvas" },
