@@ -39,6 +39,29 @@ const columns = [
   },
 ] as const;
 
+/** The NowTutors Instagram, with the share-sheet tracking stripped. */
+const INSTAGRAM_URL = "https://www.instagram.com/nowtutors/";
+
+/** The Instagram glyph. lucide-react dropped its brand icons, so it is drawn here. */
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor" />
+    </svg>
+  );
+}
+
 /**
  * The site footer (v3): brand and the real live count, two link columns and
  * the trust pair, then a bottom bar. It is a dark island, so `.theme-dark`
@@ -74,6 +97,15 @@ export function SiteFooter({ liveCount, viewerHome }: SiteFooterProps) {
                 <span className="text-text-muted">No tutors live right now</span>
               )}
             </p>
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="NowTutors on Instagram"
+              className="focus-ring mt-5 flex size-10 items-center justify-center rounded-full border border-border text-text-muted hover:text-text"
+            >
+              <InstagramIcon className="size-5" />
+            </a>
           </div>
 
           {columns.map((col) => (

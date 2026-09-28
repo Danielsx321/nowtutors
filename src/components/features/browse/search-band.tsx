@@ -3,10 +3,13 @@ import { SubjectSearch } from "@/components/features/tutor-filters";
 import type { Subject } from "@/lib/tutors/browse-url";
 
 /**
- * The blue search band over home and browse (DESIGN.md v3 "Public pages";
+ * The search band over home and browse (DESIGN.md v3 "Public pages";
  * round 3 Part C, from the InstaEDU reference): a heading, one line, and the
- * subject search with the orange act-now submit. Solid `primary`, no texture
- * and no gradient (DESIGN.md "Banned tells").
+ * subject search with the orange act-now submit. Solid header navy (the
+ * `.theme-dark` ground, #1B2633) so the band reads as one piece with the site
+ * header, at the client's request (2026-09-28); no texture and no gradient
+ * (DESIGN.md "Banned tells"). Not `.theme-dark` itself, which would turn the
+ * white search field dark too.
  */
 export function SearchBand({
   id,
@@ -23,7 +26,7 @@ export function SearchBand({
   initialMiss?: string | null;
 }) {
   return (
-    <section aria-labelledby={id} className="bg-primary px-4 py-10 text-on-primary md:px-6 md:py-14">
+    <section aria-labelledby={id} className="bg-[#1B2633] px-4 py-10 text-on-primary md:px-6 md:py-14">
       <div className="mx-auto max-w-[760px] text-center">
         <h1
           id={id}
