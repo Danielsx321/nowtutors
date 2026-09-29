@@ -117,10 +117,12 @@ export function Topbar({
         )}
         {showCredits && <CreditBalance credits={credits} className="hidden sm:inline-flex" />}
         {messagesHref && <UnreadMessagesLink href={messagesHref} />}
+        {/* The divider is its own line: a border on the round trigger curved into a crescent. */}
+        <span aria-hidden className="hidden h-8 w-px bg-border md:block" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="focus-ring flex items-center gap-2.5 rounded-full md:border-l md:border-border md:pl-3"
+              className="focus-ring flex items-center gap-2.5 rounded-full"
               // Starts with the visible name, so voice control ("click Elizabeth")
               // and the screen-reader name agree (Lighthouse label-content-name-mismatch).
               aria-label={`${userName}, account menu`}
@@ -162,7 +164,7 @@ export function Topbar({
 function SectionTabs({ role }: { role: Role }) {
   const pathname = usePathname() ?? "";
   return (
-    <nav aria-label="Sections" className="hidden self-stretch lg:flex">
+    <nav aria-label="Sections" className="hidden self-stretch lg:mr-3 lg:flex">
       <ul className="flex items-stretch gap-6">
         {mobileNavByRole[role].map((item) => {
           const active = itemIsActive(pathname, item.href);
@@ -172,7 +174,7 @@ function SectionTabs({ role }: { role: Role }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "focus-ring flex items-center whitespace-nowrap rounded-sm text-body font-medium transition-colors",
+                  "focus-ring flex items-center whitespace-nowrap text-body font-medium transition-colors",
                   active
                     ? "text-text shadow-[inset_0_-2px_0_0_var(--accent)]"
                     : "text-text-muted hover:text-text",

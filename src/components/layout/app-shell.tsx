@@ -115,7 +115,7 @@ export function AppShell({
           />
           {/* pb-20 clears the bottom bar so it never covers a composer or a
               sticky Save; the bar is only there below `md`. */}
-          <main className="flex-1 px-4 pb-24 pt-1 md:px-[clamp(16px,2.4vw,30px)] md:pb-10">
+          <main className="flex-1 px-4 pb-24 pt-4 md:px-[clamp(16px,2.4vw,30px)] md:pb-10 md:pt-[clamp(16px,2.4vw,30px)]">
             <div className="w-full">{children}</div>
           </main>
         </div>
