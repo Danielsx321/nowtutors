@@ -2,23 +2,18 @@
 
 import * as React from "react";
 import Link from "next/link";
-import type { ConnectionState } from "agora-rtc-sdk-ng";
-import { toast } from "sonner";
-import { AlertTriangle, Clock } from "lucide-react";
+import { AlertTriangle, Clock, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SessionClient, type NetworkQuality, type SessionTokenGrant } from "@/lib/agora/client";
 import {
   VideoTile,
-  type PlayableVideoTrack,
 } from "@/components/features/session/video-tile";
-import { SessionTimer, type TimeStage } from "@/components/features/session/session-timer";
+import { SessionTimer } from "@/components/features/session/session-timer";
 import { EndSessionButton } from "@/components/features/session/end-session-button";
 import { ControlBar } from "@/components/features/session/control-bar";
 import { ConnectionBanner, qualityLevel } from "@/components/features/session/connection-banner";
 import { PresenceChip, QualityChip } from "@/components/features/session/room-chips";
 import { Lobby } from "@/components/features/session/lobby";
-import { useTokenRenewal } from "@/hooks/use-token-renewal";
-import { getSessionState } from "@/actions/sessions";
+import { useActiveSession, type SessionMeta } from "@/components/features/session/active-session";
 
 /**
  * The instant-session room (SPEC §7.4 in-session UI, §9).
@@ -50,276 +45,71 @@ import { getSessionState } from "@/actions/sessions";
  * reaches zero. Event-driven calls, no interval — CLAUDE.md's ban on polling is intact, and a
  * browser with a fast clock gets corrected rather than obeyed.
  *
+ * **Mini-player (2026-09-29):** the call itself (join, renewal, the server
+ * reads, mic and camera) moved to `ActiveSessionProvider` in the root
+ * providers, so it survives leaving this page; off this page the mini-player
+ * shows it. This component is now the full-size view of that call, plus the
+ * lobby that starts it. Coming back through Enlarge finds the call already
+ * held and skips the lobby. The countdown is drawn here but no longer acts:
+ * the provider's timeout calls the server at the deadline.
+ *
  * Everything about *what this participant publishes* comes from the token
  * response, which derives it from the booking server-side. `viewerIsTutor` below
  * is presentational only: it decides which tile is the big one and what the
  * labels read, and is never consulted for a publish decision.
  */
 
-export interface SessionRoomProps {
-  bookingId: string;
-  /** The room's heading: the subject, or "Tutoring session". */
-  title: string;
-  /** Under the heading: who with, and for how long. */
-  subtitle?: string;
-  /** Labels and layout only — the publish decision comes from the token route. */
-  viewerIsTutor: boolean;
-  viewerName: string;
-  viewerAvatarUrl?: string | null;
-  otherPartyName: string;
-  otherPartyAvatarUrl?: string | null;
-  /**
-   * ISO-8601 hard stop, server-computed from `started_at` (§7.4). Null when the
-   * pair has not completed yet — the clock has not started.
-   */
-  initialDeadline: string | null;
-  /** Booked duration, for the timer's proportion. */
-  durationMinutes: number | null;
-}
+/** Same props the page always passed; they become the provider's `SessionMeta` on Join. */
+export type SessionRoomProps = SessionMeta;
 
-type Phase = "lobby" | "connecting" | "joining" | "live" | "error";
-
-interface TokenErrorBody {
-  error?: unknown;
-}
-
-export function SessionRoom({
-  bookingId,
-  title,
-  subtitle,
-  viewerIsTutor,
-  viewerName,
-  viewerAvatarUrl,
-  otherPartyName,
-  otherPartyAvatarUrl,
-  initialDeadline,
-  durationMinutes,
-}: SessionRoomProps) {
-  const [phase, setPhase] = React.useState<Phase>("lobby");
-  const [quality, setQuality] = React.useState<NetworkQuality | null>(null);
-  const [stage, setStage] = React.useState<TimeStage>("normal");
+export function SessionRoom(props: SessionRoomProps) {
+  const {
+    bookingId,
+    title,
+    subtitle,
+    viewerIsTutor,
+    viewerName,
+    viewerAvatarUrl,
+    otherPartyName,
+    otherPartyAvatarUrl,
+    durationMinutes,
+  } = props;
+  const session = useActiveSession();
   const [layout, setLayout] = React.useState<"spotlight" | "side-by-side">("spotlight");
-  const [error, setError] = React.useState<string | null>(null);
-  /** A failure AFTER a successful join. Worth saying, not worth tearing the room down for. */
-  const [notice, setNotice] = React.useState<string | null>(null);
-  const [attempt, setAttempt] = React.useState(0);
-  const [localVideo, setLocalVideo] = React.useState<PlayableVideoTrack | null>(null);
-  const [remoteVideo, setRemoteVideo] = React.useState<PlayableVideoTrack | null>(null);
-  const [remotePresent, setRemotePresent] = React.useState(false);
-  const [connection, setConnection] = React.useState<ConnectionState | null>(null);
-  /** Server-issued. Replaced whenever the server tells us a truer one. */
-  const [deadline, setDeadline] = React.useState<string | null>(initialDeadline);
-  /** Terminal: the session is over and the room has been torn down. */
-  const [finished, setFinished] = React.useState(false);
-  /** The current token's server-reported expiry (§9 step 5). Drives renewal below. */
-  const [tokenExpiresAt, setTokenExpiresAt] = React.useState<string | null>(null);
-  const [micEnabled, setMicEnabled] = React.useState(true);
-  /** Null for a student: no camera track exists to toggle (§9, media split). */
-  const [cameraEnabled, setCameraEnabled] = React.useState<boolean | null>(
-    viewerIsTutor ? true : null,
-  );
 
-  /**
-   * Held so the room can be torn down from outside the join effect — when the
-   * session ends, the devices must be released immediately rather than at the
-   * next unmount. `close()` on the local tracks is what turns the camera light
-   * off, and leaving it on after a session has ended is not acceptable.
-   */
-  const clientRef = React.useRef<SessionClient | null>(null);
+  const mine = session.meta?.bookingId === bookingId;
+  const other = session.meta && !mine && session.phase !== "idle" ? session.meta : null;
 
-  const finish = React.useCallback(() => {
-    setFinished(true);
-    void clientRef.current?.leave();
-  }, []);
-
-  /**
-   * Ask the server what is actually true. This is the only call this component
-   * makes about session state, and it is never on a timer — see the note at the
-   * top of the file for the four moments that trigger it.
-   *
-   * At the deadline this is also the *actor*: `getSessionState` performs the
-   * transition server-side when the booked duration has run out. A failure here
-   * is deliberately silent — the room stays up, the token route will refuse the
-   * next credential anyway, and Part 3C's cron closes the row regardless. There
-   * is nothing a person in the room could do about it.
-   */
-  const refreshState = React.useCallback(async () => {
-    try {
-      const result = await getSessionState(bookingId);
-      if ("error" in result) return;
-      setDeadline(result.state.deadline);
-      if (result.state.finished) finish();
-    } catch {
-      // Intentionally ignored; see above.
-    }
-  }, [bookingId, finish]);
-
-  // Read by the SDK handlers below, which are bound once per join and so can't
-  // close over a newer `refreshState`.
-  const refreshRef = React.useRef(refreshState);
-  refreshRef.current = refreshState;
-
-  // On mount: the page rendered from a read that may predate the other party's
-  // arrival, so the deadline it handed down can already be stale.
-  React.useEffect(() => {
-    void refreshState();
-  }, [refreshState]);
-
-  // The other party arrived. Their join is what writes `started_at` and so what
-  // creates the deadline — the SDK telling us they published is the push signal
-  // that it now exists. `bookings` is not in the Realtime publication (drizzle/
-  // 0006) and putting it there would be a migration, so the media layer's own
-  // event is the notification, and the guarded read above is the data.
-  const wasPresent = React.useRef(false);
-  React.useEffect(() => {
-    if (remotePresent && !wasPresent.current) void refreshState();
-    wasPresent.current = remotePresent;
-  }, [remotePresent, refreshState]);
-
-  const inLobby = phase === "lobby";
-  React.useEffect(() => {
-    // Nothing joins, and no device is asked for, until the lobby's Join.
-    if (inLobby) return;
-    // Constructed synchronously so the cleanup below can always dispose it —
-    // including while the join is still awaiting device permission, which is
-    // exactly when an abandoned camera gets stranded.
-    const client = new SessionClient({
-      onLocalVideo: setLocalVideo,
-      onRemoteVideo: setRemoteVideo,
-      onRemotePresence: (present) => {
-        setRemotePresent(present);
-        // The other person left the channel. If they ended the session, the
-        // server has already closed it and this is how this side finds out:
-        // without it the room stayed open, timer running, until the booked
-        // time ran out. A dropped connection gets "not finished" back and the
-        // room simply waits for them. Event-driven, one call per departure.
-        if (!present) void refreshRef.current();
-      },
-      onConnectionState: setConnection,
-      onNetworkQuality: setQuality,
-      onError: (err) => setNotice(describeJoinError(err)),
-    });
-
-    clientRef.current = client;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        // The client sends a booking id and nothing else. Channel, role, uid and
-        // identity are all decided by the route (CLAUDE.md: tokens are never
-        // issued client-side, and the Render service is never called from here).
-        const res = await fetch("/api/agora/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bookingId }),
-          cache: "no-store",
-        });
-        const body: unknown = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          if (cancelled) return;
-          const message = (body as TokenErrorBody | null)?.error;
-          setError(
-            typeof message === "string"
-              ? message
-              : "Couldn't connect to this session.",
-          );
-          setPhase("error");
-          return;
-        }
-        if (cancelled || client.disposed) return;
-
-        const grant = body as SessionTokenGrant;
-        setPhase("joining");
-        await client.join(grant);
-        if (cancelled || client.disposed) return;
-        setTokenExpiresAt(grant.expiresAt);
-        setPhase("live");
-      } catch (err) {
-        if (cancelled) return;
-        setError(describeJoinError(err));
-        setPhase("error");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (clientRef.current === client) clientRef.current = null;
-      // Stops tracks, closes devices, leaves the channel. Safe mid-join.
-      void client.leave();
-    };
-    // `attempt` is the retry trigger: bumping it tears the old client down
-    // through this cleanup and builds a fresh one. `inLobby` flipping to false
-    // is the first join. `phase` itself is deliberately not a dependency: the
-    // effect sets it, and re-running on every phase change would rejoin.
-  }, [bookingId, attempt, inLobby]);
-
-  const retry = () => {
-    setError(null);
-    setNotice(null);
-    setLocalVideo(null);
-    setRemoteVideo(null);
-    setRemotePresent(false);
-    setTokenExpiresAt(null);
-    setQuality(null);
-    setPhase("connecting");
-    setAttempt((n) => n + 1);
-  };
-
-  const onStageChange = React.useCallback((next: TimeStage) => {
-    setStage(next);
-    if (next === "five") toast("5 minutes left in this session.");
-  }, []);
-
-  /**
-   * Swap the renewed token in without dropping the connection (§9 step 6),
-   * then re-arm this hook off the fresh `expiresAt` it came back with.
-   */
-  const handleRenewed = React.useCallback(async (grant: SessionTokenGrant) => {
-    try {
-      await clientRef.current?.renewToken(grant.token);
-      setTokenExpiresAt(grant.expiresAt);
-    } catch (err) {
-      setNotice(describeJoinError(err));
-    }
-  }, []);
-
-  /**
-   * The renewal request came back non-OK. It re-ran the same checks the
-   * initial join did (participation, and the elapsed refusal Part 3B added),
-   * so the server has already spoken — ask it what is now true rather than
-   * guess. If the booking elapsed mid-session, `refreshState` is what turns
-   * that into `finish()`; the best-effort deadline transition on the route's
-   * refusal applies unchanged and needs nothing from the client.
-   */
-  const handleRenewalRefused = React.useCallback(() => {
-    void refreshState();
-  }, [refreshState]);
-
-  useTokenRenewal({ bookingId }, tokenExpiresAt, handleRenewed, handleRenewalRefused);
-
-  const toggleMic = React.useCallback(async () => {
-    const next = await clientRef.current?.toggleMic();
-    if (next !== undefined) setMicEnabled(next);
-  }, []);
-
-  const toggleCamera = React.useCallback(async () => {
-    const next = await clientRef.current?.toggleCamera();
-    // `undefined` means no client yet; `null` means no camera track (student)
-    // and is a legitimate result, not "unknown" — both leave state alone only
-    // in the first case.
-    if (next !== undefined) setCameraEnabled(next);
-  }, []);
-
-  // Terminal, and checked before the error branch: a token refusal that arrives
-  // *because* the session ended should read as "it's over", not as a failure.
   const topBar = (status?: React.ReactNode) => (
     <RoomTopBar title={title} subtitle={subtitle}>
       {status}
     </RoomTopBar>
   );
 
-  if (finished) {
+  // Another booking's call is held in this tab (one at a time, see the provider).
+  if (other) {
+    return (
+      <div className="flex flex-col gap-4">
+        {topBar()}
+        <div className="rounded-card bg-surface-raised p-6">
+          <h2 className="text-h3 font-bold text-text">You&apos;re already in a session</h2>
+          <p className="mt-2 max-w-prose text-body text-text-muted">
+            Your session with {other.otherPartyName} is still running. Finish it before joining this one.
+          </p>
+          <Button asChild className="mt-4">
+            <Link href={`/session/${other.bookingId}`}>
+              <Maximize2 aria-hidden />
+              Back to that session
+            </Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Terminal, and checked before the error branch: a token refusal that arrives
+  // *because* the session ended should read as "it's over", not as a failure.
+  if (mine && session.finished) {
     return (
       <div className="flex flex-col gap-4">
         {topBar()}
@@ -332,7 +122,7 @@ export function SessionRoom({
     );
   }
 
-  if (phase === "lobby") {
+  if (!mine || session.phase === "idle") {
     return (
       <div className="flex flex-col gap-4">
         {topBar()}
@@ -340,11 +130,13 @@ export function SessionRoom({
           needsCamera={viewerIsTutor}
           otherPartyName={otherPartyName}
           otherPartyAvatarUrl={otherPartyAvatarUrl}
-          onJoin={() => setPhase("connecting")}
+          onJoin={() => session.start(props)}
         />
       </div>
     );
   }
+
+  const { phase, quality, remotePresent, micEnabled, cameraEnabled, localVideo, remoteVideo } = session;
 
   if (phase === "error") {
     return (
@@ -355,8 +147,8 @@ export function SessionRoom({
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
             <div className="min-w-0">
               <p className="font-semibold text-text">Couldn&apos;t join the session</p>
-              <p className="mt-1 text-body text-text">{error}</p>
-              <Button className="mt-4" onClick={retry}>
+              <p className="mt-1 text-body text-text">{session.error}</p>
+              <Button className="mt-4" onClick={session.retry}>
                 Try again
               </Button>
             </div>
@@ -385,9 +177,7 @@ export function SessionRoom({
       roleLabel="You"
       avatarUrl={viewerAvatarUrl}
       // A toggled-off camera renders the same "Camera off" placeholder as one
-      // that never came up, rather than a frozen last frame — `setEnabled`
-      // stops sending, it does not stop this component from being handed a
-      // still-live track object.
+      // that never came up, rather than a frozen last frame.
       track={cameraEnabled === false ? null : localVideo}
       muted={!micEnabled}
       emptyReason={phase === "live" ? "camera-off" : "waiting"}
@@ -429,6 +219,7 @@ export function SessionRoom({
   );
 
   const cameraOn = cameraEnabled === true;
+  const stage = session.stage;
 
   return (
     <div className="flex flex-col gap-4">
@@ -439,10 +230,9 @@ export function SessionRoom({
           )}
           <div className="sm:ml-auto">
             <SessionTimer
-              deadline={deadline}
+              deadline={session.deadline}
               durationMinutes={durationMinutes}
-              onExpired={refreshState}
-              onStageChange={onStageChange}
+              onStageChange={session.reportStage}
             />
           </div>
         </>,
@@ -450,11 +240,11 @@ export function SessionRoom({
 
       <ConnectionBanner
         phase={phase}
-        connection={connection}
+        connection={session.connection}
         quality={phase === "live" ? quality : null}
         otherRole={viewerIsTutor ? "Your student" : "Your tutor"}
-        onTurnOffVideo={viewerIsTutor && cameraOn ? () => void toggleCamera() : undefined}
-        onRejoin={retry}
+        onTurnOffVideo={viewerIsTutor && cameraOn ? () => void session.toggleCamera() : undefined}
+        onRejoin={session.retry}
       />
 
       {(stage === "two" || stage === "final") && (
@@ -466,13 +256,13 @@ export function SessionRoom({
         </p>
       )}
 
-      {notice && (
+      {session.notice && (
         <p
           role="status"
           aria-live="polite"
           className="rounded-[14px] border border-warning bg-warning-surface px-3 py-2 text-small text-warning"
         >
-          {notice}
+          {session.notice}
         </p>
       )}
 
@@ -496,12 +286,12 @@ export function SessionRoom({
         micEnabled={micEnabled}
         cameraEnabled={cameraEnabled}
         disabled={phase !== "live"}
-        onToggleMic={() => void toggleMic()}
-        onToggleCamera={() => void toggleCamera()}
+        onToggleMic={() => void session.toggleMic()}
+        onToggleCamera={() => void session.toggleCamera()}
         layout={layout}
         onToggleLayout={() => setLayout((l) => (l === "spotlight" ? "side-by-side" : "spotlight"))}
         endAction={
-          <EndSessionButton bookingId={bookingId} viewerIsTutor={viewerIsTutor} onEnded={finish} />
+          <EndSessionButton bookingId={bookingId} viewerIsTutor={viewerIsTutor} onEnded={session.finish} />
         }
       />
     </div>
@@ -592,28 +382,4 @@ function RoomTopBar({
       {children}
     </header>
   );
-}
-
-/**
- * Turn an SDK or network failure into something the person in the room can act
- * on. Agora's own messages name internal codes; "PERMISSION_DENIED" is not an
- * instruction to anyone.
- */
-function describeJoinError(err: unknown): string {
-  const code =
-    typeof err === "object" && err !== null && "code" in err
-      ? String((err as { code: unknown }).code)
-      : "";
-
-  switch (code) {
-    case "PERMISSION_DENIED":
-      return "Your browser blocked access to the microphone or camera. Allow it in the address bar, then try again.";
-    case "DEVICE_NOT_FOUND":
-      return "No microphone was found. Connect one and try again.";
-    case "NOT_READABLE":
-    case "NOT_SUPPORTED":
-      return "Another app is using your microphone or camera. Close it and try again.";
-    default:
-      return "Something went wrong connecting to the session. Please try again.";
-  }
 }

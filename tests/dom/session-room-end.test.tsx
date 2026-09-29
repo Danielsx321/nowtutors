@@ -54,13 +54,18 @@ vi.mock("@/actions/sessions", () => ({
 
 vi.mock("@/hooks/use-token-renewal", () => ({ useTokenRenewal: () => {} }));
 vi.mock("sonner", () => ({ toast: vi.fn() }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/session/00000000-0000-4000-8000-000000000001" }));
 
 import { SessionRoom } from "@/components/features/session/session-room";
+import { ActiveSessionProvider } from "@/components/features/session/active-session";
 
 const notFinished = { state: { deadline: null, finished: false } };
 
 async function joinRoom() {
+  // Since the mini-player (2026-09-29) the call lives in the root provider;
+  // the room is a view of it.
   render(
+    <ActiveSessionProvider>
     <SessionRoom
       bookingId="00000000-0000-4000-8000-000000000001"
       title="Tutoring session"
@@ -69,7 +74,8 @@ async function joinRoom() {
       otherPartyName="Elizabeth"
       initialDeadline={null}
       durationMinutes={60}
-    />,
+    />
+    </ActiveSessionProvider>,
   );
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Join session" }));

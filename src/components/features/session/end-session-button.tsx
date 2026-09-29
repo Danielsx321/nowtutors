@@ -32,12 +32,15 @@ export interface EndSessionButtonProps {
   viewerIsTutor: boolean;
   /** Called after the server confirms, so the room can tear the SDK down. */
   onEnded: () => void;
+  /** The mini-player's small version: same confirm, shorter label. */
+  compact?: boolean;
 }
 
 export function EndSessionButton({
   bookingId,
   viewerIsTutor,
   onEnded,
+  compact = false,
 }: EndSessionButtonProps) {
   const [open, setOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
@@ -65,9 +68,15 @@ export function EndSessionButton({
 
   return (
     <>
-      <Button variant="danger" onClick={() => setOpen(true)}>
+      <Button
+        variant="danger"
+        size={compact ? "sm" : "md"}
+        // The short label keeps the full name for screen readers and voice control.
+        aria-label={compact ? "End session" : undefined}
+        onClick={() => setOpen(true)}
+      >
         <PhoneOff aria-hidden />
-        End session
+        {compact ? "End" : "End session"}
       </Button>
 
       <Modal

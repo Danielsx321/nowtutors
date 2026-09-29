@@ -15,6 +15,9 @@ vi.mock("next/link", () => ({
   ),
 }));
 vi.mock("@/actions/auth", () => ({ signOut: vi.fn() }));
+vi.mock("@/components/features/session/active-session", () => ({
+  useActiveSession: () => ({ leave: vi.fn() }),
+}));
 vi.mock("@/components/features/messaging/unread-messages-link", () => ({ UnreadMessagesLink: () => null }));
 vi.mock("@/components/features/tutor/go-live-toggle", () => ({ GoLiveToggle: () => null }));
 

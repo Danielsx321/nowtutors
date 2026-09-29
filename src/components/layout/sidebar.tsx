@@ -10,6 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSharedUnreadCount } from "@/components/features/messaging/unread-context";
 import { signOut } from "@/actions/auth";
+import { useActiveSession } from "@/components/features/session/active-session";
 import { itemIsActive, type NavItem } from "@/components/layout/nav-config";
 
 export { itemIsActive } from "@/components/layout/nav-config";
@@ -125,6 +126,9 @@ export function SidebarAccount({
   links: { label: string; href: string }[];
   onNavigate?: () => void;
 }) {
+  // Log out hangs up an instant session first, so the camera and mic are
+  // released before the redirect (the call lives above every page).
+  const { leave: leaveSession } = useActiveSession();
   return (
     <div>
       <SectionLabel>Account</SectionLabel>
@@ -139,7 +143,7 @@ export function SidebarAccount({
             {l.label}
           </Link>
         ))}
-        <form action={signOut}>
+        <form action={signOut} onSubmit={() => leaveSession("sign-out")}>
           <button
             type="submit"
             className="focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-[11px] text-body font-medium text-spark-text transition-colors hover:bg-surface-muted"
