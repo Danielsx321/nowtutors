@@ -8,8 +8,10 @@ environment.
 
 - **Dev Supabase:** project ref `mipnoxlhurdbaahmvhhx` (eu-west-3). Only environment
   in use during Phase 0. No prod project yet.
-- **Deploy target:** Vercel **Hobby**. **There is deliberately no `vercel.json`** — Hobby
-  crons run at most **once a day**, which cannot serve a 5-minute presence sweep. Scheduled
+- **Deploy target:** Vercel **Hobby**. `vercel.json` exists only to pin the function region
+  (`"regions": ["cdg1"]`, Paris, next to the database; PR #105) and declares **no crons**: Hobby
+  crons run at most **once a day**, which cannot serve a 5-minute presence sweep. (Corrected in Phase
+  10 Part 5; this line used to say there was no `vercel.json` at all.) Scheduled
   jobs run on Supabase **`pg_cron` + `pg_net`** instead (settled in Phase 6 Part 1; see
   SPEC §3.5/§12 and the pg_cron section below).
 
@@ -382,9 +384,11 @@ already-running script.
   `*/10 * * * *`. Verify in `cron.job` and `net._http_response`
   (`{"ok":true,"job":"expire-unpaid","expired":N,...}`). Tidy-up only: an unscheduled job is not an
   outage (§4.2).
-- [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
-  Part 1 built presence only, and the §12 warm-ping to the Render token service is a
-  `TODO(Phase 6 Part 3)` in the sweep handler).
+- [ ] Agora project settings and token-service health check. **The warm ping is built** (corrected
+  Phase 10 Part 5): `sweep-presence` calls `pingTokenService()` every run and reports
+  `agoraWarmPing` in its response (`src/lib/cron/jobs.ts`). What is still open is the Agora console
+  side, with Noora: the App Certificate (T2) and the co-host token setting (T5), then the `live`
+  mode check below.
 - [ ] **pg_cron scheduling for `/api/cron/booking-reminders`** — Phase 10 Part 3. Run
   `drizzle/snippets/pg_cron_booking_reminders.sql` in the SQL editor on `mipnoxlhurdbaahmvhhx` after the merge
   deploys (it reuses the Vault secrets from `pg_cron_sweep_presence.sql`), then again on the production project
@@ -395,6 +399,13 @@ already-running script.
   expiry, off-platform arrangements, liability and governing law, data region, session recording, retention,
   support address), get her sign-off on the wording, then set `draft={false}` on each page. `grep -rn
   "ToConfirm" src/app` must return nothing but the component's own file.
+- [ ] **Vercel Preview environment is broken** (found Phase 10 Part 5, 2026-09-29): every preview deployment
+  answers 500 with `MIDDLEWARE_INVOCATION_FAILED` on every page, including the previews for Parts 2 to 4. The
+  build passes, so the PR check is green. Production is fine. Likely cause: the Preview environment has no
+  Supabase variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` at least), which the
+  middleware reads on every request. Fix in Vercel → Settings → Environment Variables, ticking **Preview**
+  with the **test** project's values (`.env.test`), never production's. Check: a preview URL's `/login`
+  returns 200.
 - [ ] Resend domain verification and DNS records — Phase 10 Part 6. Until then `EMAIL_FROM` can be
   `NowTutors <onboarding@resend.dev>`, which Resend delivers only to the account owner's address.
 - [ ] **Email env vars on Vercel** — Phase 10 Part 1: `RESEND_API_KEY` (Production only; leave it unset on
@@ -425,7 +436,10 @@ already-running script.
   `DATABASE_URL`, `DIRECT_URL`), redo the Google OAuth redirect URIs and the same-email linking
   setting for the new project, and re-run `pnpm db:verify-rls` against it. See DECISIONS,
   "Production 404".
-  - **All three `drizzle/snippets/pg_cron_*.sql` files must be run again on the new project.**
+  - **Every `drizzle/snippets/pg_cron_*.sql` file (seven as of Phase 10 Part 3: sweep-presence,
+    expire-requests, complete-sessions, release-earnings, reconcile-wallets, expire-unpaid,
+    booking-reminders) must be run again on the new project.** The paragraph below was written when
+    there were three; its rule, sweep-presence first, still holds.
     `cron.job`, the Vault secrets, and everything scheduled from them are **per-project state** —
     none of it is carried by a migration, and none of it follows the app when
     `NEXT_PUBLIC_SUPABASE_URL` and friends get repointed. As of 2026-08-25 every snippet that
@@ -463,6 +477,21 @@ already-running script.
   `db:verify-rls` must print PASSED including the six `message-attachments` lines. The deployed app needs
   `SUPABASE_SERVICE_ROLE_KEY` on Vercel Production (already set, marked Sensitive 2026-09-15): the
   attachment actions are the first app code to use the service role.
+- [x] **Apply `drizzle/0021` to `0024` to `mipnoxlhurdbaahmvhhx`** (added Phase 10 Part 5). **Confirmed applied
+  2026-09-29** by Daniels in the SQL editor: `drizzle.__drizzle_migrations` holds 25 rows, one per file
+  `0000` to `0024` (ids count from 1). The four landed on 20 Sep (`0021`), 21 Sep (`0022`, `0023`) and
+  26 Sep (`0024`), all times WAT. The launch fixes
+  (PR #118, merged 2026-09-28) and the review before them shipped `0021_close_direct_rest_writes`,
+  `0022_one_pending_request_per_student`, `0023_presence_guard_trusted_server` and
+  `0024_earnings_claimed_by_withdrawal`, and DECISIONS says each needs `pnpm db:migrate` on production. **No
+  record says they were applied.** Check in the SQL editor:
+  `select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 6;` (the newest
+  rows should be the four above). If any is missing, run `pnpm db:migrate` from `~/nowtutors` on `main`, then
+  `pnpm db:verify-rls` (must print PASSED). The code on production already assumes all four.
+- [x] **pg_cron scheduling for `/api/cron/release-earnings`** — Phase 8 Part 1. Scheduled on
+  `mipnoxlhurdbaahmvhhx` (jobid 4, `0 * * * *`, active; seen in the `cron.job` list 2026-09-29). Snippet
+  `drizzle/snippets/pg_cron_release_earnings.sql`. **Not tidy-up: if it stops, tutors are never paid.**
+  (Item added in Phase 10 Part 5: it was scheduled but never had a checklist line.)
 - [x] **Apply `drizzle/0020_one_live_broadcast.sql` to `mipnoxlhurdbaahmvhhx`**: Phase 9 Part 3.
   **Applied 2026-09-15** after PR #71 merged (`802c8d3`); `pnpm db:verify-rls` PASSED on production.
   Run after the Part 3 PR merges, from `~/nowtutors` on `main`: `pnpm db:migrate`, then

@@ -43,7 +43,7 @@ export async function SettingsSections({ userId, role }: { userId: string; role:
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Account</CardTitle>
+          <CardTitle as="h2">Account</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-small text-text-muted">
@@ -69,7 +69,7 @@ export async function SettingsSections({ userId, role }: { userId: string; role:
 
       <Card>
         <CardHeader>
-          <CardTitle>Email notifications</CardTitle>
+          <CardTitle as="h2">Email notifications</CardTitle>
         </CardHeader>
         <CardContent>
           <NotificationForm
@@ -84,7 +84,7 @@ export async function SettingsSections({ userId, role }: { userId: string; role:
 
       <Card>
         <CardHeader>
-          <CardTitle>Password</CardTitle>
+          <CardTitle as="h2">Password</CardTitle>
         </CardHeader>
         <CardContent>
           <PasswordForm hasPassword={hasPassword} />
@@ -93,7 +93,7 @@ export async function SettingsSections({ userId, role }: { userId: string; role:
 
       <Card>
         <CardHeader>
-          <CardTitle>Close your account</CardTitle>
+          <CardTitle as="h2">Close your account</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-body text-text-muted">

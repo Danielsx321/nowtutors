@@ -1,6 +1,8 @@
 "use client";
 
 import { Info } from "lucide-react";
+import { ErrorView } from "@/components/layout/error-view";
+import { PageLoading } from "@/components/layout/page-loading";
 import { Section, Demo, muted, type Surface } from "./kit";
 import { cn } from "@/lib/utils";
 import { Alert } from "@/components/ui/alert";
@@ -37,7 +39,7 @@ export function FeedbackSection({ surface }: { surface: Surface }) {
         <Button variant="outline" onClick={() => toast.success("Session booked", { description: "Tomorrow at 3:00 PM" })}>
           Success
         </Button>
-        <Button variant="outline" onClick={() => toast.error("Something went wrong")}>
+        <Button variant="outline" onClick={() => toast.error("Couldn't save your changes. Try again.")}>
           Error
         </Button>
         <Button variant="outline" onClick={() => toast.warning("Your tutor is running late")}>
@@ -93,6 +95,20 @@ export function FeedbackSection({ surface }: { surface: Surface }) {
             <Skeleton className="h-3 w-24" />
           </div>
         </div>
+      </Demo>
+
+      <Demo label="Page error (error.tsx)" surface={surface} className="flex-col items-stretch">
+        <ErrorView
+          headingLevel={2}
+          error={Object.assign(new Error("Kitchen sink demo"), { digest: "1234567890" })}
+          reset={() => toast.success("reset() called")}
+          message="Something on our side broke while loading your dashboard."
+          home={{ href: "#feedback", label: "Go to your dashboard" }}
+        />
+      </Demo>
+
+      <Demo label="Page loading (loading.tsx)" surface={surface} className="flex-col items-stretch">
+        <PageLoading />
       </Demo>
     </Section>
   );

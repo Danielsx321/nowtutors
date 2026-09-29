@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { BookOpen } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -173,13 +175,21 @@ export function SubjectManager({ subjects }: { subjects: ManagedSubject[] }) {
   return (
     <div className="space-y-4">
       <CreateForm />
-      <ul className="space-y-3">
-        {subjects.map((s) => (
-          <li key={`${s.id}-${s.name}-${s.isActive}`}>
-            <SubjectRow subject={s} />
-          </li>
-        ))}
-      </ul>
+      {subjects.length === 0 ? (
+        <EmptyState
+          icon={<BookOpen />}
+          title="No subjects yet"
+          description="Add the first one above. Tutors pick from this list, and students filter by it."
+        />
+      ) : (
+        <ul className="space-y-3">
+          {subjects.map((s) => (
+            <li key={`${s.id}-${s.name}-${s.isActive}`}>
+              <SubjectRow subject={s} />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

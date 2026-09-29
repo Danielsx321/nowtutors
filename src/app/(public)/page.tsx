@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/empty-state";
+import { GraduationCap } from "lucide-react";
 import { permanentRedirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -107,7 +109,16 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
         {cards.length > 0 ? (
           <TutorGrid cards={cards} cardProps={cardProps} />
         ) : (
-          <p className="text-body text-text-muted">No tutors yet. Check back soon.</p>
+          <EmptyState
+            icon={<GraduationCap />}
+            title="No tutors here yet"
+            description="New tutors are reviewed before they appear. Check back soon, or become one of the first."
+            action={
+              <Button asChild variant="outline">
+                <Link href="/signup">Become a tutor</Link>
+              </Button>
+            }
+          />
         )}
       </section>
     </BrowseLayout>
