@@ -472,6 +472,87 @@ export const templates: { [T in EmailType]: Template<T> } = {
       </Shell>
     ),
   },
+  "reminder-24h": {
+    subject: (p) => `Tomorrow: ${p.subjectName} with ${p.otherPartyName}`,
+    body: (p, ctx) => (
+      <Shell
+        preview={`${when(p, ctx)}. You join from your booking page.`}
+        heading="Your session is tomorrow."
+        cta={{ label: "View your booking", href: ctx.url(`/dashboard/bookings/${p.bookingId}`) }}
+        manageUrl={ctx.manageUrl}
+        footerNote={replyLine(ctx)}
+      >
+        <Facts
+          rows={[
+            ["Subject", p.subjectName],
+            ["Tutor", p.otherPartyName],
+            ["When", when(p, ctx)],
+            ["Length", minutes(p.durationMinutes)],
+          ]}
+        />
+        <P>
+          The classroom opens a few minutes before the start. If you&rsquo;d like your tutor to prepare
+          something, send them a message from the booking page today.
+        </P>
+      </Shell>
+    ),
+  },
+
+  "reminder-1h-student": {
+    subject: (p) => `In an hour: ${p.subjectName} with ${p.otherPartyName}`,
+    body: (p, ctx) => (
+      <Shell
+        preview={`Starts ${when(p, ctx)}.`}
+        heading="Your session starts within the hour."
+        cta={{ label: "Go to your booking", href: ctx.url(`/dashboard/bookings/${p.bookingId}`) }}
+        manageUrl={ctx.manageUrl}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          Your {p.subjectName} session with {p.otherPartyName} starts {when(p, ctx)}. Join from your booking
+          page when the classroom opens. A laptop with a camera and a quiet spot works best.
+        </P>
+      </Shell>
+    ),
+  },
+
+  "reminder-1h-tutor": {
+    subject: (p) => `In an hour: ${p.subjectName} with ${p.otherPartyName}`,
+    body: (p, ctx) => (
+      <Shell
+        preview={`Starts ${when(p, ctx)}.`}
+        heading="Your next session starts within the hour."
+        cta={{ label: "Go to the booking", href: ctx.url(`/tutor/bookings/${p.bookingId}`) }}
+        manageUrl={ctx.manageUrl}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          {p.otherPartyName}&rsquo;s {p.subjectName} session starts {when(p, ctx)}. Join from the booking page
+          when the classroom opens. If you don&rsquo;t join, the session counts as a tutor no-show and
+          isn&rsquo;t paid.
+        </P>
+      </Shell>
+    ),
+  },
+
+  "new-message": {
+    subject: (p) => `New message from ${p.senderName}`,
+    body: (p, ctx) => (
+      <Shell
+        preview={p.preview ?? "They sent you a file."}
+        heading={`${p.senderName} sent you a message.`}
+        cta={{ label: "Read and reply", href: ctx.url(p.threadPath) }}
+        manageUrl={ctx.manageUrl}
+      >
+        {p.preview ? <Quote>{p.preview}</Quote> : null}
+        {p.hasAttachment ? <P>They attached a file. Open the conversation to see it.</P> : null}
+        <P>
+          We email you when a message arrives while you&rsquo;re away. Further messages in the same
+          conversation won&rsquo;t email again until you&rsquo;ve read this one.
+        </P>
+      </Shell>
+    ),
+  },
 };
 
 const SAMPLE_BOOKING: BookingFacts = {
@@ -528,6 +609,15 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
     noShow: false,
     netCredits: 30,
     availableAt: "2026-10-04T16:30:00.000Z",
+  },
+  "reminder-24h": SAMPLE_BOOKING,
+  "reminder-1h-student": SAMPLE_BOOKING,
+  "reminder-1h-tutor": { ...SAMPLE_BOOKING, otherPartyName: "Sam Stone" },
+  "new-message": {
+    senderName: "Sam Stone",
+    preview: "Hi Tina, could we go over the subjunctive on Thursday? I have a test on Friday.",
+    hasAttachment: false,
+    threadPath: "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
   },
 };
 

@@ -1,6 +1,8 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { queueEmails } from "@/lib/email";
+import { newMessageEmails } from "@/lib/email/message-emails";
 import { z } from "zod";
 import { getSessionProfile, requireUser } from "@/lib/auth/guards";
 import {
@@ -48,8 +50,9 @@ import { createServiceClient } from "@/lib/supabase/admin";
  * and badge update over Realtime, so a revalidation would only re-render the
  * page a send came from.
  *
- * TODO(Phase 10): email the recipient when they have been offline for more
- * than 5 minutes (§7.9, §11), honouring `notification_preferences.messages`.
+ * A new message emails the recipient when they have been away for more than
+ * five minutes (§7.9, §11): queued after the send commits, decided in
+ * `lib/email/message-emails.ts`, never for a retried client key.
  */
 
 const uuid = z.string().uuid();
@@ -194,6 +197,11 @@ export async function sendMessage(input: {
     res = await attempt();
   }
   if (!res.ok) return { error: messagingRefusalMessage(res.reason) };
+
+  if (res.created) {
+    const messageId = res.message.id;
+    queueEmails(() => newMessageEmails(messageId));
+  }
 
   // Re-read through the participant-scoped query, so the row the composer shows
   // has the same ISO timestamp (microseconds included) as a Realtime read-back.

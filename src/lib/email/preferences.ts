@@ -54,6 +54,10 @@ export const PREFERENCE_BY_TYPE: Record<EmailType, PreferenceKey | "always"> = {
   "refund-issued": "always",
   "credits-purchased": "always",
   "admin-capture-failed": "always",
+  "reminder-24h": "reminders",
+  "reminder-1h-student": "reminders",
+  "reminder-1h-tutor": "reminders",
+  "new-message": "messages",
 };
 
 export function allowsEmail(prefs: NotificationPreferences, type: EmailType): boolean {

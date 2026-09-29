@@ -165,7 +165,15 @@ export async function sendMessage(
     clientKey: string;
     attachmentPath?: string | null;
   },
-): Promise<{ ok: true; message: MessageRow } | { ok: false; reason: SendRefusal }> {
+): Promise<
+  | {
+      ok: true;
+      message: MessageRow;
+      /** False when a retried client key found the first send (Phase 10 Part 3: email once). */
+      created: boolean;
+    }
+  | { ok: false; reason: SendRefusal }
+> {
   const content = prepareContent(input);
   if (!content.ok) return content;
 
@@ -182,7 +190,7 @@ export async function sendMessage(
       if (already.senderId !== input.senderId) {
         return { ok: false as const, reason: "not_found" as const };
       }
-      return { ok: true as const, message: already };
+      return { ok: true as const, message: already, created: false };
     }
 
     const sender = await store.getStarter(input.senderId);
@@ -207,7 +215,7 @@ export async function sendMessage(
       clientKey: input.clientKey,
     });
     await store.touchConversation(input.conversationId, message.id);
-    return { ok: true as const, message };
+    return { ok: true as const, message, created: true };
   });
 }
 

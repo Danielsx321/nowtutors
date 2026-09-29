@@ -385,6 +385,11 @@ already-running script.
 - [ ] Agora project settings and token-service health check — Phase 6 **Part 3** (still unticked;
   Part 1 built presence only, and the §12 warm-ping to the Render token service is a
   `TODO(Phase 6 Part 3)` in the sweep handler).
+- [ ] **pg_cron scheduling for `/api/cron/booking-reminders`** — Phase 10 Part 3. Run
+  `drizzle/snippets/pg_cron_booking_reminders.sql` in the SQL editor on `mipnoxlhurdbaahmvhhx` after the merge
+  deploys (it reuses the Vault secrets from `pg_cron_sweep_presence.sql`), then again on the production project
+  in Part 6. Verify with the queries at the foot of the snippet; the first response should be
+  `{"ok":true,"job":"booking-reminders",...}` with 200.
 - [ ] Resend domain verification and DNS records — Phase 10 Part 6. Until then `EMAIL_FROM` can be
   `NowTutors <onboarding@resend.dev>`, which Resend delivers only to the account owner's address.
 - [ ] **Email env vars on Vercel** — Phase 10 Part 1: `RESEND_API_KEY` (Production only; leave it unset on

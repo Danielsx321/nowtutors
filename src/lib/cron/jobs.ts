@@ -1,6 +1,8 @@
 import "server-only";
 import { sendEmailNow } from "@/lib/email";
-import { sessionSummaryEmails } from "@/lib/email/booking-emails";
+import { reminderEmails, sessionSummaryEmails } from "@/lib/email/booking-emails";
+import { claimDueReminders } from "@/db/queries/booking-reminders";
+import { runBookingRemindersSweep, type ReminderKind } from "@/lib/bookings/booking-reminders";
 import * as Sentry from "@sentry/nextjs";
 import { endStaleBroadcasts } from "@/db/queries/broadcasts";
 import { sweepStalePresence } from "@/db/queries/presence";
@@ -230,6 +232,36 @@ async function reconcileWallets(): Promise<CronSummary> {
   return summary;
 }
 
+async function bookingReminders(): Promise<CronSummary> {
+  const startedAt = Date.now();
+  const res = await runBookingRemindersSweep({
+    claim: claimDueReminders,
+    async send(kind: ReminderKind, bookingId: string) {
+      let sent = 0;
+      let failed = 0;
+      for (const request of await reminderEmails(kind, bookingId)) {
+        const outcome = await sendEmailNow(request);
+        if (outcome.sent) sent++;
+        else if (outcome.reason !== "preference_off" && outcome.reason !== "not_configured") failed++;
+      }
+      return { sent, failed };
+    },
+  });
+  const summary = {
+    ok: true as const,
+    job: "booking-reminders" as const,
+    claimed24h: res.claimed24hIds.length,
+    claimed1h: res.claimed1hIds.length,
+    sent: res.sent,
+    failed: res.failed,
+    claimed24hIds: res.claimed24hIds,
+    claimed1hIds: res.claimed1hIds,
+    durationMs: Date.now() - startedAt,
+  };
+  console.info("[cron/booking-reminders]", JSON.stringify(summary));
+  return summary;
+}
+
 const JOBS: Record<CronJobName, { run: () => Promise<CronSummary>; failureMessage: string }> = {
   "sweep-presence": { run: sweepPresence, failureMessage: "Sweep failed." },
   "expire-requests": { run: expireRequests, failureMessage: "Expiry sweep failed." },
@@ -237,6 +269,7 @@ const JOBS: Record<CronJobName, { run: () => Promise<CronSummary>; failureMessag
   "complete-sessions": { run: completeSessions, failureMessage: "Completion sweep failed." },
   "release-earnings": { run: releaseEarnings, failureMessage: "Earnings release failed." },
   "reconcile-wallets": { run: reconcileWallets, failureMessage: "Wallet reconciliation failed." },
+  "booking-reminders": { run: bookingReminders, failureMessage: "Reminder sweep failed." },
 };
 
 export function runCronJob(job: CronJobName): Promise<CronSummary> {

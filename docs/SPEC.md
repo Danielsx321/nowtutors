@@ -1312,8 +1312,8 @@ Conversation list + thread view, shared component for both roles. Send text and 
 >   and re-read after every (re)subscribe.
 > - **Read state:** marked on open, when a message from the other party arrives while the tab is
 >   visible, and when the tab becomes visible. No read receipts are shown to the sender in v1.
-> - **Email** for an unread message is a `TODO(Phase 10)` hook in the send action. `notifications` is
->   not written in Phase 9.
+> - **Email** for an unread message: built in Phase 10 Part 3 (§11, "New message while away").
+>   `notifications` is still not written.
 >
 > **Built in Phase 9 Part 2 (attachments):**
 > - **Upload:** the composer checks type (MIME and extension must agree) and size, then
@@ -1628,8 +1628,8 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
-Student: booking confirmed (with `.ics`) **(built)**, reminder 24h, reminder 1h, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**. *(Reminders: Part 3.)*
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**.
+Student: booking confirmed (with `.ics`) **(built)**, reminder 24h **(built)**, reminder 1h **(built)**, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**, new message while away **(built, Part 3)**.
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**.
 Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.
 
 **When each booking and payment email goes out (Part 2).** Every one is queued after its transaction commits, at a point that happens once:
@@ -1640,11 +1640,14 @@ Admin: new tutor application **(built)**, new withdrawal request **(built)**, pa
 - *Payment capture failure*: a payment moving to `failed` for the first time (client capture decline or `DENIED`). Goes to every admin.
 - *Session summary*: when a booking's earnings row is written, which the unique index makes once per booking: by the complete-sessions cron (`earningsCreatedIds`, both `completed` and `no_show_student`) or by an admin force-complete. A tutor no-show writes no row and gets no summary. The cron awaits these sends and reports `summariesSent` / `summariesFailed`.
 
+- *Reminders (Part 3)*: the booking-reminders cron (§12), every 15 minutes. 24h to the student for a confirmed scheduled session starting 22 to 24 hours out; 1h to both sides for one starting 15 to 60 minutes out. A booking made less than an hour (24h) or 30 minutes (1h) before is skipped, since its confirmation just went out. The claim stamps `reminder_24h_sent_at` / `reminder_1h_sent_at` in the same `UPDATE ... RETURNING` that selects the row, so a booking is reminded once however often the job runs; a send that fails after its stamp is not retried (best-effort). Reminders honour `reminders`.
+- *New message while away (Part 3, §7.9)*: queued after a send that created a message (a retried client key sends nothing). Sent only when the recipient's `last_seen_at` is more than 5 minutes old (or never set), the message is still unread, and it is the first unread message from that sender in that conversation, so a burst emails once and the next email waits until the thread has been read. Honours `messages`.
+
 Times in every email are printed in the recipient's `profiles.timezone` with the zone named; the `.ics` carries UTC.
 
 Admin emails go to every `profiles.role = 'admin'` account that is not suspended.
 
-`profiles.notification_preferences` is read on every send through `lib/email/preferences.ts`: `booking_confirmations`, `reminders`, `messages` default on, `marketing` default off, a missing key means on, unknown keys are ignored. Each type maps to one key or to `always`. The `always` types are transactional (money moved, an application decided, a booking cancelled, an admin who has to act) and go out whatever the flags say. Booking confirmations and session summaries honour `booking_confirmations`; reminders will honour `reminders`, the message nudge `messages`. Preference-controlled types carry a "Manage notifications" link to the recipient's own settings page (`/tutor/settings`, `/admin/settings`, `/dashboard/settings`), shown only once that route exists in `lib/routes.ts`. No marketing email exists, so no unsubscribe token is built; if one is ever added it gets the token then.
+`profiles.notification_preferences` is read on every send through `lib/email/preferences.ts`: `booking_confirmations`, `reminders`, `messages` default on, `marketing` default off, a missing key means on, unknown keys are ignored. Each type maps to one key or to `always`. The `always` types are transactional (money moved, an application decided, a booking cancelled, an admin who has to act) and go out whatever the flags say. Booking confirmations and session summaries honour `booking_confirmations`, reminders `reminders`, the new-message email `messages`. Preference-controlled types carry a "Manage notifications" link to the recipient's own settings page (`/tutor/settings`, `/admin/settings`, `/dashboard/settings`), shown only once that route exists in `lib/routes.ts`. No marketing email exists, so no unsubscribe token is built; if one is ever added it gets the token then.
 
 ---
 
@@ -1667,7 +1670,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/expire-unpaid` | `*/10 * * * *` | **built** (Phase 8 Part 3; tidy-up, not load-bearing, §4.2) |
 | `/api/cron/complete-sessions` | `*/15 * * * *` | **built and scheduled** (Phase 6 Part 3C) |
 | `/api/cron/release-earnings` | `0 * * * *` | **built** (Phase 8 Part 1) |
-| `/api/cron/booking-reminders` | `*/15 * * * *` | Phase 10 |
+| `/api/cron/booking-reminders` | `*/15 * * * *` | **built** (Phase 10 Part 3; snippet `pg_cron_booking_reminders.sql`) |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | **built** (Phase 8 Part 3) |
 
 Every handler: verify `Authorization: Bearer ${CRON_SECRET}` — and **fail closed with 503 when the

@@ -5,7 +5,7 @@
  *
  * Part 1: the tutor-application and withdrawal emails plus the two admin
  * alerts behind them. Part 2: booking, payment, cancellation, refund and
- * session-summary emails. Reminders and the message nudge arrive in Part 3.
+ * session-summary emails. Part 3: reminders and the new-message nudge.
  */
 export type EmailType =
   | "tutor-welcome"
@@ -24,7 +24,11 @@ export type EmailType =
   | "credits-purchased"
   | "admin-capture-failed"
   | "session-summary-student"
-  | "session-summary-tutor";
+  | "session-summary-tutor"
+  | "reminder-24h"
+  | "reminder-1h-student"
+  | "reminder-1h-tutor"
+  | "new-message";
 
 /** What every booking email knows about the session. Times are ISO strings. */
 export interface BookingFacts {
@@ -85,6 +89,17 @@ export interface EmailPropsByType {
     netCredits: number;
     /** When the held earnings become withdrawable. ISO string, null if unknown. */
     availableAt: string | null;
+  };
+  "reminder-24h": BookingFacts;
+  "reminder-1h-student": BookingFacts;
+  "reminder-1h-tutor": BookingFacts;
+  "new-message": {
+    senderName: string;
+    /** The first 140 characters, or null for an attachment-only message. */
+    preview: string | null;
+    hasAttachment: boolean;
+    /** Where the recipient reads it: their own messages route. */
+    threadPath: string;
   };
 }
 

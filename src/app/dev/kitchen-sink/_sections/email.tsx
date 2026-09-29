@@ -23,10 +23,14 @@ const ORDER: EmailType[] = [
   "admin-capture-failed",
   "session-summary-student",
   "session-summary-tutor",
+  "reminder-24h",
+  "reminder-1h-student",
+  "reminder-1h-tutor",
+  "new-message",
 ];
 
 /**
- * Every email template with sample props (Phase 10 Parts 1 and 2). The body is the
+ * Every email template with sample props (Phase 10 Parts 1 to 3). The body is the
  * same React the sender renders, minus the `<html>` wrapper, so copy and
  * layout can be checked here without a Resend key or an inbox. Emails are
  * always light: no inbox honours the page theme.
