@@ -42,7 +42,8 @@ export async function requestWithdrawal(): Promise<RequestWithdrawalResult> {
   const { amountCredits, amountUsd } = res.withdrawal;
   queueEmails(async () => {
     const [tutor, destination] = await Promise.all([getRecipient(tutorId), getPayoutEmailFor(tutorId)]);
-    const tutorName = tutor?.displayName ?? tutor?.fullName ?? tutor?.email ?? "A tutor";
+    // The admin sees the legal name first: it is what PayPal will show.
+    const tutorName = tutor?.fullName ?? tutor?.displayName ?? tutor?.email ?? "A tutor";
     return [
       { type: "withdrawal-requested", to: { userId: tutorId }, props: { amountCredits, amountUsd, destination } },
       { type: "admin-new-withdrawal", to: { admins: true }, props: { tutorName, amountCredits, amountUsd } },

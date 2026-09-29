@@ -12,8 +12,9 @@ preferences zod schema, transports, recipient lookup, best-effort sender, `queue
 `TODO(Phase 10)` hooks are wired (tutor approved and rejected, withdrawal requested, paid and rejected, plus
 the admin alerts) and tutor onboarding sends the welcome and the admin "new application". With
 `RESEND_API_KEY` unset every send is printed to the server log, nothing goes out. Gates: typecheck and lint
-clean, 843 unit (36 new), 156 DOM, build passed. **Owed before merge:** the live click-through on the dev
-server (admin rejects the seeded pending tutor, `[email]` line in the log), blocked on this machine by NordVPN.
+clean, 843 unit (36 new), 156 DOM, build passed. **Live-checked** on the dev server against the test project:
+a withdrawal request, approve and mark paid produced the receipt, the admin alert and the paid email in the log
+(this used up tutor1's 40 test credits; `pnpm db:reset:test && pnpm db:seed:test` restores them).
 **Next:** Daniels merges; Part 2 (booking and payment emails).
 
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
@@ -1652,6 +1653,11 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   the profile page alike.
 
 ## Still open — carry forward
+
+- **An admin cannot reject a tutor who has no photo.** `rejectTutor` runs the same `approvalBlocker` as
+  `approveTutor` (Part G), so an application whose only problem is the missing photo can be neither approved
+  nor turned down. Found in the Phase 10 Part 1 live check. Product call: probably reject should skip the
+  photo rule. Not changed in Part 1.
 
 - **A tutor in a session is advertised as available and cannot receive.** `IncomingRequests` is
   mounted in `app/(tutor)/layout.tsx` **only**. The presence heartbeat is mounted a level up, in

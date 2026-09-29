@@ -54,6 +54,9 @@ describe("email templates", () => {
     expect(out.text).toContain("t•••s@example.com");
     expect(out.text).toContain("5PP12345AB678901C");
     expect(out.text).toContain("23 credits");
+    // Each fact on its own line in the plain-text part, label and value apart.
+    expect(out.text).toMatch(/Amount: \$30\.66 for 23 credits/);
+    expect(out.text).toMatch(/Sent to: t•••s@example\.com/);
   });
 
   it("carries the rejection note verbatim", async () => {

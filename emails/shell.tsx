@@ -174,18 +174,19 @@ export function Quote({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Label and value rows for amounts and references. */
+/**
+ * Label and value rows for amounts and references. One paragraph per row
+ * rather than a table: the plain-text part is rendered from the same markup,
+ * and table cells there run together ("Amount$40.00").
+ */
 export function Facts({ rows }: { rows: Array<[string, string]> }) {
   return (
-    <table role="presentation" cellPadding={0} cellSpacing={0} style={{ margin: "0 0 14px", fontSize: 15 }}>
-      <tbody>
-        {rows.map(([label, value]) => (
-          <tr key={label}>
-            <td style={{ padding: "3px 16px 3px 0", color: c.muted, whiteSpace: "nowrap" }}>{label}</td>
-            <td style={{ padding: "3px 0", fontWeight: 600 }}>{value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div style={{ margin: "0 0 14px", fontSize: 15 }}>
+      {rows.map(([label, value]) => (
+        <p key={label} style={{ margin: "0 0 4px" }}>
+          <span style={{ color: c.muted }}>{label}:</span> <strong>{value}</strong>
+        </p>
+      ))}
+    </div>
   );
 }

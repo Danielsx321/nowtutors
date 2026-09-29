@@ -120,7 +120,7 @@ describe("withdrawal emails", () => {
   it("queues the receipt and the admin alert with the looked-up name and destination", async () => {
     m.requireRole.mockResolvedValue(TUTOR);
     m.requestCore.mockResolvedValue({ ok: true, withdrawal: { id: randomUUID(), amountCredits: 23, amountUsd: "30.66" } });
-    m.getRecipient.mockResolvedValue({ id: TUTOR_ID, email: "t@x.test", fullName: "Tina Reyes", displayName: null });
+    m.getRecipient.mockResolvedValue({ id: TUTOR_ID, email: "t@x.test", fullName: "Tina Reyes", displayName: "Tina" });
     m.getPayoutEmailFor.mockResolvedValue("tina.reyes@example.com");
 
     const res = await requestWithdrawal();
