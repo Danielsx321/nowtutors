@@ -399,6 +399,13 @@ already-running script.
   expiry, off-platform arrangements, liability and governing law, data region, session recording, retention,
   support address), get her sign-off on the wording, then set `draft={false}` on each page. `grep -rn
   "ToConfirm" src/app` must return nothing but the component's own file.
+- [ ] **Vercel Preview environment is broken** (found Phase 10 Part 5, 2026-09-29): every preview deployment
+  answers 500 with `MIDDLEWARE_INVOCATION_FAILED` on every page, including the previews for Parts 2 to 4. The
+  build passes, so the PR check is green. Production is fine. Likely cause: the Preview environment has no
+  Supabase variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` at least), which the
+  middleware reads on every request. Fix in Vercel → Settings → Environment Variables, ticking **Preview**
+  with the **test** project's values (`.env.test`), never production's. Check: a preview URL's `/login`
+  returns 200.
 - [ ] Resend domain verification and DNS records — Phase 10 Part 6. Until then `EMAIL_FROM` can be
   `NowTutors <onboarding@resend.dev>`, which Resend delivers only to the account owner's address.
 - [ ] **Email env vars on Vercel** — Phase 10 Part 1: `RESEND_API_KEY` (Production only; leave it unset on

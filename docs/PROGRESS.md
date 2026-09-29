@@ -4,14 +4,15 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-29)
 
-**PHASE 10 PART 4 (settings, timezone, legal pages) IN REVIEW on branch `phase-10-part4-settings-legal`.** Parts
-1 to 3 merged (PRs #120, #121, #122). Part 4: `/dashboard/settings` (new) and the rest of `/tutor/settings`
-(name for students, timezone, three email switches, change password, a close-account note), tutor onboarding
-captures a timezone, `/legal/terms`, `/legal/privacy`, `/legal/refunds` as marked drafts with a footer Legal
-column. **Delete account is not built** (DECISIONS, needs a decision with Noora). **The legal pages need Noora's
-details** before launch (RUNBOOK). The booking-reminders pg_cron job was scheduled on the dev project by Daniels
-(**verify it shows as job 7**). **Next:** Daniels merges; Part 5 (error and loading states, accessibility,
-Lighthouse, record cleanup).
+**PHASE 10 PART 5 (error and loading states, accessibility, record cleanup) IN REVIEW on branch
+`phase-10-part5-polish`.** Parts 1 to 4 merged (PRs #120 to #123). Part 5: `error.tsx` for every area plus
+`global-error.tsx`, the missing `loading.tsx` files, real empty states, three Lighthouse accessibility fixes, and
+the RUNBOOK/PROGRESS drift corrected. Public pages score **100 accessibility** on production (PSI, desktop and
+mobile). **Found: every Vercel Preview deployment returns 500** (RUNBOOK item). Noora has the legal-page
+questions (sent 2026-09-29). **Next, agreed with Daniels on 2026-09-29, before Part 6:** a design PR (navy
+dashboard top bar with section tabs and the header's active underline; navy on big surfaces, links stay blue),
+then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
+room.
 
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
   **Not yet verified: whether `drizzle/0021` to `0024` were applied to production** (no apply record in
