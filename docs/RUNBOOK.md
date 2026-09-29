@@ -477,7 +477,10 @@ already-running script.
   `db:verify-rls` must print PASSED including the six `message-attachments` lines. The deployed app needs
   `SUPABASE_SERVICE_ROLE_KEY` on Vercel Production (already set, marked Sensitive 2026-09-15): the
   attachment actions are the first app code to use the service role.
-- [ ] **Apply `drizzle/0021` to `0024` to `mipnoxlhurdbaahmvhhx`** (added Phase 10 Part 5). The launch fixes
+- [x] **Apply `drizzle/0021` to `0024` to `mipnoxlhurdbaahmvhhx`** (added Phase 10 Part 5). **Confirmed applied
+  2026-09-29** by Daniels in the SQL editor: `drizzle.__drizzle_migrations` holds 25 rows, one per file
+  `0000` to `0024` (ids count from 1). The four landed on 20 Sep (`0021`), 21 Sep (`0022`, `0023`) and
+  26 Sep (`0024`), all times WAT. The launch fixes
   (PR #118, merged 2026-09-28) and the review before them shipped `0021_close_direct_rest_writes`,
   `0022_one_pending_request_per_student`, `0023_presence_guard_trusted_server` and
   `0024_earnings_claimed_by_withdrawal`, and DECISIONS says each needs `pnpm db:migrate` on production. **No

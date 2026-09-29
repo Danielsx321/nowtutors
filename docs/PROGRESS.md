@@ -15,8 +15,8 @@ then a floating, draggable mini-player so an instant session survives navigating
 room.
 
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
-  **Not yet verified: whether `drizzle/0021` to `0024` were applied to production** (no apply record in
-  RUNBOOK); Part 6 checks `drizzle.__drizzle_migrations` before anything else.
+  `drizzle/0021` to `0024` **confirmed applied** to `mipnoxlhurdbaahmvhhx` (checked 2026-09-29, 25 rows in
+  `drizzle.__drizzle_migrations`).
 
 ## Earlier on 2026-09-26
 
