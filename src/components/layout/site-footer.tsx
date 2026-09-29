@@ -14,9 +14,8 @@ export interface SiteFooterProps {
  * The columns (DESIGN.md v3, design round 3 Part B; the shape is Oranum's
  * three-column footer). Every href must be a route the app serves (SPEC
  * §10.3), and `tests/dom/site-footer.test.tsx` checks each one against
- * `lib/routes.ts`. A Legal column (Terms, Privacy, Refunds) arrives with
- * Phase 10 and is deliberately absent until the pages exist; the trust pair
- * holds that place.
+ * `lib/routes.ts`. The Legal column arrived with Phase 10 Part 4, when the
+ * three pages did.
  */
 const columns = [
   {
@@ -35,6 +34,14 @@ const columns = [
       { label: "Live lessons", href: "/live" },
       { label: "Log in", href: "/login" },
       { label: "Sign up", href: "/signup" },
+    ],
+  },
+  {
+    heading: "Legal",
+    links: [
+      { label: "Terms of service", href: "/legal/terms" },
+      { label: "Privacy policy", href: "/legal/privacy" },
+      { label: "Refunds and no-shows", href: "/legal/refunds" },
     ],
   },
 ] as const;
@@ -75,7 +82,7 @@ export function SiteFooter({ liveCount, viewerHome }: SiteFooterProps) {
   return (
     <footer className="theme-dark bg-ground text-text">
       <div className="mx-auto max-w-[1360px] px-4 md:px-6">
-        <div className="grid gap-10 border-b border-border pb-10 pt-12 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
+        <div className="grid gap-10 border-b border-border pb-10 pt-12 md:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_1fr_1fr]">
           <div>
             <Wordmark tone="onDark" size="sm" />
             <p className="mb-5 mt-4 max-w-[34ch] text-body text-text-muted">

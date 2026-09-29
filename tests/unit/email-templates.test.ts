@@ -110,14 +110,18 @@ describe("Part 2 templates", () => {
     expect(tutor.text).toContain("Working on the subjunctive, please.");
   });
 
-  it("points Manage notifications at the tutor's settings, and leaves it off while the student page doesn't exist", async () => {
+  it("points Manage notifications at each role's own settings page", async () => {
     const tutor = await renderEmail("tutor-new-booking", SAMPLE_PROPS["tutor-new-booking"], {
       recipient: { ...recipient, role: "tutor" },
       appUrl,
     });
     expect(tutor.html).toContain("https://nowtutors.test/tutor/settings");
+    // Part 4 added /dashboard/settings to routes.ts, so the student link appears on its own.
     const student = await renderEmail("booking-confirmed", SAMPLE_PROPS["booking-confirmed"], { recipient, appUrl });
-    expect(student.html).not.toContain("Manage notifications");
+    expect(student.html).toContain("https://nowtutors.test/dashboard/settings");
+    // Transactional types never carry it.
+    const receipt = await renderEmail("credits-purchased", SAMPLE_PROPS["credits-purchased"], { recipient, appUrl });
+    expect(receipt.html).not.toContain("Manage notifications");
   });
 
   it("says the credits came back when a tutor cancels, and nothing was charged when none did", async () => {

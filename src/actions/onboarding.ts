@@ -133,6 +133,7 @@ export async function completeTutorOnboarding(
         role: "tutor",
         fullName: v.fullName,
         displayName: v.fullName,
+        ...(v.timezone ? { timezone: v.timezone } : {}),
         avatarUrl: v.avatarUrl ?? null,
         onboardingCompletedAt: new Date(),
       })

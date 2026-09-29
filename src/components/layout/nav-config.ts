@@ -32,10 +32,9 @@ export interface NavItem {
  * Navigation config (SPEC §6). Presentational only; route guards live in the
  * layouts and actions.
  *
- * Only routes that exist are listed. `/how-it-works`, `/pricing`, `/faq` and
- * the legal pages are Phase 10 work and were linked here before they were
- * built, so they 404'd; they come back when the pages do (PROGRESS). The same
- * goes for the student's `/dashboard/settings`.
+ * Only routes that exist are listed (`lib/routes.ts`, tested). The legal pages
+ * are linked from the footer; `/how-it-works`, `/pricing` and `/faq` stay out
+ * until they exist.
  */
 export const publicNav: { label: string; href: string }[] = [
   { label: "Find tutors", href: "/tutors" },
@@ -66,6 +65,7 @@ export const studentNav: NavItem[] = [
   { label: "Messages", href: "/dashboard/messages", icon: MessageSquare },
   { label: "Wallet", href: "/dashboard/wallet", icon: Wallet },
   { label: "Saved tutors", href: "/dashboard/favourites", icon: Heart },
+  { label: "Settings", href: "/dashboard/settings", icon: Settings, groupStart: true },
 ];
 
 /**
@@ -133,12 +133,10 @@ export const roleHome: Record<Role, string> = {
 };
 
 /**
- * The account menu under the avatar. Only routes that exist are listed: the
- * student has no profile or settings page yet (Phase 10), so their menu is
- * Log out alone rather than two links that 404.
+ * The account menu under the avatar. Only routes that exist are listed.
  */
 export const accountLinksByRole: Record<Role, { label: string; href: string }[]> = {
-  student: [],
+  student: [{ label: "Settings", href: "/dashboard/settings" }],
   tutor: [
     { label: "Profile", href: "/tutor/profile" },
     { label: "Settings", href: "/tutor/settings" },

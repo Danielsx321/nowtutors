@@ -52,6 +52,7 @@ export function TutorForm({
     resolver: zodResolver(tutorOnboardingSchema),
     defaultValues: {
       fullName: "",
+      timezone: "",
       avatarUrl: "",
       headline: "",
       about: "",
@@ -62,6 +63,17 @@ export function TutorForm({
       paypalEmail: "",
     },
   });
+
+  // Prefill the timezone from the browser after mount, as the student form does
+  // (Phase 10 Part 4): a tutor's availability and emails read it.
+  React.useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) setValue("timezone", tz);
+    } catch {
+      /* leave blank; the field is editable */
+    }
+  }, [setValue]);
 
   const fullName = watch("fullName");
   const avatarUrl = watch("avatarUrl");
@@ -122,6 +134,20 @@ export function TutorForm({
         </Label>
         <Input id="fullName" invalid={!!errors.fullName} {...register("fullName")} />
         <FieldError>{errors.fullName?.message}</FieldError>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="timezone">Timezone</Label>
+        <Input
+          id="timezone"
+          invalid={!!errors.timezone}
+          aria-describedby="timezone-help"
+          {...register("timezone")}
+        />
+        <p id="timezone-help" className="text-small text-text-muted">
+          Your availability and session times are shown in this timezone.
+        </p>
+        <FieldError>{errors.timezone?.message}</FieldError>
       </div>
 
       <div className="space-y-1.5">
