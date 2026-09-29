@@ -5214,3 +5214,21 @@ The first Phase 10 part (workspace plan `plans/2026-09-28-nowtutors-phase-10-ema
 15. **Noted, not changed:** rejecting a tutor also requires a photo (`approvalBlocker` runs in `rejectTutor`), so an admin cannot turn down an application whose problem is a missing photo. That is Part G behaviour and a product call; recorded in PROGRESS "Still open".
 13. **Copy fix in passing**: the rejection textarea label read "sent to the tutor later"; it now reads "emailed to the tutor".
 
+## Phase 10 Part 2: booking and payment emails (`phase-10-part2-booking-emails`, 2026-09-29)
+
+Nine templates, no migration, no dependency. SPEC §11 now says when each email goes out.
+
+1. **PayPal emails are sent from the production adapters, not from `settleCapture`.** `settleCapture` and `markStatus` run inside the database transaction; an email from in there could go out for a rollback. `settleCapturedOrder` and `markPaymentStatus` in `lib/paypal/fulfilment.ts` are what both the capture route and the webhook call, so the email is queued there, after `db.transaction` resolves, keyed on the result. The two pure functions are unchanged apart from one field.
+2. **`MarkResult` "updated" carries `previousStatus`.** It is the only way to tell a first `DENIED` or `REFUNDED` from a replay; without it every PayPal retry would email again. Three settlement tests were updated to the new shape and one added for the replay.
+3. **Once-only points, all existing:** `credited` / `booking_confirmed` versus the second caller's `already_*`; the `ON CONFLICT DO NOTHING` earnings insert for summaries; the status transition for failed and refunded. No new stamp or table.
+4. **No instant-session email.** The plan listed one; SPEC §11 does not, and the student is already in the room when the tutor accepts. Left out.
+5. **Tutor session summary added.** §11 lists a summary for students only. The tutor gets one too, carrying the earned credits and the date they become withdrawable, since it is written from the same row at the same moment. SPEC updated.
+6. **The admin's cancellation note never reaches an email.** The form labels it "Why (admins only)".
+7. **One student email per cancellation.** Tutor's fault: "cancelled by your tutor" with the refund inside it. Otherwise: a refund notice if credits went back, else nothing.
+8. **Force-complete sends summaries too**, on `earningsCreated` only, so a second press sends nothing. Found while testing: it writes the earnings row itself, so the cron never sees that booking as owed.
+9. **"Manage notifications" follows the recipient's role and `routes.ts`.** `Recipient` gained `role`. The student settings page is Part 4; until the route is listed the link is left off rather than pointing at a 404.
+10. **Calendar invite written by hand** (`lib/email/ics.ts`): UTC times, the booking id as UID, RFC 5545 escaping and 75-octet folding that never splits a multi-byte character. Attached base64 as `text/calendar`, which is what Resend takes for a string.
+11. **`queueEmails` falls back to a detached send outside a request.** `after()` throws with no request scope (a script, an integration test calling an adapter); the fallback keeps the send after the commit and unable to fail it.
+12. **Live check on the dev server against the test project, 2026-09-29.** Sam (student1) booked Tom (tutor1) for 30 minutes with credits: the confirmation and the tutor's new-booking email appeared in the log, times in each person's zone, Sam's note carried to Tom, the tutor's footer linking `/tutor/settings`. The admin then cancelled it on the tutor's side: Tom's "slot is free" email and Sam's "cancelled by your tutor, 10 credits back" email appeared, neither carrying the admin note. PayPal and session-summary paths are unit-tested (dispatch and replays) but not clicked through: the sandbox checkout needs a PayPal sandbox buyer login in the browser, and a summary needs a session that has run.
+13. **Subject-line fix from the live output**: the cancellation subject printed the day in UTC; it now uses the student's zone, so a late-evening session is not labelled with the next day.
+

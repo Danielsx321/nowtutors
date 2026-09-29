@@ -4,18 +4,15 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-29)
 
-**PHASE 10 PART 1 (email foundation) IN REVIEW on branch `phase-10-part1-email-foundation`.** Plan: workspace
-`plans/2026-09-28-nowtutors-phase-10-email-polish-launch.md` (six parts). `resend` and `@react-email/render`
-installed (the `@react-email/components` package is deprecated on npm; DECISIONS). `src/lib/email/` (types,
-preferences zod schema, transports, recipient lookup, best-effort sender, `queueEmail` via `after()`),
-`emails/` (shell, renderer, eight templates with sample props), kitchen sink Email section. The six
-`TODO(Phase 10)` hooks are wired (tutor approved and rejected, withdrawal requested, paid and rejected, plus
-the admin alerts) and tutor onboarding sends the welcome and the admin "new application". With
-`RESEND_API_KEY` unset every send is printed to the server log, nothing goes out. Gates: typecheck and lint
-clean, 843 unit (36 new), 156 DOM, build passed. **Live-checked** on the dev server against the test project:
-a withdrawal request, approve and mark paid produced the receipt, the admin alert and the paid email in the log
-(this used up tutor1's 40 test credits; `pnpm db:reset:test && pnpm db:seed:test` restores them).
-**Next:** Daniels merges; Part 2 (booking and payment emails).
+**PHASE 10 PART 2 (booking and payment emails) IN REVIEW on branch `phase-10-part2-booking-emails`.** Part 1
+(email foundation) merged as PR #120 (`8386d90`). Part 2 adds nine templates (booking confirmed and tutor new
+booking with a calendar invite, cancelled by tutor, tutor booking cancelled, refund issued, credits purchased,
+admin capture failed, session summary for each side) and queues them at once-only points: the booking action,
+the PayPal adapters in `lib/paypal/fulfilment.ts` (after the commit, keyed on the settlement result),
+admin force-cancel, force-complete and refund reversal, and the complete-sessions cron. `MarkResult` gained
+`previousStatus` so a replayed PayPal event never emails twice. **Live-checked** on the test project: a credits
+booking and an admin cancel produced all four expected emails. PayPal and summary paths are unit-tested only.
+**Next:** Daniels merges; Part 3 (reminder cron, message nudge).
 
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
   **Not yet verified: whether `drizzle/0021` to `0024` were applied to production** (no apply record in

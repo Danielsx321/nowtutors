@@ -11,6 +11,7 @@ const columns = {
   displayName: profiles.displayName,
   timezone: profiles.timezone,
   notificationPreferences: profiles.notificationPreferences,
+  role: profiles.role,
 };
 
 /**

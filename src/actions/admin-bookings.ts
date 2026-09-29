@@ -16,6 +16,8 @@ import {
   type TutorReversal,
 } from "@/lib/bookings/admin-rules";
 import { bookingStatusMeta } from "@/lib/bookings/status";
+import { queueEmails } from "@/lib/email";
+import { bookingCancelledEmails, sessionSummaryEmails } from "@/lib/email/booking-emails";
 
 /**
  * `/admin/bookings` and `/admin/payments` money actions (SPEC §7.3, §7.6, §7.11;
@@ -63,6 +65,9 @@ export async function forceCancelBooking(input: {
       : { error: "Booking not found." };
   }
 
+  const refundedCredits = res.refundedCredits;
+  queueEmails(() => bookingCancelledEmails(bookingId, { status, refundedCredits }));
+
   revalidateBooking(bookingId);
   const refund =
     res.refundedCredits > 0
@@ -97,6 +102,13 @@ export async function forceCompleteBooking(input: {
       return { error: "This booking has no recorded price, so the tutor can't be paid. Nothing was changed." };
     }
     return { error: "Booking not found." };
+  }
+
+  // Same rule as the complete-sessions cron: a summary goes out when the
+  // earnings row is written, and only then, so a second press sends nothing.
+  if (res.earningsCreated) {
+    const completedId = parsed.data.bookingId;
+    queueEmails(() => sessionSummaryEmails([completedId]));
   }
 
   revalidateBooking(parsed.data.bookingId);
@@ -138,6 +150,10 @@ export async function reverseRefundedPayment(input: {
 
   revalidateBooking(res.kind === "cancel_booking" ? res.bookingId : undefined);
   if (res.kind === "cancel_booking") {
+    // The student already had the PayPal refund email when the payment moved
+    // to refunded; the tutor needs to know the slot is gone.
+    const cancelledId = res.bookingId;
+    queueEmails(() => bookingCancelledEmails(cancelledId, { status: "cancelled_by_student", refundedCredits: 0 }));
     return { ok: true, message: `The booking this payment paid for was cancelled.${TUTOR_MESSAGES[res.tutorReversal]}` };
   }
   return {

@@ -1,4 +1,6 @@
 import "server-only";
+import { sendEmailNow } from "@/lib/email";
+import { sessionSummaryEmails } from "@/lib/email/booking-emails";
 import * as Sentry from "@sentry/nextjs";
 import { endStaleBroadcasts } from "@/db/queries/broadcasts";
 import { sweepStalePresence } from "@/db/queries/presence";
@@ -105,6 +107,29 @@ async function expireUnpaid(): Promise<CronSummary> {
   return summary;
 }
 
+/**
+ * One summary per side for every booking whose earnings row this run wrote
+ * (Phase 10 Part 2). Awaited, not queued: a cron has no response to hurry, and
+ * the counts belong in its summary. A failure is counted, never thrown, so the
+ * sweep's own result stands.
+ */
+async function sendSessionSummaries(bookingIds: string[]) {
+  let summariesSent = 0;
+  let summariesFailed = 0;
+  if (bookingIds.length === 0) return { summariesSent, summariesFailed };
+  try {
+    for (const request of await sessionSummaryEmails(bookingIds)) {
+      const outcome = await sendEmailNow(request);
+      if (outcome.sent) summariesSent++;
+      else if (outcome.reason !== "preference_off" && outcome.reason !== "not_configured") summariesFailed++;
+    }
+  } catch (err) {
+    console.error("[cron/complete-sessions] session summaries failed", err);
+    summariesFailed++;
+  }
+  return { summariesSent, summariesFailed };
+}
+
 async function completeSessions(): Promise<CronSummary> {
   const startedAt = Date.now();
   const {
@@ -133,6 +158,7 @@ async function completeSessions(): Promise<CronSummary> {
     noShowStudentIds,
     earningsCreatedIds,
     earningsSkippedNoPriceIds,
+    ...(await sendSessionSummaries(earningsCreatedIds)),
     durationMs: Date.now() - startedAt,
   };
   console.info("[cron/complete-sessions]", JSON.stringify(summary));

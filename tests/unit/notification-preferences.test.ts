@@ -4,8 +4,8 @@ import type { EmailType } from "@/lib/email/types";
 
 /**
  * `profiles.notification_preferences` (SPEC §11): opt-out, missing key = on,
- * marketing off by default, unknown keys tolerated. Part 1's types are all
- * transactional, so they ignore the flags entirely.
+ * marketing off by default, unknown keys tolerated. Money, cancellations and
+ * admin alerts ignore the flags; confirmations and summaries honour them.
  */
 describe("notification preferences", () => {
   it("reads the defaults from an empty column", () => {
@@ -31,16 +31,28 @@ describe("notification preferences", () => {
     expect(readPreferences({ unknown_flag: false, messages: false }).messages).toBe(false);
   });
 
-  it("sends every Part 1 type whatever the flags say", () => {
+  it("transactional types go out whatever the flags say; confirmations and summaries honour booking_confirmations", () => {
     const everythingOff = readPreferences({
       booking_confirmations: false,
       reminders: false,
       messages: false,
       marketing: false,
     });
+    const optional: EmailType[] = [
+      "booking-confirmed",
+      "tutor-new-booking",
+      "session-summary-student",
+      "session-summary-tutor",
+    ];
     for (const type of Object.keys(PREFERENCE_BY_TYPE) as EmailType[]) {
-      expect(PREFERENCE_BY_TYPE[type]).toBe("always");
-      expect(allowsEmail(everythingOff, type)).toBe(true);
+      if (optional.includes(type)) {
+        expect(PREFERENCE_BY_TYPE[type]).toBe("booking_confirmations");
+        expect(allowsEmail(everythingOff, type)).toBe(false);
+        expect(allowsEmail(readPreferences({}), type)).toBe(true);
+      } else {
+        expect(PREFERENCE_BY_TYPE[type]).toBe("always");
+        expect(allowsEmail(everythingOff, type)).toBe(true);
+      }
     }
   });
 });

@@ -42,6 +42,18 @@ export const PREFERENCE_BY_TYPE: Record<EmailType, PreferenceKey | "always"> = {
   "withdrawal-rejected": "always",
   "admin-new-tutor-application": "always",
   "admin-new-withdrawal": "always",
+  // A confirmation is useful but a person can turn it off; the booking is on
+  // their dashboard either way.
+  "booking-confirmed": "booking_confirmations",
+  "tutor-new-booking": "booking_confirmations",
+  "session-summary-student": "booking_confirmations",
+  "session-summary-tutor": "booking_confirmations",
+  // Something changed that the person did not do, or money moved.
+  "booking-cancelled-by-tutor": "always",
+  "tutor-booking-cancelled": "always",
+  "refund-issued": "always",
+  "credits-purchased": "always",
+  "admin-capture-failed": "always",
 };
 
 export function allowsEmail(prefs: NotificationPreferences, type: EmailType): boolean {

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { queueEmails } from "@/lib/email";
+import { bookingConfirmedEmails } from "@/lib/email/booking-emails";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -199,6 +201,9 @@ export async function createScheduledBooking(
 
       return inserted.id;
     });
+
+    // Direct-pay confirms at capture and emails from there (lib/paypal/fulfilment.ts).
+    if (!payWithPayPal) queueEmails(() => bookingConfirmedEmails(bookingId));
 
     revalidatePath("/dashboard/bookings");
     revalidatePath("/tutor/bookings");
