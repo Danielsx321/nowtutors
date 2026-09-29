@@ -173,6 +173,16 @@ describe("ActiveSessionProvider", () => {
     expect(leaves.count).toBe(1);
   });
 
+  it("after Log out the room says so instead of reopening the lobby", async () => {
+    await joinB1();
+    await act(async () => {
+      exposed!.leave("sign-out");
+    });
+    expect(leaves.count).toBe(1);
+    expect(screen.getByText("Signing you out…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Join session" })).toBeNull();
+  });
+
   it("knows which pages end a session", () => {
     expect(leavesSession("/login")).toBe(true);
     expect(leavesSession("/auth/callback")).toBe(true);
@@ -236,6 +246,13 @@ describe("MiniPlayer", () => {
     await navigate(view, "/dashboard");
     expect(screen.getByRole("region", { name: "Current session" })).toBeTruthy();
     expect(screen.getByText("Dashboard")).toBeTruthy();
+  });
+
+  it("tells the toaster where it is, and nothing while in the room", async () => {
+    const view = await joinB1();
+    expect(exposed?.playerCorner).toBeNull();
+    await navigate(view, "/dashboard");
+    expect(exposed?.playerCorner).toBe("br");
   });
 
   it("is not there before anyone joins", () => {

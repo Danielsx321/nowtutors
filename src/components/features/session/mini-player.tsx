@@ -72,6 +72,13 @@ export function MiniPlayer() {
     return () => clearTimeout(timer);
   }, [finished, inRoom, endSeen, leave]);
 
+  // Tell the toaster where the player is, so toasts don't land on it.
+  const visible = !!meta && !inRoom && phase !== "idle" && !(finished && endSeen);
+  const { setPlayerCorner } = session;
+  React.useEffect(() => {
+    setPlayerCorner(visible ? drag.corner : null);
+  }, [visible, drag.corner, setPlayerCorner]);
+
   if (!meta || inRoom || phase === "idle") return null;
   if (finished && endSeen) return null;
 
@@ -125,10 +132,10 @@ export function MiniPlayer() {
 
   const { viewerIsTutor, viewerName, viewerAvatarUrl, otherPartyName, otherPartyAvatarUrl } = meta;
   const live = phase === "live";
-  const chip =
-    live && session.quality ? (
-      <QualityChip level={qualityLevel(Math.max(session.quality.uplink, session.quality.downlink))} />
-    ) : null;
+  // On a picture this small the chip only speaks up when the link is bad;
+  // "Good connection" would just cover the tutor's face.
+  const level = live && session.quality ? qualityLevel(Math.max(session.quality.uplink, session.quality.downlink)) : null;
+  const chip = level && level !== "good" ? <QualityChip level={level} /> : null;
 
   // Same tile choice as the room's stage: the tutor's camera for both people.
   const tile = viewerIsTutor ? (

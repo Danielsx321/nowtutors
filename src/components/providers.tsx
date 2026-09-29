@@ -2,7 +2,7 @@
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
-import { ActiveSessionProvider } from "@/components/features/session/active-session";
+import { ActiveSessionProvider, useActiveSession } from "@/components/features/session/active-session";
 import { MiniPlayer } from "@/components/features/session/mini-player";
 
 /**
@@ -19,8 +19,23 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ActiveSessionProvider>
         {children}
         <MiniPlayer />
+        <AppToaster />
       </ActiveSessionProvider>
-      <Toaster />
     </TooltipProvider>
+  );
+}
+
+/**
+ * Toasts step aside for the mini-player: the other bottom corner on desktop,
+ * and above the player on phones (player 76px up, about 260px tall).
+ */
+function AppToaster() {
+  const { playerCorner } = useActiveSession();
+  const bottom = playerCorner === "bl" || playerCorner === "br";
+  return (
+    <Toaster
+      position={playerCorner === "br" ? "bottom-left" : "bottom-right"}
+      mobileBottom={bottom ? 350 : 88}
+    />
   );
 }

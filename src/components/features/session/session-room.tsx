@@ -122,6 +122,17 @@ export function SessionRoom(props: SessionRoomProps) {
     );
   }
 
+  if (session.signingOut) {
+    return (
+      <div className="flex flex-col gap-4">
+        {topBar()}
+        <p role="status" className="text-body text-text-muted">
+          Signing you out…
+        </p>
+      </div>
+    );
+  }
+
   if (!mine || session.phase === "idle") {
     return (
       <div className="flex flex-col gap-4">

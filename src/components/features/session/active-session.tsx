@@ -92,7 +92,17 @@ export interface ActiveSession {
   leave: (reason: LeaveReason) => void;
   /** The timer's stage report; announced once per stage however many timers draw it. */
   reportStage: (stage: TimeStage) => void;
+  /**
+   * Log out hung up and the redirect hasn't landed yet. The room shows a line
+   * instead of the lobby, whose device check would turn the camera back on.
+   */
+  signingOut: boolean;
+  /** Where the mini-player is, or null when it isn't showing. Toasts move out of its way. */
+  playerCorner: PlayerCorner | null;
+  setPlayerCorner: (corner: PlayerCorner | null) => void;
 }
+
+export type PlayerCorner = "tl" | "tr" | "bl" | "br";
 
 const ActiveSessionContext = React.createContext<ActiveSession | null>(null);
 
@@ -135,6 +145,8 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
   const [tokenExpiresAt, setTokenExpiresAt] = React.useState<string | null>(null);
   const [micEnabled, setMicEnabled] = React.useState(true);
   const [cameraEnabled, setCameraEnabled] = React.useState<boolean | null>(null);
+  const [playerCorner, setPlayerCorner] = React.useState<PlayerCorner | null>(null);
+  const [signingOut, setSigningOut] = React.useState(false);
 
   const bookingId = meta?.bookingId ?? null;
 
@@ -163,9 +175,11 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     void clientRef.current?.leave();
   }, []);
 
-  // The reason is for callers' readability; every reason leaves the same way.
+  // Every reason hangs up the same way; a sign-out also keeps the room from
+  // reopening the lobby while the redirect is on its way.
   const leave = React.useCallback(
-    () => {
+    (reason?: LeaveReason) => {
+      if (reason === "sign-out") setSigningOut(true);
       // Clearing `meta` runs the join effect's cleanup, which leaves the channel.
       // The direct call covers a client the effect no longer owns.
       void clientRef.current?.leave();
@@ -298,6 +312,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       if (meta && meta.bookingId !== next.bookingId) return false;
       if (meta && phase !== "idle") return true;
       resetCall();
+      setSigningOut(false);
       setFinished(false);
       setDeadline(next.initialDeadline);
       setMicEnabled(true);
@@ -355,7 +370,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
   // Sign-in and account pages: hang up (see LEAVE_ON).
   const pathname = usePathname() ?? "";
   React.useEffect(() => {
-    if (bookingId && leavesSession(pathname)) leave();
+    if (bookingId && leavesSession(pathname)) leave("auth-page");
   }, [pathname, bookingId, leave]);
 
   const value = React.useMemo<ActiveSession>(
@@ -381,6 +396,9 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       finish,
       leave,
       reportStage,
+      signingOut,
+      playerCorner,
+      setPlayerCorner,
     }),
     [
       meta,
@@ -404,6 +422,8 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       finish,
       leave,
       reportStage,
+      signingOut,
+      playerCorner,
     ],
   );
 
