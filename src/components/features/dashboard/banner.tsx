@@ -2,7 +2,9 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The teal banner card at the top of a dashboard (pages.html `.banner`): a
+ * The banner card at the top of a dashboard (pages.html `.banner`), filled
+ * with `primary`, which is the header navy inside the signed-in app
+ * (globals.css, `data-app-navy`; Daniels, 2026-09-29): a
  * small caps kicker, a large title, then whatever row the page passes (an
  * action, a face stack). The decoration is thin rings and three orange pins,
  * drawn with borders and flat fills; there is no gradient (DESIGN.md v2).

@@ -5276,6 +5276,16 @@ No migration, no dependency.
 8. **Record cleanup** (RUNBOOK and PROGRESS): `vercel.json` exists (region pin only, no crons); the Agora warm ping is built (what's open is the console side); every one of the seven pg_cron snippets must run on the production project; release-earnings now has its checklist line; `0021` to `0024` have an apply check, since nothing records that they reached production; four carry-forward entries in PROGRESS closed with the change that closed them.
 
 
+## Design v3: navy dashboard top bar (`design-v3-dashboard-navy`, 2026-09-29)
+
+No migration, no dependency. Daniels asked for the signed-in app to match the public site header.
+
+1. **The top bar is navy**, a `.theme-dark` island like the site header, so its controls re-resolve without dark variants of their own.
+2. **Section tabs in the bar from `lg`**: the bottom bar's four items per role (`mobileNavByRole`), so phone and desktop agree on what "main" means. Current tab gets the site header's 2px `accent` underline. Square ends: the tab runs the full bar height, and `rounded-sm` curved the line.
+3. **The filled colour inside the app is navy.** `AppShell` marks its root `data-app-navy`; `:root:has([data-app-navy])` sets `--primary` to `--band`, so portals (menus, drawer, toasts) follow. Only `primary` moves; links keep `accent` so they still read as links. The public site never renders the marker.
+4. **Fixed in the visual check**: the account button's divider was a `border-l` on a round button and drew a crescent, now its own 1px line; content started 4px under the bar (the old `pt-1` assumed a see-through bar with its own padding), now the side gutter; the tabs sat 12px from the student search pill against 24px between tabs, now 24px.
+5. **Checked** on the dev server against the test project, in Claude in Chrome (Vercel previews still 500, Part 5 item 7): `/tutor` as tutor1 and `/dashboard` as student1 at desktop, `/dashboard` at 390px in a frame. No sideways scroll at either width. typecheck, lint and the topbar DOM test pass.
+
 ## Instant-session mini-player (`session-mini-player`, 2026-09-29)
 
 No migration, no dependency, no env var, no server change. Agreed with Daniels on 2026-09-29 (PROGRESS "Next"). Plan in the workspace, `plans/2026-09-29-nowtutors-session-mini-player.md`.
