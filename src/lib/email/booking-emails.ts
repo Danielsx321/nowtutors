@@ -271,3 +271,21 @@ export async function paypalRefundEmails(paymentId: string): Promise<EmailReques
     },
   ];
 }
+
+/**
+ * The reminders for one claimed booking (Part 3). 24h goes to the student
+ * only; 1h to both (SPEC §11). A booking that stopped being `confirmed` since
+ * it was claimed sends nothing.
+ */
+export async function reminderEmails(kind: "24h" | "1h", bookingId: string): Promise<EmailRequest[]> {
+  const [b] = await loadBookings([bookingId]);
+  if (!b || b.type !== "scheduled" || b.status !== "confirmed") return [];
+  if (kind === "24h") {
+    return [{ type: "reminder-24h", to: { userId: b.studentId }, props: factsFor(b, b.tutorName) }];
+  }
+  return [
+    { type: "reminder-1h-student", to: { userId: b.studentId }, props: factsFor(b, b.tutorName) },
+    { type: "reminder-1h-tutor", to: { userId: b.tutorId }, props: factsFor(b, b.studentName) },
+  ];
+}
+

@@ -31,22 +31,27 @@ describe("notification preferences", () => {
     expect(readPreferences({ unknown_flag: false, messages: false }).messages).toBe(false);
   });
 
-  it("transactional types go out whatever the flags say; confirmations and summaries honour booking_confirmations", () => {
+  it("transactional types go out whatever the flags say; the rest honour their own flag", () => {
     const everythingOff = readPreferences({
       booking_confirmations: false,
       reminders: false,
       messages: false,
       marketing: false,
     });
-    const optional: EmailType[] = [
-      "booking-confirmed",
-      "tutor-new-booking",
-      "session-summary-student",
-      "session-summary-tutor",
-    ];
+    const byKey: Partial<Record<EmailType, string>> = {
+      "booking-confirmed": "booking_confirmations",
+      "tutor-new-booking": "booking_confirmations",
+      "session-summary-student": "booking_confirmations",
+      "session-summary-tutor": "booking_confirmations",
+      "reminder-24h": "reminders",
+      "reminder-1h-student": "reminders",
+      "reminder-1h-tutor": "reminders",
+      "new-message": "messages",
+    };
     for (const type of Object.keys(PREFERENCE_BY_TYPE) as EmailType[]) {
-      if (optional.includes(type)) {
-        expect(PREFERENCE_BY_TYPE[type]).toBe("booking_confirmations");
+      const key = byKey[type];
+      if (key) {
+        expect(PREFERENCE_BY_TYPE[type]).toBe(key);
         expect(allowsEmail(everythingOff, type)).toBe(false);
         expect(allowsEmail(readPreferences({}), type)).toBe(true);
       } else {

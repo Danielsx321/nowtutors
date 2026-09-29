@@ -41,6 +41,10 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "admin-capture-failed": "/admin/payments",
   "session-summary-student": "/tutors",
   "session-summary-tutor": "/tutor/earnings",
+  "reminder-24h": "/dashboard/bookings/3f0c1b7e-0000-4000-8000-000000000001",
+  "reminder-1h-student": "/dashboard/bookings/3f0c1b7e-0000-4000-8000-000000000001",
+  "reminder-1h-tutor": "/tutor/bookings/3f0c1b7e-0000-4000-8000-000000000001",
+  "new-message": "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
 };
 
 describe("email templates", () => {
@@ -143,6 +147,28 @@ describe("Part 2 templates", () => {
     expect(credits.subject).toBe("40 credits refunded to your wallet");
     const paypal = await renderEmail("refund-issued", { via: "paypal", amountUsd: "39.99", currency: "USD" }, { recipient, appUrl });
     expect(paypal.subject).toBe("Your $39.99 refund");
+  });
+});
+
+describe("Part 3 templates", () => {
+  it("the new-message email quotes the preview and mentions an attachment", async () => {
+    const out = await renderEmail(
+      "new-message",
+      { senderName: "Sam Stone", preview: null, hasAttachment: true, threadPath: "/tutor/messages/x" },
+      { recipient: { ...recipient, role: "tutor" }, appUrl },
+    );
+    expect(out.subject).toBe("New message from Sam Stone");
+    expect(out.text).toContain("They attached a file");
+    expect(out.html).toContain("https://nowtutors.test/tutor/settings");
+  });
+
+  it("the tutor's 1-hour reminder names the no-show rule", async () => {
+    const out = await renderEmail("reminder-1h-tutor", SAMPLE_PROPS["reminder-1h-tutor"], {
+      recipient: { ...recipient, role: "tutor", timezone: "Africa/Lagos" },
+      appUrl,
+    });
+    expect(out.text).toContain("4:30 PM (GMT+1)");
+    expect(out.text).toContain("tutor no-show");
   });
 });
 

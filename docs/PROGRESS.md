@@ -4,15 +4,14 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-29)
 
-**PHASE 10 PART 2 (booking and payment emails) IN REVIEW on branch `phase-10-part2-booking-emails`.** Part 1
-(email foundation) merged as PR #120 (`8386d90`). Part 2 adds nine templates (booking confirmed and tutor new
-booking with a calendar invite, cancelled by tutor, tutor booking cancelled, refund issued, credits purchased,
-admin capture failed, session summary for each side) and queues them at once-only points: the booking action,
-the PayPal adapters in `lib/paypal/fulfilment.ts` (after the commit, keyed on the settlement result),
-admin force-cancel, force-complete and refund reversal, and the complete-sessions cron. `MarkResult` gained
-`previousStatus` so a replayed PayPal event never emails twice. **Live-checked** on the test project: a credits
-booking and an admin cancel produced all four expected emails. PayPal and summary paths are unit-tested only.
-**Next:** Daniels merges; Part 3 (reminder cron, message nudge).
+**PHASE 10 PART 3 (reminders and the new-message email) IN REVIEW on branch `phase-10-part3-reminders`.** Parts 1
+and 2 merged (PR #120 `8386d90`, PR #121 `f422754`). Part 3: `/api/cron/booking-reminders` (every 15 minutes,
+stamp-first claim, 24h to students and 1h to both sides), its snippet `drizzle/snippets/pg_cron_booking_reminders.sql`
+(**not yet scheduled on any project**; RUNBOOK item), and the new-message email for a recipient away more than
+5 minutes (first unread of a run only). Every email type in SPEC §11 is now built; the last `TODO(Phase 10)` is
+gone. Gates: 890 unit, 156 DOM, 4 new integration tests on the test project plus the existing messaging lane, build
+passed. Live-checked: the admin "Run now" reminded a planted booking once. **Next:** Daniels merges and runs the
+reminder snippet on the dev project; then Part 4 (settings, timezone, legal pages).
 
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
   **Not yet verified: whether `drizzle/0021` to `0024` were applied to production** (no apply record in
