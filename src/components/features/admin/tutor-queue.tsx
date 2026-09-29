@@ -128,7 +128,7 @@ export function PendingCard({ tutor }: { tutor: QueueTutor }) {
         {showReject && (
           <div className="space-y-1.5">
             <Label htmlFor={`note-${tutor.userId}`} required>
-              Reason for rejection (sent to the tutor later)
+              Reason for rejection (emailed to the tutor)
             </Label>
             <Textarea
               id={`note-${tutor.userId}`}

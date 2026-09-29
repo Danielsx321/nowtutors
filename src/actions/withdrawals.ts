@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/guards";
 import { getWithdrawalSettings } from "@/lib/settings";
-import { withdrawalRunner } from "@/db/queries/withdrawals";
+import { getPayoutEmailFor, withdrawalRunner } from "@/db/queries/withdrawals";
+import { queueEmails } from "@/lib/email";
+import { getRecipient } from "@/lib/email/recipient";
 import {
   requestWithdrawal as requestWithdrawalCore,
   withdrawalRefusalMessage,
@@ -33,8 +35,20 @@ export async function requestWithdrawal(): Promise<RequestWithdrawalResult> {
   });
   if (!res.ok) return { error: withdrawalRefusalMessage(res.reason, settings) };
 
-  // TODO(Phase 10): tutor "withdrawal requested" receipt and admin "new
-  // withdrawal request" emails (SPEC §11). Resend wires in Phase 10.
+  // The receipt and the admin alert (SPEC §11), after the response. The
+  // lookups run then too: the destination is not in the result on purpose
+  // (the request snapshots it under lock) and the name is only for the alert.
+  const { id: tutorId } = user;
+  const { amountCredits, amountUsd } = res.withdrawal;
+  queueEmails(async () => {
+    const [tutor, destination] = await Promise.all([getRecipient(tutorId), getPayoutEmailFor(tutorId)]);
+    // The admin sees the legal name first: it is what PayPal will show.
+    const tutorName = tutor?.fullName ?? tutor?.displayName ?? tutor?.email ?? "A tutor";
+    return [
+      { type: "withdrawal-requested", to: { userId: tutorId }, props: { amountCredits, amountUsd, destination } },
+      { type: "admin-new-withdrawal", to: { admins: true }, props: { tutorName, amountCredits, amountUsd } },
+    ];
+  });
 
   revalidatePath("/tutor/withdrawals");
   revalidatePath("/tutor/earnings");

@@ -1624,13 +1624,17 @@ Loading and empty states designed, not afterthoughts: an empty bookings list inv
 
 ## 11. Email
 
-React Email templates in `emails/`, sent via Resend. Every send is best-effort and never blocks a transaction.
+Templates in `emails/` (plain React with inline styles, rendered by `@react-email/render`), sent via Resend. Every send is best-effort and never blocks a transaction: `lib/email/send.ts` never throws, logs every failure with the type and recipient id, reports it to Sentry, and returns `{ sent, reason }`. Server actions queue sends through Next's `after()` so the response is not held; crons and webhooks await the outcome and count it in their summary. Links come from `NEXT_PUBLIC_APP_URL` only. With `RESEND_API_KEY` unset (local dev, the test project, every preview) the message is printed to the server log and nothing is sent. Sender is `EMAIL_FROM`; replies go to `EMAIL_REPLY_TO` when set. Every template is previewable in the kitchen sink's Email section. (Amended Phase 10 Part 1.)
 
-Student: verify email, password reset, booking confirmed (with `.ics`), reminder 24h, reminder 1h, booking cancelled by tutor, refund issued, credits purchased, session summary.
-Tutor: welcome, application approved, application rejected, new booking, booking cancelled, reminder 1h, withdrawal requested (receipt), withdrawal paid, withdrawal rejected.
-Admin: new tutor application, new withdrawal request, payment capture failure.
+**Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
-All emails carry an unsubscribe link for non-transactional types, and honour a `notification_preferences` jsonb on `profiles`.
+Student: booking confirmed (with `.ics`), reminder 24h, reminder 1h, booking cancelled by tutor, refund issued, credits purchased, session summary. *(Part 2 and Part 3.)*
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking, booking cancelled, reminder 1h, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**.
+Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure.
+
+Admin emails go to every `profiles.role = 'admin'` account that is not suspended.
+
+`profiles.notification_preferences` is read on every send through `lib/email/preferences.ts`: `booking_confirmations`, `reminders`, `messages` default on, `marketing` default off, a missing key means on, unknown keys are ignored. Each type maps to one key or to `always`. The `always` types are transactional (money moved, an application decided, an admin who has to act) and go out whatever the flags say; every type built in Part 1 is `always`. Preference-controlled types carry a "Manage notifications" link to the viewer's settings page in the footer. No marketing email exists, so no unsubscribe token is built; if one is ever added it gets the token then.
 
 ---
 

@@ -12,6 +12,7 @@ import {
   studentSubjects,
 } from "@/db/schema";
 import { requireUser, getSessionProfile, homeFor } from "@/lib/auth/guards";
+import { queueEmail } from "@/lib/email";
 import {
   studentOnboardingSchema,
   tutorOnboardingSchema,
@@ -167,6 +168,15 @@ export async function completeTutorOnboarding(
       payoutMethod: "paypal",
       paypalEmail: v.paypalEmail,
     });
+  });
+
+  // The welcome and the admin alert (SPEC §11). `after()` still runs past the
+  // redirect below, so both go out once the response is on its way.
+  queueEmail({ type: "tutor-welcome", to: { userId: user.id }, props: {} });
+  queueEmail({
+    type: "admin-new-tutor-application",
+    to: { admins: true },
+    props: { tutorName: v.fullName, tutorEmail: user.email, subjectSlugs: v.subjects.map((s) => s.slug) },
   });
 
   redirect("/tutor/pending-approval");

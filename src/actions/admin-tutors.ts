@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { tutorProfiles, auditLog, profiles } from "@/db/schema";
 import { approvalBlocker, approvalBlockerMessage } from "@/lib/tutors/approval";
 import { requireRole } from "@/lib/auth/guards";
+import { queueEmail } from "@/lib/email";
 
 export type AdminActionResult = { error: string } | { ok: true };
 
@@ -29,8 +30,9 @@ const rejectSchema = z.object({
  * audit_log is service-role write (drizzle/0005). The approval trigger
  * recognises this path (drizzle/0012); Layer 2 above is its authorization.
  *
- * Approval EMAIL is Phase 10 — see the marked hook in each action. Nothing here
- * sends mail.
+ * The approval and rejection emails (SPEC §11) are queued after the
+ * transaction commits, through `after()`, so a slow mail API never holds the
+ * admin's click and a failed send never undoes the decision.
  */
 export async function approveTutor(input: {
   tutorId: string;
@@ -73,8 +75,7 @@ export async function approveTutor(input: {
     });
   });
 
-  // TODO(Phase 10): send the "you're approved" email here (SPEC §11). Deliberately
-  // not sent in Phase 3 — Resend wires in Phase 10.
+  queueEmail({ type: "tutor-approved", to: { userId: parsed.data.tutorId }, props: {} });
 
   revalidatePath("/admin/tutors");
   revalidatePath("/");
@@ -122,7 +123,11 @@ export async function rejectTutor(input: {
     });
   });
 
-  // TODO(Phase 10): send the rejection email with the note (SPEC §11).
+  queueEmail({
+    type: "tutor-rejected",
+    to: { userId: parsed.data.tutorId },
+    props: { note: parsed.data.note },
+  });
 
   revalidatePath("/admin/tutors");
   revalidatePath("/");
