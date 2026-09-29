@@ -650,7 +650,7 @@ PUBLIC
 /live                              Currently live broadcasts
 /live/[broadcastId]                Viewer page (Agora audience)
 /how-it-works, /pricing, /faq
-/legal/terms, /legal/privacy
+/legal/terms, /legal/privacy, /legal/refunds   (built Phase 10 Part 4; drafts until Noora approves the copy)
 /login, /signup, /forgot-password, /reset-password
 /auth/callback                     Supabase OAuth handler
 /onboarding                        Role choice → role-specific onboarding
@@ -664,7 +664,10 @@ STUDENT  (layout guards role = student)
 /dashboard/bookings/[id]           Detail, join button, cancel, reschedule request
 /dashboard/wallet                  Balance, buy credits, transaction history
 /dashboard/messages[/[conversationId]]
-/dashboard/settings                Profile, password, timezone, notifications, delete account
+/dashboard/settings                (built Phase 10 Part 4) Name, timezone, email notifications (booking
+                                   confirmations, reminders, messages), password (not for Google-only
+                                   accounts), and a "close your account" note: delete account is not built
+                                   (DECISIONS, Part 4)
 
 TUTOR  (layout guards role = tutor + approval_status = approved)
 /tutor                             (amended 2026-09-19, live-globe Part F) Go-live banner sharing the topbar
@@ -678,7 +681,8 @@ TUTOR  (layout guards role = tutor + approval_status = approved)
 /tutor/withdrawals                 Request + history
 /tutor/broadcasts                  Start broadcast, past broadcasts
 /tutor/messages[/[conversationId]]
-/tutor/settings                    Includes PayPal payout email
+/tutor/settings                    (Phase 10 Part 4) Timezone, email notifications, password, then the
+                                   PayPal payout email. The name is edited on /tutor/profile
 /tutor/pending-approval            Shown instead of /tutor when approval_status != approved
 
 SESSION  (participants only)
@@ -1618,7 +1622,7 @@ Loading and empty states designed, not afterthoughts: an empty bookings list inv
 
 **The site shell on every public-facing page (Part B, 2026-09-17).** The header and the full footer render on the public routes, the auth pages (log in, sign up, forgot and reset password), onboarding, suspended, `/tutor/pending-approval` and the 404. `/tutor/pending-approval` moved into its own route group to get the site shell instead of the tutor app shell; its own role and approval guards are unchanged. The footer's live count is read on the server and says "No tutors live right now" at zero rather than "0 tutors". Signed-in dashboards keep the app shell below.
 
-**The shell (design overhaul Part 2).** Light canvas throughout. Below `md` the sidebar is replaced by a fixed bottom bar of four destinations plus More, which opens the drawer holding the full list; between `md` and `lg` the sidebar is an icon rail with tooltips, and the label stays on the link as its accessible name; at `lg` it is labelled and full width. The active item is a muted fill with a 3px accent bar. Nothing in the bar may cover a composer or a sticky Save. The unread badge appears on the topbar's Messages link (which owns the `unread-badge` test id) and on the bottom bar's Messages item, both reading one shared count. Tutors carry the go-live switch in the topbar, so they can go live from any tutor page. **Navigation never links to a route that does not exist**: `/how-it-works`, `/pricing`, `/faq`, the legal pages and `/dashboard/settings` were linked before they were built and were dropped until Phase 10 builds them. From Part B this is enforced rather than remembered: `src/lib/routes.ts` lists every route the app serves, and the header and footer tests fail on any `href` that is not in it.
+**The shell (design overhaul Part 2).** Light canvas throughout. Below `md` the sidebar is replaced by a fixed bottom bar of four destinations plus More, which opens the drawer holding the full list; between `md` and `lg` the sidebar is an icon rail with tooltips, and the label stays on the link as its accessible name; at `lg` it is labelled and full width. The active item is a muted fill with a 3px accent bar. Nothing in the bar may cover a composer or a sticky Save. The unread badge appears on the topbar's Messages link (which owns the `unread-badge` test id) and on the bottom bar's Messages item, both reading one shared count. Tutors carry the go-live switch in the topbar, so they can go live from any tutor page. **Navigation never links to a route that does not exist**: `/how-it-works`, `/pricing` and `/faq` were linked before they were built and stay out until they exist. The legal pages (footer Legal column) and `/dashboard/settings` (student sidebar and account menu) came back in Phase 10 Part 4. From Part B this is enforced rather than remembered: `src/lib/routes.ts` lists every route the app serves, and the header and footer tests fail on any `href` that is not in it.
 
 ---
 

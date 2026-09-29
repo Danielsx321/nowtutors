@@ -15,6 +15,9 @@ export const EXISTING_ROUTES = [
   "/",
   "/tutors",
   "/live",
+  "/legal/terms",
+  "/legal/privacy",
+  "/legal/refunds",
   // Auth
   "/login",
   "/signup",
@@ -29,6 +32,7 @@ export const EXISTING_ROUTES = [
   "/dashboard/messages",
   "/dashboard/wallet",
   "/dashboard/favourites",
+  "/dashboard/settings",
   // Tutor
   "/tutor",
   "/tutor/bookings",

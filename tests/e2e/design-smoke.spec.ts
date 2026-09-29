@@ -26,6 +26,9 @@ const PUBLIC_PAGES = [
   { name: "live", path: "/live" },
   { name: "login", path: "/login" },
   { name: "signup", path: "/signup" },
+  { name: "terms", path: "/legal/terms" },
+  { name: "privacy", path: "/legal/privacy" },
+  { name: "refunds", path: "/legal/refunds" },
   { name: "not-found", path: "/this-page-does-not-exist" },
 ];
 

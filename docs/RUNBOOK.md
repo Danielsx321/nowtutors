@@ -390,6 +390,11 @@ already-running script.
   deploys (it reuses the Vault secrets from `pg_cron_sweep_presence.sql`), then again on the production project
   in Part 6. Verify with the queries at the foot of the snippet; the first response should be
   `{"ok":true,"job":"booking-reminders",...}` with 200.
+- [ ] **Legal pages approved** — Phase 10 Part 4 drafted `/legal/terms`, `/legal/privacy`, `/legal/refunds`.
+  Before launch: fill every `<ToConfirm>` with Noora's answers (legal name and address, minimum age, credit
+  expiry, off-platform arrangements, liability and governing law, data region, session recording, retention,
+  support address), get her sign-off on the wording, then set `draft={false}` on each page. `grep -rn
+  "ToConfirm" src/app` must return nothing but the component's own file.
 - [ ] Resend domain verification and DNS records — Phase 10 Part 6. Until then `EMAIL_FROM` can be
   `NowTutors <onboarding@resend.dev>`, which Resend delivers only to the account owner's address.
 - [ ] **Email env vars on Vercel** — Phase 10 Part 1: `RESEND_API_KEY` (Production only; leave it unset on

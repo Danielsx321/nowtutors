@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LANGUAGES } from "@/lib/geo/languages";
+import { isValidTimeZone } from "@/lib/geo/timezones";
 
 /**
  * ONE zod schema per form, defined once and reused on BOTH sides (SPEC §5,
@@ -92,6 +93,13 @@ const tutorAvatarUrl = z
 
 export const tutorOnboardingSchema = z.object({
   fullName,
+  // Added Phase 10 Part 4: tutors never set one before, so their availability
+  // and emails read UTC. Optional so an old form still submits; validated when sent.
+  timezone: z
+    .string()
+    .trim()
+    .refine((tz) => tz === "" || isValidTimeZone(tz), "Pick a valid timezone.")
+    .optional(),
   avatarUrl: tutorAvatarUrl,
   headline: z.string().trim().min(10, "Write a short headline.").max(120),
   about: z.string().trim().min(30, "Tell students about yourself.").max(2000),
@@ -134,3 +142,47 @@ export const tutorProfileEditSchema = tutorOnboardingSchema
       .or(z.literal("").transform(() => undefined)),
   });
 export type TutorProfileEditValues = z.infer<typeof tutorProfileEditSchema>;
+
+// ── Settings (Phase 10 Part 4) ───────────────────────────────────────────────
+
+/** An IANA zone the runtime can format with. Aliases accepted (see lib/geo/timezones). */
+export const timeZoneField = z
+  .string()
+  .trim()
+  .min(1, "Select your timezone.")
+  .refine(isValidTimeZone, "Pick a timezone from the list.");
+
+/** Students set a display name and a timezone. Tutors edit their name on their profile. */
+export const accountSettingsSchema = z.object({
+  displayName: z.string().trim().min(2, "Enter at least 2 characters.").max(60).optional(),
+  timezone: timeZoneField,
+});
+export type AccountSettingsValues = z.infer<typeof accountSettingsSchema>;
+
+/**
+ * The three switches a person can turn off. `marketing` exists in the column
+ * but no marketing email does, so it is not offered (DECISIONS, Part 4).
+ */
+export const notificationSettingsSchema = z.object({
+  booking_confirmations: z.boolean(),
+  reminders: z.boolean(),
+  messages: z.boolean(),
+});
+export type NotificationSettingsValues = z.infer<typeof notificationSettingsSchema>;
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    password: strongPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  })
+  .refine((v) => v.password !== v.currentPassword, {
+    message: "Choose a password you haven't used here.",
+    path: ["password"],
+  });
+export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
+

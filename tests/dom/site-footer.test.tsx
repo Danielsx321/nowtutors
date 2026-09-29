@@ -37,7 +37,7 @@ describe("SiteFooter", () => {
 
   it("renders every column", () => {
     render(<SiteFooter liveCount={0} />);
-    for (const heading of ["For tutors", "Help", "Trust"]) {
+    for (const heading of ["For tutors", "Help", "Legal", "Trust"]) {
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     }
     const help = screen.getByRole("navigation", { name: "Help" });
@@ -45,6 +45,10 @@ describe("SiteFooter", () => {
     expect(within(help).getByRole("link", { name: "Live lessons" }).getAttribute("href")).toBe("/live");
     const tutors = screen.getByRole("navigation", { name: "For tutors" });
     expect(within(tutors).getByRole("link", { name: "Become a tutor" }).getAttribute("href")).toBe("/signup");
+    const legal = screen.getByRole("navigation", { name: "Legal" });
+    expect(within(legal).getByRole("link", { name: "Terms of service" }).getAttribute("href")).toBe("/legal/terms");
+    expect(within(legal).getByRole("link", { name: "Privacy policy" }).getAttribute("href")).toBe("/legal/privacy");
+    expect(within(legal).getByRole("link", { name: "Refunds and no-shows" }).getAttribute("href")).toBe("/legal/refunds");
   });
 
   it("links to the NowTutors Instagram in a new tab", () => {
