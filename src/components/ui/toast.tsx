@@ -12,12 +12,22 @@ import { Toaster as SonnerToaster, toast } from "sonner";
  * go-live switch, so a tutor who went offline couldn't switch back on until
  * the "You're offline" toast faded (found by the presence E2E, 2026-09-19:
  * the click landed on the toast). On phones it clears the bottom nav.
+ *
+ * While the session mini-player sits in a bottom corner (2026-09-29) the
+ * caller moves toasts out of its way: the other bottom corner on desktop, and
+ * above the player on phones (see `AppToaster` in providers.tsx).
  */
-export function Toaster() {
+export function Toaster({
+  position = "bottom-right",
+  mobileBottom = 88,
+}: {
+  position?: "bottom-right" | "bottom-left";
+  mobileBottom?: number;
+} = {}) {
   return (
     <SonnerToaster
-      position="bottom-right"
-      mobileOffset={{ bottom: 88 }}
+      position={position}
+      mobileOffset={{ bottom: mobileBottom }}
       gap={10}
       toastOptions={{
         unstyled: true,

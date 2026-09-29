@@ -26,6 +26,9 @@ vi.mock("next/image", () => ({
   default: ({ alt, src }: { alt: string; src: string }) => <img alt={alt} src={src} />,
 }));
 vi.mock("@/actions/auth", () => ({ signOut: vi.fn() }));
+vi.mock("@/components/features/session/active-session", () => ({
+  useActiveSession: () => ({ leave: vi.fn() }),
+}));
 vi.mock("@/components/features/messaging/unread-context", () => ({
   useSharedUnreadCount: () => 2,
 }));

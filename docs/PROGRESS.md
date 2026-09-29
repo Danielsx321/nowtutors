@@ -4,6 +4,15 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-29)
 
+**MINI-PLAYER IN REVIEW on branch `session-mini-player`** (after the navy dashboard PR #125, also in review). An
+instant session now survives leaving the room: the call lives in `ActiveSessionProvider` in the root providers and
+shows in a draggable corner player on every other page, with Enlarge back to the room (DECISIONS, "Instant-session
+mini-player"). Automated lanes green. **Still to do live:** one two-person instant session on the dev server against
+the test project (student navigates to Messages and a tutor profile mid-session, video, sound and clock carry on in
+the player, Enlarge returns without the lobby, End from the player closes both sides, Log out releases the camera),
+then the same on production after merge. **Next:** Phase 10 Part 6 (launch).
+
+
 **PHASE 10 PART 5 (error and loading states, accessibility, record cleanup) IN REVIEW on branch
 `phase-10-part5-polish`.** Parts 1 to 4 merged (PRs #120 to #123). Part 5: `error.tsx` for every area plus
 `global-error.tsx`, the missing `loading.tsx` files, real empty states, three Lighthouse accessibility fixes, and

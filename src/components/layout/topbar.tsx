@@ -12,6 +12,7 @@ import { CreditBalance } from "@/components/ui/credit-balance";
 import { UnreadMessagesLink } from "@/components/features/messaging/unread-messages-link";
 import { GoLiveToggle } from "@/components/features/tutor/go-live-toggle";
 import { signOut } from "@/actions/auth";
+import { useActiveSession } from "@/components/features/session/active-session";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +74,8 @@ export function Topbar({
   accountLinks = [],
   search = null,
 }: TopbarProps) {
+  // Log out hangs up an instant session first (see SidebarAccount).
+  const { leave: leaveSession } = useActiveSession();
   return (
     <header className="theme-dark sticky top-0 z-30 flex h-16 items-center gap-3 bg-ground px-4 text-text md:h-[76px] md:px-[clamp(16px,2.4vw,30px)]">
       <Button
@@ -142,7 +145,7 @@ export function Topbar({
               </DropdownMenuItem>
             ))}
             {accountLinks.length > 0 && <DropdownMenuSeparator />}
-            <form action={signOut}>
+            <form action={signOut} onSubmit={() => leaveSession("sign-out")}>
               <DropdownMenuItem asChild destructive>
                 <button type="submit" className="w-full">
                   Log out
