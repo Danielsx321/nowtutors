@@ -79,7 +79,8 @@ export function AppShell({
   usePresence();
 
   const shell = (
-      <div className="flex min-h-screen bg-ground">
+      // `data-app-navy`: the filled colour is navy inside the signed-in app (globals.css).
+      <div data-app-navy="" className="flex min-h-screen bg-ground">
         <Sidebar items={items} messagesHref={messagesHref} people={people} accountLinks={accountLinks} />
 
         <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
@@ -100,6 +101,7 @@ export function AppShell({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar
+            role={role}
             title={title}
             onOpenMenu={() => setMenuOpen(true)}
             showCredits={showCredits}

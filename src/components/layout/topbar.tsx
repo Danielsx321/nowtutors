@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { itemIsActive, mobileNavByRole, type Role } from "@/components/layout/nav-config";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { CreditBalance } from "@/components/ui/credit-balance";
@@ -19,6 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export interface TopbarProps {
+  /** Picks the section tabs. Omitted (kitchen sink, tests): no tabs. */
+  role?: Role;
   title?: string;
   /** Opens the mobile nav drawer (the More sheet). */
   onOpenMenu?: () => void;
@@ -44,13 +49,19 @@ export interface TopbarProps {
 }
 
 /**
- * The bar above the content (v2, Part E): on the ground colour with no rule,
- * as mocked. A search pill on the left when the role has one (the page title
- * otherwise), then the go-live switch for tutors, the credit pill for
- * students, the Messages circle with its unread count, and the avatar with the
- * person's name, which opens the account menu.
+ * The bar above the content. Navy, like the public site header (Daniels,
+ * 2026-09-29): it is a `.theme-dark` island, so every role inside it
+ * re-resolves and the controls need no dark variants of their own.
+ *
+ * Left, from `lg`: the area's main sections as tabs (the bottom bar's four,
+ * so phone and desktop agree on what "main" means), the current one marked
+ * with the header's underline. Then the search pill when the role has one
+ * (the page title otherwise). Right: the go-live switch for tutors, the
+ * credit pill for students, the Messages circle with its unread count, and
+ * the avatar with the person's name, which opens the account menu.
  */
 export function Topbar({
+  role,
   title,
   onOpenMenu,
   showCredits,
@@ -63,7 +74,7 @@ export function Topbar({
   search = null,
 }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 bg-ground/90 px-4 py-3 backdrop-blur md:px-[clamp(16px,2.4vw,30px)] md:py-[22px]">
+    <header className="theme-dark sticky top-0 z-30 flex h-16 items-center gap-3 bg-ground px-4 text-text md:h-[76px] md:px-[clamp(16px,2.4vw,30px)]">
       <Button
         variant="ghost"
         size="icon"
@@ -73,6 +84,8 @@ export function Topbar({
       >
         <Menu />
       </Button>
+
+      {role ? <SectionTabs role={role} /> : null}
 
       {search ? (
         <form action={search.action} role="search" className="min-w-0 flex-1">
@@ -140,3 +153,38 @@ export function Topbar({
     </header>
   );
 }
+
+/**
+ * The area's main sections, from `lg` (the sidebar is an icon rail below it,
+ * and phones have the bottom bar). Same underline as the site header's
+ * current link: a 2px inset line in `accent` along the bar's bottom edge.
+ */
+function SectionTabs({ role }: { role: Role }) {
+  const pathname = usePathname() ?? "";
+  return (
+    <nav aria-label="Sections" className="hidden self-stretch lg:flex">
+      <ul className="flex items-stretch gap-6">
+        {mobileNavByRole[role].map((item) => {
+          const active = itemIsActive(pathname, item.href);
+          return (
+            <li key={item.href} className="flex">
+              <Link
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "focus-ring flex items-center whitespace-nowrap rounded-sm text-body font-medium transition-colors",
+                  active
+                    ? "text-text shadow-[inset_0_-2px_0_0_var(--accent)]"
+                    : "text-text-muted hover:text-text",
+                )}
+              >
+                {item.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+

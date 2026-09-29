@@ -62,6 +62,18 @@
   color-scheme: light;
 }
 
+/* Signed-in app (Daniels, 2026-09-29): the filled colour is the header navy.
+   `AppShell` marks its root with `data-app-navy`; setting the role on the
+   document root reaches the portals too (menus, the mobile drawer, toasts).
+   Only `primary` moves: banner, active sidebar item, filled buttons,
+   switches. Links and small icons use `accent` and stay blue, so a link
+   still reads as a link. `.theme-dark` scopes (the rooms, the top bar)
+   declare their own `primary` and are untouched. The public site never
+   renders the marker, so it keeps the mid blue. */
+:root:has([data-app-navy]) {
+  --primary: var(--band);
+}
+
 .theme-dark {
   /* v3: the dark scope is navy. It serves the rooms, the site header and the
      footer, so a room stage and the header are the same dark. */
