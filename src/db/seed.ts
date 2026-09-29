@@ -7,6 +7,7 @@ import { sessionPoolerUrl } from "./session-url";
 import { splitEarnings } from "../lib/credits/fees";
 import { sessionPriceCredits } from "../lib/credits/pricing";
 import { PLATFORM_SETTINGS } from "./platform-settings-defaults";
+import { SUBJECTS } from "./canonical-subjects";
 
 // Seed (idempotent). Creates auth users via the admin API — the signup
 // trigger makes each profiles row (role NULL) — then fills roles/details,
@@ -27,51 +28,6 @@ const admin = createClient(url, serviceKey, {
 
 const PASSWORD = "Password123!";
 
-// Canonical 26 subjects (Bubble option set), in order → sort_order 1..26.
-// #3/#11 corrected per the §18 resolution; #6/#10 confirmed correct as seeded (see DECISIONS.md).
-const SUBJECT_NAMES = [
-  "Algebra",
-  "Advanced Calculus",
-  "English as a Second Language (ESL)",
-  "Python Programming",
-  "Physics",
-  "IELTS / TOEFL Essay Proofreading",
-  "Chemistry",
-  "SAT / ACT Test Prep",
-  "Statistics & Data Analysis",
-  "Data Science & Machine Learning",
-  "Live IELTS / TOEFL Speaking Prep",
-  "Java & C++ Programming",
-  "Financial Accounting",
-  "Academic Essay Writing",
-  "Spanish",
-  "French",
-  "Biology & Genetics",
-  "GRE / GMAT Test Prep",
-  "Web Development",
-  "Macro / Microeconomics",
-  "Arabic",
-  "MCAT / LSAT Test Prep",
-  "Geometry",
-  "Mandarin Chinese",
-  "Study Skills",
-  "ACT Maths",
-];
-
-function slugify(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/\+/g, "plus")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-const SUBJECTS = SUBJECT_NAMES.map((name, i) => ({
-  name,
-  slug: slugify(name),
-  sort_order: i + 1,
-}));
 const slugOf = Object.fromEntries(SUBJECTS.map((s) => [s.name, s.slug]));
 
 // Resolved values from SPEC §18 (2026-08-20). All live in platform_settings so retuning is a

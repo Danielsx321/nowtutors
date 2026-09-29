@@ -430,7 +430,7 @@ already-running script.
   neither tutors nor students are in the US; this is a candidate cause of the app-slowness item
   carried in PROGRESS ("Still open — carry forward") and should be picked with actual user
   geography in mind, not left as a default. Create a
-  dedicated production project, run the migrations against it, seed `platform_settings` + subjects
+  dedicated production project (**the ordered script is `docs/LAUNCH.md`; use its guarded `db:*:prod` scripts**), run the migrations against it, seed `platform_settings` + subjects
   (NOT the dev fixtures), promote the first admin by SQL, repoint the Vercel production env vars
   (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
   `DATABASE_URL`, `DIRECT_URL`), redo the Google OAuth redirect URIs and the same-email linking
