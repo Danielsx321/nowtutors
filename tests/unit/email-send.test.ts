@@ -19,6 +19,7 @@ function recipient(over: Partial<Recipient> = {}): Recipient {
     displayName: null,
     timezone: "Europe/Madrid",
     notificationPreferences: {},
+    role: "tutor",
     ...over,
   };
 }
@@ -145,5 +146,51 @@ describe("sendEmail", () => {
       }),
     );
     expect(out).toEqual({ sent: false, reason: "no_recipient" });
+  });
+
+  it("skips a preference-controlled email the person turned off", async () => {
+    const { transport, sent } = fakeTransport();
+    const r = recipient({ role: "student", notificationPreferences: { booking_confirmations: false } });
+    const out = await sendEmail(
+      {
+        type: "booking-confirmed",
+        to: { userId: r.id },
+        props: {
+          bookingId: "b1",
+          subjectName: "Spanish",
+          otherPartyName: "Tina Reyes",
+          startAt: "2026-10-02T15:30:00.000Z",
+          endAt: "2026-10-02T16:30:00.000Z",
+          durationMinutes: 60,
+          priceCredits: 40,
+        },
+      },
+      deps({ transport }, r),
+    );
+    expect(out).toMatchObject({ sent: false, reason: "preference_off" });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("passes the calendar invite through to the transport", async () => {
+    const { transport, sent } = fakeTransport();
+    const r = recipient({ role: "student" });
+    await sendEmail(
+      {
+        type: "booking-confirmed",
+        to: { userId: r.id },
+        props: {
+          bookingId: "b1",
+          subjectName: "Spanish",
+          otherPartyName: "Tina Reyes",
+          startAt: "2026-10-02T15:30:00.000Z",
+          endAt: "2026-10-02T16:30:00.000Z",
+          durationMinutes: 60,
+          priceCredits: 40,
+        },
+      },
+      deps({ transport }, r),
+    );
+    expect(sent[0].attachments).toHaveLength(1);
+    expect(sent[0].attachments?.[0]).toMatchObject({ filename: "nowtutors-session.ics" });
   });
 });

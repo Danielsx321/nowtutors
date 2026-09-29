@@ -136,7 +136,12 @@ export type SettleResult =
   | { status: "unknown_order" };
 
 export type MarkResult =
-  | { status: "updated"; paymentId: string }
+  /**
+   * `previousStatus` lets a caller act once per transition: a replayed
+   * DENIED or REFUNDED event finds the row already there (Phase 10 Part 2,
+   * the capture-failed and refund emails).
+   */
+  | { status: "updated"; paymentId: string; previousStatus: PaymentStatus }
   /**
    * A `PAYMENT.CAPTURE.REFUNDED` for less than the payment. The payload is
    * kept, `payments.status` is left alone: see {@link markStatus}.
@@ -403,7 +408,7 @@ export async function markStatus(
     ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
   });
 
-  return { status: "updated", paymentId: payment.id };
+  return { status: "updated", paymentId: payment.id, previousStatus: payment.status };
 }
 
 /** `"39.99"` → `3999`. Null for anything that isn't a plain non-negative amount. */

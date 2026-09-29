@@ -44,13 +44,13 @@ export function sendEmailNow<T extends EmailType>(request: EmailRequest<T>): Pro
  * response too. Whatever it throws is logged, never surfaced.
  */
 export function queueEmail<T extends EmailType>(request: EmailRequest<T>): void {
-  after(() => sendEmailNow(request));
+  later(() => sendEmailNow(request).then(() => undefined));
 }
 
 export function queueEmails(
   build: () => Promise<ReadonlyArray<EmailRequest> | EmailRequest | null>,
 ): void {
-  after(async () => {
+  later(async () => {
     try {
       const built = await build();
       const list = built == null ? [] : Array.isArray(built) ? built : [built as EmailRequest];
@@ -59,4 +59,18 @@ export function queueEmails(
       console.error("[email] queued build failed", err);
     }
   });
+}
+
+/**
+ * `after()` inside a request (actions, route handlers). Outside one (a script,
+ * an integration test calling a query adapter) `after` throws, and the send
+ * runs detached instead: still after the caller's transaction, still unable
+ * to fail it.
+ */
+function later(task: () => Promise<void>): void {
+  try {
+    after(task);
+  } catch {
+    void task().catch((err) => console.error("[email] detached send failed", err));
+  }
 }

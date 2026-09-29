@@ -1628,13 +1628,23 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
-Student: booking confirmed (with `.ics`), reminder 24h, reminder 1h, booking cancelled by tutor, refund issued, credits purchased, session summary. *(Part 2 and Part 3.)*
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking, booking cancelled, reminder 1h, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**.
-Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure.
+Student: booking confirmed (with `.ics`) **(built)**, reminder 24h, reminder 1h, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**. *(Reminders: Part 3.)*
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**.
+Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.
+
+**When each booking and payment email goes out (Part 2).** Every one is queued after its transaction commits, at a point that happens once:
+- *Booking confirmed + tutor new booking*: a scheduled booking paid with credits, when `createScheduledBooking` commits; direct pay, when settlement returns `booking_confirmed`. The second PayPal caller gets `booking_already_confirmed` and sends nothing. Instant sessions send no confirmation: the student is already in the room.
+- *Credits purchased*: settlement returns `credited` (the other caller gets `already_credited`).
+- *Booking cancelled*: an admin force-cancel. The tutor always hears. The student gets "cancelled by your tutor" when the cancellation is on the tutor, otherwise a refund notice if credits went back, otherwise nothing (they asked for it). The admin's note is internal and is never emailed.
+- *Refund issued*: credits back from a force-cancel (above), or a payment moving to `refunded` in full for the first time (PayPal `REFUNDED` / `REVERSED`). A replayed event finds the row already `refunded` and sends nothing; a partial refund sends nothing (it is handled as a manual adjustment, §7.6). The later admin "reverse this refund" sends the tutor a cancellation if it cancels a booking, and the student nothing more.
+- *Payment capture failure*: a payment moving to `failed` for the first time (client capture decline or `DENIED`). Goes to every admin.
+- *Session summary*: when a booking's earnings row is written, which the unique index makes once per booking: by the complete-sessions cron (`earningsCreatedIds`, both `completed` and `no_show_student`) or by an admin force-complete. A tutor no-show writes no row and gets no summary. The cron awaits these sends and reports `summariesSent` / `summariesFailed`.
+
+Times in every email are printed in the recipient's `profiles.timezone` with the zone named; the `.ics` carries UTC.
 
 Admin emails go to every `profiles.role = 'admin'` account that is not suspended.
 
-`profiles.notification_preferences` is read on every send through `lib/email/preferences.ts`: `booking_confirmations`, `reminders`, `messages` default on, `marketing` default off, a missing key means on, unknown keys are ignored. Each type maps to one key or to `always`. The `always` types are transactional (money moved, an application decided, an admin who has to act) and go out whatever the flags say; every type built in Part 1 is `always`. Preference-controlled types carry a "Manage notifications" link to the viewer's settings page in the footer. No marketing email exists, so no unsubscribe token is built; if one is ever added it gets the token then.
+`profiles.notification_preferences` is read on every send through `lib/email/preferences.ts`: `booking_confirmations`, `reminders`, `messages` default on, `marketing` default off, a missing key means on, unknown keys are ignored. Each type maps to one key or to `always`. The `always` types are transactional (money moved, an application decided, a booking cancelled, an admin who has to act) and go out whatever the flags say. Booking confirmations and session summaries honour `booking_confirmations`; reminders will honour `reminders`, the message nudge `messages`. Preference-controlled types carry a "Manage notifications" link to the recipient's own settings page (`/tutor/settings`, `/admin/settings`, `/dashboard/settings`), shown only once that route exists in `lib/routes.ts`. No marketing email exists, so no unsubscribe token is built; if one is ever added it gets the token then.
 
 ---
 

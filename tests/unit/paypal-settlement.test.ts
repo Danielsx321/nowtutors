@@ -273,7 +273,7 @@ describe("markStatus — DENIED and REFUNDED never credit", () => {
       status: "failed",
       rawPayload: { event_type: "PAYMENT.CAPTURE.DENIED" },
     });
-    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID });
+    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID, previousStatus: "created" });
     expect(s.rows.get(PAYMENT_ID)).toMatchObject({
       status: "failed",
       providerCaptureId: CAPTURE_ID,
@@ -293,7 +293,7 @@ describe("markStatus — DENIED and REFUNDED never credit", () => {
       status: "refunded",
       rawPayload: { event_type: "PAYMENT.CAPTURE.REFUNDED" },
     });
-    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID });
+    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID, previousStatus: "captured" });
     expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded");
     expect(s.ledger.rows).toHaveLength(0);
     expect(s.ledger.balances.get("alice")).toBe(40);
@@ -306,7 +306,7 @@ describe("markStatus — DENIED and REFUNDED never credit", () => {
       status: "refunded",
       refundedUsd: "39.99",
     });
-    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID });
+    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID, previousStatus: "captured" });
     expect(s.rows.get(PAYMENT_ID)!.status).toBe("refunded");
   });
 
@@ -350,5 +350,13 @@ describe("markStatus — DENIED and REFUNDED never credit", () => {
     });
     expect(result).toEqual({ status: "unknown_order" });
     expect(s.patches).toHaveLength(0);
+  });
+});
+
+describe("markStatus reports the status it moved from (Phase 10 Part 2)", () => {
+  it("a replayed DENIED reports previousStatus failed, so no second capture-failed email", async () => {
+    const s = store(purchase({ status: "failed", providerCaptureId: CAPTURE_ID }));
+    const result = await markStatus(s, { providerCaptureId: CAPTURE_ID, status: "failed" });
+    expect(result).toEqual({ status: "updated", paymentId: PAYMENT_ID, previousStatus: "failed" });
   });
 });

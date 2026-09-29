@@ -1,4 +1,11 @@
 import "server-only";
+import { queueEmails } from "@/lib/email";
+import {
+  bookingConfirmedEmails,
+  captureFailedEmails,
+  creditsPurchasedEmails,
+  paypalRefundEmails,
+} from "@/lib/email/booking-emails";
 import { and, eq, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
 import { bookings, creditTransactions, payments } from "@/db/schema";
@@ -135,22 +142,50 @@ function paymentStore(tx: DbTransaction): PaymentStore {
   };
 }
 
-/** Record a completed capture and grant the credits, in ONE transaction. */
-export function settleCapturedOrder(
+/**
+ * Record a completed capture and grant the credits, in ONE transaction. Both
+ * callers (the client capture route and the webhook) come through here, so the
+ * emails are queued here, after the commit, keyed on the result: `credited`
+ * and `booking_confirmed` happen once per payment, and the `already_*`
+ * results the second caller gets send nothing.
+ */
+export async function settleCapturedOrder(
   ref: PaymentRef & { rawPayload?: unknown },
 ): Promise<SettleResult> {
-  return db.transaction((tx) => settleCapture(paymentStore(tx), ref));
+  const result = await db.transaction((tx) => settleCapture(paymentStore(tx), ref));
+  notifySettled(result);
+  return result;
+}
+
+export function notifySettled(result: SettleResult): void {
+  if (result.status === "credited") {
+    const { paymentId, credits, balanceAfter } = result;
+    queueEmails(() => creditsPurchasedEmails(paymentId, { credits, balanceAfter }));
+  } else if (result.status === "booking_confirmed") {
+    const { bookingId } = result;
+    queueEmails(() => bookingConfirmedEmails(bookingId));
+  }
 }
 
 /** Move a payment to `failed` / `refunded` without touching the wallet. */
-export function markPaymentStatus(
+export async function markPaymentStatus(
   ref: PaymentRef & {
     status: "failed" | "refunded";
     refundedUsd?: string;
     rawPayload?: unknown;
   },
 ): Promise<MarkResult> {
-  return db.transaction((tx) => markStatus(paymentStore(tx), ref));
+  const result = await db.transaction((tx) => markStatus(paymentStore(tx), ref));
+  notifyMarked(ref.status, result);
+  return result;
+}
+
+/** Only a real transition emails: a replayed event finds the row already moved. */
+export function notifyMarked(target: "failed" | "refunded", result: MarkResult): void {
+  if (result.status !== "updated" || result.previousStatus === target) return;
+  const { paymentId } = result;
+  if (target === "failed") queueEmails(() => captureFailedEmails(paymentId));
+  else queueEmails(() => paypalRefundEmails(paymentId));
 }
 
 /**
@@ -173,6 +208,6 @@ export function recordPendingCapture(
         ref.providerCaptureId?.trim() || payment.providerCaptureId,
       ...(ref.rawPayload === undefined ? {} : { rawPayload: ref.rawPayload }),
     });
-    return { status: "updated", paymentId: payment.id };
+    return { status: "updated", paymentId: payment.id, previousStatus: payment.status };
   });
 }
