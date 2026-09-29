@@ -34,13 +34,17 @@ export function CardHeader({
   return <div className={cn("flex flex-col gap-1 p-5", className)} {...props} />;
 }
 
+/**
+ * A card's title. `h3` by default; a page whose cards sit straight under its
+ * h1 passes `as="h2"` so the outline doesn't skip a level (Phase 10 Part 5,
+ * Lighthouse heading-order).
+ */
 export function CardTitle({
   className,
+  as: Heading = "h3",
   ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
-  return (
-    <h3 className={cn("font-display text-h3 font-semibold", className)} {...props} />
-  );
+}: React.HTMLAttributes<HTMLHeadingElement> & { as?: "h2" | "h3" }) {
+  return <Heading className={cn("font-display text-h3 font-semibold", className)} {...props} />;
 }
 
 export function CardDescription({

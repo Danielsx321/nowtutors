@@ -36,7 +36,7 @@ export function Banner({
       <span aria-hidden className="absolute right-[150px] top-[112px] hidden size-[7px] rounded-full bg-spark sm:block" />
 
       <div className="relative z-[1]">
-        <p className="text-caption font-semibold uppercase tracking-[0.14em] text-on-primary/70">{kicker}</p>
+        <p className="text-caption font-semibold uppercase tracking-[0.14em] text-on-primary/90">{kicker}</p>
         <h2 className="mt-2 max-w-[18ch] font-display text-[clamp(28px,3.4vw,44px)] font-medium leading-[1.05] tracking-[-0.03em]">
           {title}
         </h2>

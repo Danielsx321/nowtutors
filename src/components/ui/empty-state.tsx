@@ -37,10 +37,8 @@ export function EmptyState({
       {...props}
     >
       {icon && (
-        <span
-          className="grid size-12 place-items-center rounded-full bg-surface-muted text-text-muted"
-          aria-hidden
-        >
+        // Plain, no tile or circle behind it (DESIGN.md "Banned tells"; Phase 10 Part 5).
+        <span className="text-text-muted [&_svg]:size-8 [&_svg]:stroke-[1.8]" aria-hidden>
           {icon}
         </span>
       )}

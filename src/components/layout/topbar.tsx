@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -107,7 +108,9 @@ export function Topbar({
           <DropdownMenuTrigger asChild>
             <button
               className="focus-ring flex items-center gap-2.5 rounded-full md:border-l md:border-border md:pl-3"
-              aria-label="Account menu"
+              // Starts with the visible name, so voice control ("click Elizabeth")
+              // and the screen-reader name agree (Lighthouse label-content-name-mismatch).
+              aria-label={`${userName}, account menu`}
             >
               <Avatar src={avatarUrl ?? undefined} name={userName} size="md" className="md:size-11" />
               <span className="hidden max-w-[14ch] truncate text-body font-semibold text-text lg:inline">

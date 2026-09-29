@@ -22,7 +22,7 @@ export default async function TutorSettingsPage() {
       <SettingsSections userId={user.id} role="tutor" />
       <Card>
         <CardHeader>
-          <CardTitle>Payouts</CardTitle>
+          <CardTitle as="h2">Payouts</CardTitle>
         </CardHeader>
         <CardContent>
           <PayoutEmailForm email={email} />

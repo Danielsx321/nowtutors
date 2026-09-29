@@ -1676,7 +1676,7 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   about whether a tutor already teaching should appear live at all — §7.4 does not say — and it
   interacts with the accept path, which would be starting a second session on top of the one they
   are in. Not a rename; do not patch it as one.
-- **The instant request often never reaches the tutor — ROOT CAUSE FOUND, fix built on
+- **CLOSED (Phase 10 Part 5 cleanup): merged as `8489d70` (PR #54).** Kept for history: **The instant request often never reaches the tutor — ROOT CAUSE FOUND, fix built on
   `fix/realtime-auth-before-subscribe` (2026-09-14), awaiting merge and a live check.**
   The channel joined before the session JWT was on the socket, so Realtime authorised it
   as `anon` and RLS withheld every INSERT while it still reported `SUBSCRIBED`. See
@@ -1758,7 +1758,7 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   time). Straightforward, but it is a new read on the tutor's hot path and belongs with the mount
   decision above, not bolted on next to it. Do not implement it as a `setInterval` refresh —
   CLAUDE.md forbids that, and it is not what is missing.
-- **Phase 7's classroom is unexercised end to end, and `LESSONSPACE_API_KEY` is unset.** No call
+- **SUPERSEDED (Phase 10 Part 5 cleanup): the classroom was live-verified on 2026-08-25 with the key set; only the leader "end session for all" control remains open (above).** Kept for history: **Phase 7's classroom is unexercised end to end, and `LESSONSPACE_API_KEY` is unset.** No call
   has ever been made to LessonSpace from this codebase — every green test stops at the pure
   decision or at Postgres. Two participants in one room, the tutor holding teacher controls, the
   `confirmed → in_progress` transition firing on a real second arrival, and the iframe rendering a
@@ -1768,12 +1768,12 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
   classroom state is behind authentication, and reaching the *open* state needs a booking whose
   join window is now — which would mean writing to the dev Supabase project that also serves
   production. Worth doing with a seeded login before the branch merges.
-- **BUILT in Phase 8 Part 3 (`phase-8-part3-wallet-crons`); scheduling on dev/prod is a post-merge step.** Original note: **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
+- **CLOSED (Phase 10 Part 5 cleanup): built and scheduled (jobid 6).** Kept for history: **BUILT in Phase 8 Part 3 (`phase-8-part3-wallet-crons`); scheduling on dev/prod is a post-merge step.** Original note: **§12 expire-unpaid cron not built — deferred to Phase 8.** Not load-bearing today: a
   `pending_payment` booking older than 20 minutes already stops blocking a slot on the **read**
   side (§4.2), and the booking transaction sweeps stale holds its slot collides with on the
   **write** side, so double-selling cannot happen without the cron. The cron is tidy-up (rows that
   sit `pending_payment` forever without a colliding booking to trigger the sweep), not correctness.
-- **Refund-reverses-credits admin action NOT built — deferred, needs its own design pass.**
+- **CLOSED (Phase 10 Part 5 cleanup): built in Phase 8 Part 6 (PR #65) as "Reverse this refund" on `/admin/payments`.** Kept for history: **Refund-reverses-credits admin action NOT built — deferred, needs its own design pass.**
   `/admin/payments` (Phase 5 Part 2) is **read-only**: it shows what happened to a payment but
   cannot unwind one. `PAYMENT.CAPTURE.REFUNDED` already sets `payments.status = 'refunded'` and
   deliberately does **not** claw credits back — §18 item 4 makes reversing credits an **admin**
