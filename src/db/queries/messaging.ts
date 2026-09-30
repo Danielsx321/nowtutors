@@ -1,7 +1,7 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
-import { conversations, messages, profiles, tutorProfiles } from "@/db/schema";
+import { bookings, conversations, messages, profiles, tutorProfiles } from "@/db/schema";
 import { pgErrorCode } from "@/lib/credits/ledger";
 import { parseAttachmentPath, type AttachmentKind } from "@/lib/messaging/attachments";
 import type { StarterProfile, TargetProfile } from "@/lib/messaging/rules";
@@ -69,6 +69,31 @@ function messagingStore(tx: DbTransaction): MessagingStore {
         .where(eq(profiles.id, userId))
         .limit(1);
       return row ?? null;
+    },
+
+    async hasBookingBetween(a, b): Promise<boolean> {
+      const [row] = await tx
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            or(
+              and(eq(bookings.tutorId, a), eq(bookings.studentId, b)),
+              and(eq(bookings.tutorId, b), eq(bookings.studentId, a)),
+            ),
+            // Paid for, whether or not it happened. An unpaid hold or an expired
+            // one is not a relationship yet.
+            inArray(bookings.status, [
+              "confirmed",
+              "in_progress",
+              "completed",
+              "no_show_student",
+              "no_show_tutor",
+            ]),
+          ),
+        )
+        .limit(1);
+      return row != null;
     },
 
     async upsertConversation(a, b): Promise<ConversationRow> {

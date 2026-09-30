@@ -1306,7 +1306,7 @@ End broadcast: status `ended`, `ended_at`, `is_live = false`. Cron sweep also en
 Conversation list + thread view, shared component for both roles. Send text and optional attachment. Realtime subscription on `messages` filtered by `conversation_id` for the open thread, plus a lighter subscription on `conversations` for unread badges. Mark read when the thread is visible. Unread count in the header. Email notification only if the recipient has been offline for more than 5 minutes.
 
 > **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"), all as recommended:**
-> - **Only a student starts a conversation, and only with an approved tutor who isn't suspended.** A
+> - **Only a student starts a conversation, and only with an approved tutor who isn't suspended.** *Amended 2026-09-30:* **a tutor may also open the thread with a student who has a paid booking with them** (confirmed, in progress, completed or a no-show; not an unpaid hold), from the booking's detail page (`startConversationWithStudent`, `MessageStudentButton`). A tutor still cannot message someone who only viewed their profile; the refusal is the same `not_student`. A
 >   tutor replies inside a thread a student opened but can't open one. No student-to-student,
 >   tutor-to-tutor or admin threads. Once a thread exists, either participant may keep writing while
 >   they themselves aren't suspended. Every reason a target can't be messaged returns the same

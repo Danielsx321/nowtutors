@@ -33,6 +33,41 @@ describe("canStartConversation", () => {
     ).toEqual({ ok: false, reason: "not_student" });
   });
 
+  describe("a tutor with a booking together (2026-09-30)", () => {
+    const tutor: StarterProfile = { id: "t9", role: "tutor", isSuspended: false };
+    const bookedStudent: TargetProfile = { id: "s9", role: "student", isSuspended: false, approvalStatus: null };
+
+    it("may open the thread with the student who booked them", () => {
+      expect(canStartConversation(tutor, bookedStudent, true)).toEqual({ ok: true });
+    });
+
+    it("is still refused without a booking, with the wording tutors always got", () => {
+      expect(canStartConversation(tutor, bookedStudent, false)).toEqual({ ok: false, reason: "not_student" });
+      expect(canStartConversation(tutor, bookedStudent)).toEqual({ ok: false, reason: "not_student" });
+    });
+
+    it("cannot use the booking to reach a suspended student, another tutor, or nobody", () => {
+      expect(canStartConversation(tutor, { ...bookedStudent, isSuspended: true }, true)).toEqual({
+        ok: false,
+        reason: "target_unavailable",
+      });
+      expect(canStartConversation(tutor, approvedTutor, true)).toEqual({ ok: false, reason: "target_unavailable" });
+      expect(canStartConversation(tutor, null, true)).toEqual({ ok: false, reason: "target_unavailable" });
+    });
+
+    it("a suspended tutor is refused before the booking is considered", () => {
+      expect(canStartConversation({ ...tutor, isSuspended: true }, bookedStudent, true)).toEqual({
+        ok: false,
+        reason: "starter_suspended",
+      });
+    });
+
+    it("a student's answer does not change with the flag", () => {
+      expect(canStartConversation(student, approvedTutor, true)).toEqual({ ok: true });
+      expect(canStartConversation(student, bookedStudent, true)).toEqual({ ok: false, reason: "target_unavailable" });
+    });
+  });
+
   it("refuses an admin and an account with no role", () => {
     expect(
       canStartConversation({ id: "a1", role: "admin", isSuspended: false }, approvedTutor),
@@ -71,7 +106,7 @@ describe("canStartConversation", () => {
 
   it("gives every unavailable target the same wording, so it can't probe accounts", () => {
     expect(messagingRefusalMessage("target_unavailable")).toBe(
-      "This tutor isn't available to message.",
+      "This person isn't available to message.",
     );
   });
 });

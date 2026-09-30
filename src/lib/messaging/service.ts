@@ -86,6 +86,12 @@ export interface MessagingStore {
   getStarter(userId: string): Promise<StarterProfile | null>;
   getTarget(userId: string): Promise<TargetProfile | null>;
   /**
+   * Is there a paid booking between the two (confirmed, in progress, completed
+   * or a no-show)? Read only when a tutor is the starter (2026-09-30); it is
+   * what earns a tutor the right to open the thread.
+   */
+  hasBookingBetween(a: string, b: string): Promise<boolean>;
+  /**
    * Insert the pair's thread, or return the existing one. Must be a single
    * statement against the pair index so two concurrent starts get one row.
    */
@@ -125,7 +131,11 @@ export async function startConversation(
     const starter = await store.getStarter(input.starterId);
     if (!starter) return { ok: false as const, reason: "not_student" as const };
     const target = await store.getTarget(input.targetId);
-    const allowed = canStartConversation(starter, target);
+    // Only a tutor's start depends on a booking; a student's never did, and
+    // the read is skipped for them so the answer to a student is unchanged.
+    const hasBooking =
+      starter.role === "tutor" ? await store.hasBookingBetween(input.starterId, input.targetId) : false;
+    const allowed = canStartConversation(starter, target, hasBooking);
     if (!allowed.ok) return allowed;
     const conversation = await store.upsertConversation(input.starterId, input.targetId);
     return { ok: true as const, conversationId: conversation.id };

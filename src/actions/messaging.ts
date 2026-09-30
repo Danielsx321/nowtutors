@@ -84,6 +84,31 @@ export async function startConversation(input: {
   };
 }
 
+/**
+ * A tutor opens the thread with a student who has booked them (2026-09-30).
+ * The booking check is the rule's job (`canStartConversation` with
+ * `hasBookingBetween`), not this action's: a tutor with no booking gets the
+ * same refusal a tutor always got.
+ */
+export async function startConversationWithStudent(input: {
+  studentId: string;
+}): Promise<StartConversationResult> {
+  const user = await requireUser();
+  const parsed = z.object({ studentId: uuid }).safeParse(input);
+  if (!parsed.success) return { error: messagingRefusalMessage("target_unavailable") };
+
+  const res = await startConversationCore(messagingRunner, {
+    starterId: user.id,
+    targetId: parsed.data.studentId,
+  });
+  if (!res.ok) return { error: messagingRefusalMessage(res.reason) };
+  return {
+    ok: true,
+    conversationId: res.conversationId,
+    href: `/tutor/messages/${res.conversationId}`,
+  };
+}
+
 export type CreateAttachmentUploadResult =
   | { ok: true; path: string; token: string }
   | { error: string };
