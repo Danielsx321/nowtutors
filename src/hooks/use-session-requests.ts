@@ -6,6 +6,7 @@ import {
   type BrowserClient,
   type RealtimeStatus,
 } from "@/hooks/use-retrying-channel";
+import { getOutgoingRequest } from "@/actions/session-requests";
 
 export type { RealtimeStatus };
 
@@ -143,14 +144,46 @@ export interface OutgoingRequestState {
  * status is not returned here — a student's request lives 60 seconds and the
  * waiting modal already has its own expiry message, so there is nothing honest
  * for a "reconnecting" indicator to add inside that window.
+ *
+ * **The channel is the push signal; `getOutgoingRequest` is the data** (added
+ * 2026-09-30, the same shape the tutor side got on 28 Sep). It is read after
+ * every (re)subscribe and once when the ring runs out, so a missed UPDATE can no
+ * longer leave a charged student on "No answer" while the tutor waits alone.
  */
 export function useOutgoingSessionRequest(
   requestId: string | null,
+  /**
+   * The cosmetic ring has run out. The one moment a student is about to be
+   * told "No answer", so it is the one moment to ask the server first
+   * (fallback of 2026-09-30, see `getOutgoingRequest`).
+   */
+  elapsed = false,
 ): OutgoingRequestState | null {
   const [state, setState] = React.useState<OutgoingRequestState | null>(null);
 
   React.useEffect(() => {
     setState(null);
+  }, [requestId]);
+
+  /**
+   * The guarded read behind the channel. A terminal status already shown is
+   * never overwritten: the event and the read describe the same row, and the
+   * one that arrived first is not less true. `pending` is ignored, because the
+   * ring is already saying that.
+   */
+  const readBack = React.useCallback(async () => {
+    if (!requestId) return;
+    try {
+      const res = await getOutgoingRequest(requestId);
+      if ("error" in res || res.status === "pending") return;
+      setState((current) =>
+        current && current.status !== "pending"
+          ? current
+          : { status: res.status as OutgoingRequestStatus, bookingId: res.bookingId },
+      );
+    } catch {
+      // The channel and the modal's own expiry still stand; nothing to add.
+    }
   }, [requestId]);
 
   const build = React.useCallback(
@@ -175,7 +208,14 @@ export function useOutgoingSessionRequest(
     [requestId],
   );
 
-  useRetryingChannel(requestId ? `session-request:${requestId}` : null, build);
+  // After every (re)subscribe: an UPDATE that landed while the socket was down
+  // is gone, and this is what brings it back.
+  useRetryingChannel(requestId ? `session-request:${requestId}` : null, build, readBack);
+
+  // At the ring's end: the row may already say `accepted`.
+  React.useEffect(() => {
+    if (elapsed) void readBack();
+  }, [elapsed, readBack]);
 
   return state;
 }

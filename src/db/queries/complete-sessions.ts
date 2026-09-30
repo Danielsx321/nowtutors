@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { bookings, tutorEarnings } from "@/db/schema";
 import { insertHeldEarnings, type HeldEarning } from "@/db/queries/earnings";
 import { EARNING_STATUSES } from "@/lib/sessions/completion";
+import { INSTANT_UNMET_GRACE_MINUTES } from "@/lib/sessions/deadline";
 import {
   endElapsedInstantSession,
   sessionElapsedSql,
@@ -18,9 +19,10 @@ import {
  *  1. **Instant, started** — `started_at + duration_minutes <= now()`, expressed
  *     by the shared {@link sessionElapsedSql} fragment. These are closed through
  *     the shipped `endElapsedInstantSession`, not by a statement written here.
- *  2. **Instant, never started** — `created_at + duration_minutes <= now()`.
- *     `sessionElapsedSql` is null-safe and matches none of these, so without a
- *     clock of their own they would sit `in_progress` forever.
+ *  2. **Instant, never started** — `created_at + INSTANT_UNMET_GRACE_MINUTES <= now()`
+ *     (five minutes since 2026-09-30; it was the booked duration). `sessionElapsedSql`
+ *     is null-safe and matches none of these, so without a clock of their own they
+ *     would sit `in_progress` forever.
  *  3. **Scheduled** — `scheduled_end_at + 30m <= now()`, the predicate §12 has
  *     always described.
  *
@@ -44,6 +46,17 @@ export interface SweptBooking {
 
 /** The grace §12 gives a scheduled booking after its end before the sweep acts. */
 export const SCHEDULED_GRACE_MINUTES = 30;
+
+/**
+ * The unmet booking's grace, re-exported from the pure lib (SPEC §12, amended
+ * 2026-09-30). Both people are sent into the room the moment the accept
+ * commits, so a pair that is going to meet meets within seconds. The old clock
+ * was the full booked duration, and on the 30 Sep live test that left a tutor
+ * whose student never arrived blocked for the whole half hour: launch fix M9
+ * refuses every new accept while she holds an `in_progress` instant booking,
+ * and End session refuses an unmet booking by design (see `endInstantSession`).
+ */
+export { INSTANT_UNMET_GRACE_MINUTES };
 
 /**
  * Which of `completed` / `no_show_tutor` / `no_show_student` a row lands on.
@@ -124,27 +137,37 @@ export async function findElapsedInstantSessionIds(): Promise<string[]> {
 /** {@link endElapsedInstantSession}, re-exported so the route has one import. */
 export { endElapsedInstantSession, type EndedSession };
 
+/** `created_at + INSTANT_UNMET_GRACE_MINUTES <= now()`: the unmet booking's clock. */
+const instantUnmetDueSql: SQL = sql`${bookings.createdAt} + make_interval(mins => ${INSTANT_UNMET_GRACE_MINUTES}) <= now()`;
+
 /**
- * Instant bookings whose booked window passed without the pair ever meeting.
+ * Close instant bookings the pair never met in, classified as a no-show.
  *
- * **The clock is `created_at + duration_minutes`.** An instant booking is
- * created by the accept transaction and begins immediately (§7.4), so
- * `created_at` is the instant analogue of `scheduled_start_at` and this is the
- * same booked window the hard stop measures — not a second definition of it.
- * `started_at IS NULL` is part of the predicate and not only of the
+ * **The clock is `created_at + INSTANT_UNMET_GRACE_MINUTES`.** An instant
+ * booking is created by the accept transaction and both people are sent into the
+ * room at once (§7.4), so `created_at` is the instant analogue of
+ * `scheduled_start_at`. Until 2026-09-30 the window was the full booked
+ * duration; see {@link INSTANT_UNMET_GRACE_MINUTES} for why it is now five
+ * minutes. `started_at IS NULL` is part of the predicate and not only of the
  * classification: a pair that connected late has a `started_at`, so it is swept
- * by the elapsed path above with its capped `ended_at` instead of landing here.
+ * by the elapsed path with its capped `ended_at` instead of landing here.
  *
- * **No grace.** `ended_at` is `now()` for these rows — there is no session end
- * to record, so the stamp is the moment of classification — and §7.11 derives
- * `available_at` from `ended_at`, so any grace period would add its own length
- * to the tutor's withdrawal date for a session that never happened.
+ * **No further grace.** `ended_at` is `now()` for these rows — there is no
+ * session end to record, so the stamp is the moment of classification — and
+ * §7.11 derives `available_at` from `ended_at`.
  *
  * `billed_minutes = duration_minutes` because the student was charged the full
- * price at accept and §7.4 refunds nothing, on any path. The column records what
- * was billed, and the answer is the same whether or not anyone showed up.
+ * price at accept and §7.4 refunds nothing, on any path. A `no_show_tutor` row
+ * pays no earnings and is what the admin refunds by hand (the refunds page);
+ * `no_show_student` pays the tutor who turned up (§7.11).
+ *
+ * One statement behind three callers, so the classification and the clock
+ * cannot disagree with themselves: the cron sweep (`tail` omitted), the room's
+ * deadline actor and End session (one booking), and the accept path (one
+ * tutor's bookings, so a stuck tutor heals on her next accept without waiting
+ * for the cron).
  */
-export async function sweepInstantNoShows(): Promise<SweptBooking[]> {
+async function closeUnmetInstantSessions(tail?: SQL): Promise<SweptBooking[]> {
   return db
     .update(bookings)
     .set({
@@ -162,10 +185,39 @@ export async function sweepInstantNoShows(): Promise<SweptBooking[]> {
         // predicate stops matching it and a second run moves nothing.
         eq(bookings.status, "in_progress"),
         isNull(bookings.startedAt),
-        sql`${bookings.createdAt} + make_interval(mins => ${bookings.durationMinutes}) <= now()`,
+        instantUnmetDueSql,
+        tail,
       ),
     )
     .returning(sweptColumns);
+}
+
+/** The cron's work set: every unmet instant booking past its grace. */
+export function sweepInstantNoShows(): Promise<SweptBooking[]> {
+  return closeUnmetInstantSessions();
+}
+
+/**
+ * One unmet booking, for the room's deadline actor and for End session pressed
+ * by the person left waiting. Postgres decides whether the grace has passed; a
+ * caller who asks early matches zero rows and gets null.
+ */
+export async function closeUnmetInstantSession(
+  bookingId: string,
+): Promise<SweptBooking | null> {
+  const rows = await closeUnmetInstantSessions(eq(bookings.id, bookingId));
+  return rows[0] ?? null;
+}
+
+/**
+ * Every unmet booking of one tutor past its grace. Called by the accept path
+ * before launch fix M9's "already in a session" check, so the check reads a
+ * row the clock has already settled rather than one waiting on the next sweep.
+ */
+export function closeUnmetInstantSessionsForTutor(
+  tutorId: string,
+): Promise<SweptBooking[]> {
+  return closeUnmetInstantSessions(eq(bookings.tutorId, tutorId));
 }
 
 /**

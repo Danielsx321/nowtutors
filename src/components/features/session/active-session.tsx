@@ -78,6 +78,11 @@ export interface ActiveSession {
   deadline: string | null;
   /** Terminal: the server closed the session and the call has been torn down. */
   finished: boolean;
+  /**
+   * The booking's status as the server last reported it, so the ended screen
+   * can say "they didn't join" for a `no_show_*` instead of "session ended".
+   */
+  endedStatus: string | null;
   micEnabled: boolean;
   /** Null for a student: no camera track exists to toggle (§9, media split). */
   cameraEnabled: boolean | null;
@@ -140,6 +145,9 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
   const [remotePresent, setRemotePresent] = React.useState(false);
   const [connection, setConnection] = React.useState<ConnectionState | null>(null);
   const [deadline, setDeadline] = React.useState<string | null>(null);
+  /** `created_at + INSTANT_UNMET_GRACE_MINUTES` while the pair has not met (§12). */
+  const [unmetDeadline, setUnmetDeadline] = React.useState<string | null>(null);
+  const [endedStatus, setEndedStatus] = React.useState<string | null>(null);
   const [finished, setFinished] = React.useState(false);
   /** The current token's server-reported expiry (§9 step 5). Drives renewal below. */
   const [tokenExpiresAt, setTokenExpiresAt] = React.useState<string | null>(null);
@@ -210,6 +218,8 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       const result = await getSessionState(bookingId);
       if ("error" in result) return;
       setDeadline(result.state.deadline);
+      setUnmetDeadline(result.state.unmetDeadline ?? null);
+      setEndedStatus(result.state.status);
       if (result.state.finished) finish();
     } catch {
       // Intentionally ignored; see above.
@@ -242,6 +252,17 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     const timer = setTimeout(() => void refreshRef.current(), wait);
     return () => clearTimeout(timer);
   }, [deadline, finished, phase]);
+
+  // The unmet actor (2026-09-30): the same shape for the person waiting alone.
+  // The server hands down `unmetDeadline` while `started_at` is null; a second
+  // past it the room asks again and `getSessionState` closes the booking as a
+  // no-show. Cleared by the server the moment the other party arrives.
+  React.useEffect(() => {
+    if (!unmetDeadline || finished || phase !== "live") return;
+    const wait = Math.max(0, new Date(unmetDeadline).getTime() - Date.now()) + 1000;
+    const timer = setTimeout(() => void refreshRef.current(), wait);
+    return () => clearTimeout(timer);
+  }, [unmetDeadline, finished, phase]);
 
   React.useEffect(() => {
     // Nothing joins until the room's lobby calls `start()`.
@@ -387,6 +408,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       remotePresent,
       deadline,
       finished,
+      endedStatus,
       micEnabled,
       cameraEnabled,
       start,
@@ -413,6 +435,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       remotePresent,
       deadline,
       finished,
+      endedStatus,
       micEnabled,
       cameraEnabled,
       start,

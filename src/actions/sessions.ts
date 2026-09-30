@@ -8,7 +8,13 @@ import {
   endInstantSessionByParticipant,
   getSessionBooking,
 } from "@/db/queries/sessions";
-import { hasElapsed, msRemaining, sessionDeadline } from "@/lib/sessions/deadline";
+import { closeUnmetInstantSession } from "@/db/queries/complete-sessions";
+import {
+  hasElapsed,
+  INSTANT_UNMET_GRACE_MINUTES,
+  msRemaining,
+  sessionDeadline,
+} from "@/lib/sessions/deadline";
 
 /**
  * Ending an instant session, and reading how long is left (SPEC §7.4).
@@ -53,6 +59,13 @@ export interface SessionState {
   startedAt: string | null;
   /** ISO-8601 hard stop, or null while the session has not started. */
   deadline: string | null;
+  /**
+   * ISO-8601 moment an unmet booking is closed as a no-show
+   * (`created_at + INSTANT_UNMET_GRACE_MINUTES`, §12), while `started_at` is
+   * null and the booking is still `in_progress`; null otherwise. The room arms a
+   * timer from it and asks again, and this action is then the actor.
+   */
+  unmetDeadline: string | null;
   endedAt: string | null;
   /** Server-computed, so a skewed browser clock can correct itself. */
   msRemaining: number | null;
@@ -111,6 +124,19 @@ export async function endSession(bookingId: string): Promise<EndSessionResult> {
   revalidatePath("/dashboard/bookings");
   revalidatePath("/tutor/bookings");
 
+  if (!ended && booking.startedAt === null) {
+    // The pair never met, so `endInstantSession` refused by design (a session
+    // that never started cannot reach `completed`). Since 2026-09-30 the person
+    // left waiting can still close it, once the unmet grace has passed: the
+    // same no-show statement the cron runs, decided on Postgres's clock, so the
+    // outcome and the money are identical whoever noticed first. Inside the
+    // grace this matches nothing and the caller gets `transitioned: false`.
+    const closed = await closeUnmetInstantSession(parsed.data);
+    if (closed) {
+      return { ok: true, transitioned: true, endedAt: closed.endedAt?.toISOString() ?? null, status: closed.status };
+    }
+  }
+
   if (!ended) {
     // Re-read rather than guess which of the two no-op cases applied: the row
     // may have been closed by the other party between the two statements.
@@ -166,6 +192,22 @@ export async function getSessionState(
   const now = new Date();
   let endedAt: Date | null = null;
 
+  // The unmet actor (2026-09-30): the pair never met and the grace has passed.
+  // The client's timer only asks; Postgres decides, and an early ask matches
+  // zero rows. The cron and the accept path run the same statement, so whoever
+  // gets there first writes the same classification.
+  const unmetDeadline = unmetDeadlineOf(booking);
+  if (unmetDeadline && now.getTime() >= unmetDeadline.getTime()) {
+    const closed = await closeUnmetInstantSession(parsed.data);
+    if (closed) {
+      endedAt = closed.endedAt;
+      booking = { ...booking, status: closed.status };
+      revalidatePath(`/session/${parsed.data}`);
+    } else {
+      booking = (await getSessionBooking(parsed.data)) ?? booking;
+    }
+  }
+
   if (booking.status === "in_progress" && hasElapsed(booking, now)) {
     const ended = await endElapsedInstantSession(parsed.data);
     if (ended) {
@@ -190,9 +232,25 @@ export async function getSessionState(
       status: booking.status,
       startedAt: booking.startedAt?.toISOString() ?? null,
       deadline: deadline?.toISOString() ?? null,
+      unmetDeadline: unmetDeadlineOf(booking)?.toISOString() ?? null,
       endedAt: endedAt?.toISOString() ?? null,
       msRemaining: msRemaining(booking, now),
       finished,
     },
   };
+}
+
+/**
+ * `created_at + INSTANT_UNMET_GRACE_MINUTES` for a live booking the pair has not
+ * met in yet; null once `started_at` is written or the booking has left
+ * `in_progress`. Mirrors the SQL clock in `closeUnmetInstantSessions` for the
+ * client's timer only; the SQL is what authorizes the transition.
+ */
+function unmetDeadlineOf(booking: {
+  status: string;
+  startedAt: Date | null;
+  createdAt?: Date;
+}): Date | null {
+  if (booking.status !== "in_progress" || booking.startedAt !== null || !booking.createdAt) return null;
+  return new Date(booking.createdAt.getTime() + INSTANT_UNMET_GRACE_MINUTES * 60_000);
 }

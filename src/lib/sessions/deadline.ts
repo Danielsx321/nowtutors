@@ -97,3 +97,11 @@ export function msRemaining(timing: SessionTiming, now: Date): number | null {
   if (deadline === null) return null;
   return Math.max(0, deadline.getTime() - now.getTime());
 }
+
+/**
+ * How long an accepted instant booking may sit with `started_at` NULL before it
+ * is closed as a no-show (SPEC §12, amended 2026-09-30). Defined here, in the
+ * pure lib, because the room's ended screen quotes it and the SQL clock in
+ * `db/queries/complete-sessions.ts` runs from it: one number, both sides.
+ */
+export const INSTANT_UNMET_GRACE_MINUTES = 5;
