@@ -28,6 +28,8 @@ const TUTOR = "tutor-1";
 
 class FakeMessaging implements MessagingStore {
   profiles = new Map<string, TargetProfile>();
+  /** Pairs with a paid booking, as "a|b" (either order matches). */
+  bookings = new Set<string>();
   conversations: ConversationRow[] = [];
   messages: (MessageRow & { clientKey: string | null })[] = [];
   /** Messages outside the rate window still count as existing rows. */
@@ -42,6 +44,9 @@ class FakeMessaging implements MessagingStore {
   }
   async getTarget(userId: string): Promise<TargetProfile | null> {
     return this.profiles.get(userId) ?? null;
+  }
+  async hasBookingBetween(a: string, b: string): Promise<boolean> {
+    return this.bookings.has(`${a}|${b}`) || this.bookings.has(`${b}|${a}`);
   }
   async upsertConversation(a: string, b: string): Promise<ConversationRow> {
     const found = this.conversations.find(
@@ -137,6 +142,23 @@ describe("startConversation", () => {
 
   it("refuses a tutor opening a thread and writes nothing", async () => {
     const res = await startConversation(run, { starterId: TUTOR, targetId: STUDENT });
+    expect(res).toEqual({ ok: false, reason: "not_student" });
+    expect(fake.conversations).toHaveLength(0);
+  });
+
+  it("lets a tutor open the thread with a student who booked them, and it is the same thread the student would get (2026-09-30)", async () => {
+    fake.bookings.add(`${TUTOR}|${STUDENT}`);
+    const res = await startConversation(run, { starterId: TUTOR, targetId: STUDENT });
+    expect(res.ok).toBe(true);
+    expect(fake.conversations).toHaveLength(1);
+    const again = await startConversation(run, { starterId: STUDENT, targetId: TUTOR });
+    expect(again).toEqual(res);
+    expect(fake.conversations).toHaveLength(1);
+  });
+
+  it("a booking with one student does not let the tutor message another", async () => {
+    fake.bookings.add(`${TUTOR}|${STUDENT}`);
+    const res = await startConversation(run, { starterId: TUTOR, targetId: OTHER_STUDENT });
     expect(res).toEqual({ ok: false, reason: "not_student" });
     expect(fake.conversations).toHaveLength(0);
   });

@@ -41,6 +41,13 @@ export interface VideoTileProps {
   compact?: boolean;
   /** Pinned to the top-left of the picture: the room's connection chip. */
   overlay?: React.ReactNode;
+  /**
+   * `cover` fills the tile and crops, right for a face; `contain` letterboxes,
+   * right for a shared screen whose edges carry the content (2026-09-30).
+   */
+  fit?: "cover" | "contain";
+  /** A short tag on the picture, e.g. "Sharing screen". */
+  badge?: string;
   className?: string;
 }
 
@@ -60,6 +67,8 @@ export function VideoTile({
   primary,
   compact,
   overlay,
+  fit = "cover",
+  badge,
   className,
 }: VideoTileProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -96,7 +105,16 @@ export function VideoTile({
       )}
     >
       {/* Agora renders its own <video> into this element. */}
-      <div ref={mountRef} className="absolute inset-0 [&_video]:object-cover" />
+      <div
+        ref={mountRef}
+        className={cn("absolute inset-0", fit === "contain" ? "[&_video]:!object-contain" : "[&_video]:object-cover")}
+      />
+
+      {badge && track && (
+        <span className="absolute right-3 top-3 rounded-full bg-ground/80 px-2.5 py-1 text-caption font-medium text-text md:right-[18px] md:top-[18px]">
+          {badge}
+        </span>
+      )}
 
       {!track && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">

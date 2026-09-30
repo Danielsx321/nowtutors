@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LayoutGrid, Maximize2, Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { LayoutGrid, Maximize2, MessageSquare, Mic, MicOff, MonitorUp, MonitorX, Video, VideoOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,6 +31,14 @@ export interface ControlBarProps {
   disabled?: boolean;
   onToggleMic: () => void;
   onToggleCamera?: () => void;
+  /** Sharing this screen. Omit when the browser cannot capture one: no button. */
+  sharing?: boolean;
+  onToggleShare?: () => void;
+  /** The chat panel is open. Omit when the room has no chat: no button. */
+  chatOpen?: boolean;
+  onToggleChat?: () => void;
+  /** Messages received while the panel was closed. */
+  chatUnread?: number;
   /** Current layout, when the room offers the switch. */
   layout?: "spotlight" | "side-by-side";
   onToggleLayout?: () => void;
@@ -45,6 +53,11 @@ export function ControlBar({
   disabled,
   onToggleMic,
   onToggleCamera,
+  sharing,
+  onToggleShare,
+  chatOpen,
+  onToggleChat,
+  chatUnread = 0,
   layout,
   onToggleLayout,
   endAction,
@@ -77,6 +90,49 @@ export function ControlBar({
             onClick={onToggleCamera}
             icon={cameraEnabled ? <Video aria-hidden /> : <VideoOff aria-hidden />}
           />
+        )}
+        {sharing !== undefined && onToggleShare && (
+          <button
+            type="button"
+            aria-label="Share screen"
+            aria-pressed={sharing}
+            disabled={disabled}
+            onClick={onToggleShare}
+            className={cn(
+              "focus-ring flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 rounded-[14px] px-2 py-2 transition-colors sm:min-w-[72px] sm:px-2.5 hover:bg-border disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5",
+              sharing ? "text-live" : "text-text",
+            )}
+          >
+            {sharing ? <MonitorX aria-hidden /> : <MonitorUp aria-hidden />}
+            <span aria-hidden className="text-caption">
+              {sharing ? "Stop sharing" : "Share"}
+            </span>
+          </button>
+        )}
+        {chatOpen !== undefined && onToggleChat && (
+          <button
+            type="button"
+            aria-label={chatUnread > 0 ? `Chat, ${chatUnread} unread` : "Chat"}
+            aria-pressed={chatOpen}
+            onClick={onToggleChat}
+            className={cn(
+              "focus-ring relative flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 rounded-[14px] px-2 py-2 text-text transition-colors sm:min-w-[72px] sm:px-2.5 hover:bg-border [&_svg]:size-5",
+              chatOpen && "bg-border",
+            )}
+          >
+            <MessageSquare aria-hidden />
+            <span aria-hidden className="text-caption">
+              Chat
+            </span>
+            {chatUnread > 0 && !chatOpen && (
+              <span
+                aria-hidden
+                className="absolute right-2 top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground"
+              >
+                {chatUnread > 9 ? "9+" : chatUnread}
+              </span>
+            )}
+          </button>
         )}
         {layout && onToggleLayout && (
           <button

@@ -96,13 +96,36 @@ describe("toggleCamera", () => {
     expect(await client.toggleCamera()).toBe(true);
   });
 
-  it("is a no-op returning null for a student — no camera track exists (§9)", async () => {
+  it("flips for a student too: both roles publish a camera (2026-09-30)", async () => {
+    const client = await joinedStudentClient();
+    expect(client.hasCamera).toBe(true);
+    expect(await client.toggleCamera()).toBe(false);
+    expect(camera.setEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it("is a no-op returning null for a student whose camera failed: they joined with audio only", async () => {
+    const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
+    vi.mocked(AgoraRTC.createMicrophoneAndCameraTracks).mockRejectedValueOnce(
+      Object.assign(new Error("no camera"), { code: "DEVICE_NOT_FOUND" }),
+    );
     const client = await joinedStudentClient();
 
-    const result = await client.toggleCamera();
-
-    expect(result).toBeNull();
+    expect(client.hasCamera).toBe(false);
+    expect(AgoraRTC.createMicrophoneAudioTrack).toHaveBeenCalledTimes(1);
+    expect(await client.toggleCamera()).toBeNull();
     expect(camera.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it("a tutor whose camera fails does not join: the tutor's picture is the product", async () => {
+    const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
+    vi.mocked(AgoraRTC.createMicrophoneAndCameraTracks).mockRejectedValueOnce(
+      Object.assign(new Error("no camera"), { code: "DEVICE_NOT_FOUND" }),
+    );
+    const { SessionClient } = await import("@/lib/agora/client");
+    const client = new SessionClient();
+    await expect(client.join({ ...GRANT_BASE, isTutor: true })).rejects.toThrow("no camera");
+    expect(AgoraRTC.createMicrophoneAudioTrack).not.toHaveBeenCalled();
+    expect(client.disposed).toBe(true);
   });
 });
 
