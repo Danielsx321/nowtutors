@@ -33,8 +33,26 @@ vi.mock("@/lib/agora/client", () => ({
     async toggleCamera() {
       return null;
     }
+    hasCamera = true;
+    sharingScreen = false;
+    async startScreenShare() {
+      return false;
+    }
+    async stopScreenShare() {}
   },
 }));
+vi.mock("@/actions/messaging", () => ({
+  createAttachmentUpload: vi.fn(),
+  getAttachmentUrl: vi.fn(),
+  getMessage: vi.fn(),
+  getThreadPage: vi.fn(),
+  markConversationRead: vi.fn(),
+  sendMessage: vi.fn(),
+}));
+vi.mock("@/hooks/use-session-share-signal", () => ({
+  useSessionShareSignal: () => ({ remoteSharing: false, status: "connecting" }),
+}));
+
 
 vi.mock("@/components/features/session/lobby", () => ({
   Lobby: ({ onJoin }: { onJoin: () => void }) => (

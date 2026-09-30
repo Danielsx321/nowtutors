@@ -49,6 +49,9 @@ export async function getSessionBooking(
 
 export interface SessionRoomView {
   bookingId: string;
+  /** Both participants, so the page can find (or open) their conversation for the room's chat. */
+  studentId: string;
+  tutorId: string;
   status: string;
   /** `instant` renders the Agora room; `scheduled` is LessonSpace (Phase 7). */
   type: string;
@@ -119,6 +122,8 @@ export async function getSessionRoomView(
 
   return {
     bookingId: row.id,
+    studentId: row.studentId,
+    tutorId: row.tutorId,
     status: row.status,
     type: row.type,
     durationMinutes: row.durationMinutes,

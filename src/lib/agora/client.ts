@@ -2,6 +2,7 @@ import type {
   IAgoraRTCClient,
   IAgoraRTCRemoteUser,
   ICameraVideoTrack,
+  ILocalVideoTrack,
   IMicrophoneAudioTrack,
   IRemoteAudioTrack,
   IRemoteVideoTrack,
@@ -17,13 +18,26 @@ import type {
  * anything Next renders on the server. Only the `import type`s above are static,
  * and those are erased at build.
  *
- * **The media split is enforced here, not in the token.** The tutor publishes
- * microphone *and* camera; the student publishes microphone only and subscribes
- * to the tutor's video (SPEC §9, confirmed against the live app). Both hold a
- * `publisher` token — a `subscriber` token would forbid the student the audio
- * this design requires them to send, and would only appear to work while Agora's
- * co-host authentication happens to be off. `isTutor` comes from the token route,
- * which derives it from the booking; nothing in this file compares ids.
+ * **The media split is enforced here, not in the token.** Both participants
+ * publish microphone and camera (room features, 2026-09-30; until then the
+ * student sent audio only, SPEC §9). The difference between the roles is how
+ * strict the camera is: a tutor without a working camera cannot join, because
+ * the tutor's picture is the product; a student whose camera is missing or
+ * blocked joins with audio only (`hasCamera` false) rather than being turned
+ * away. Both hold a `publisher` token — a `subscriber` token would forbid the
+ * audio this design requires them to send, and would only appear to work while
+ * Agora's co-host authentication happens to be off. `isTutor` comes from the
+ * token route, which derives it from the booking; nothing in this file compares
+ * ids.
+ *
+ * **Screen share swaps the video track, it does not add one.** An
+ * `AgoraRTCClient` publishes one video track at a time (the SDK refuses a
+ * second with `CAN_NOT_PUBLISH_MULTIPLE_VIDEO_TRACKS`), so `startScreenShare`
+ * unpublishes the camera, publishes the screen track, and `stopScreenShare`
+ * reverses it, restoring the camera's enabled state. The other side sees one
+ * `user-unpublished` then one `user-published` for video and simply shows the
+ * new picture; which it is (camera or screen) travels on the room's own signal
+ * channel (`hooks/use-session-share-signal.ts`), not through Agora.
  *
  * **Cleanup is the hard part and is the reason this is a class.** A leaked local
  * track is a camera light that stays on after someone has left the page — the
@@ -48,8 +62,10 @@ export interface SessionTokenGrant {
 }
 
 export interface SessionClientHandlers {
-  /** The local camera track, or null once it is gone. Tutor only. */
+  /** The local camera track, or null once it is gone (or never existed). */
   onLocalVideo?(track: ICameraVideoTrack | null): void;
+  /** The local screen track while sharing, null when sharing stops. */
+  onLocalScreen?(track: ILocalVideoTrack | null): void;
   /** The remote camera track, or null when the peer unpublishes or leaves. */
   onRemoteVideo?(track: IRemoteVideoTrack | null): void;
   /** The remote microphone track. Playback is handled here; this is for meters/UI. */
@@ -81,8 +97,11 @@ export class SessionClient {
   #client: IAgoraRTCClient | null = null;
   #mic: IMicrophoneAudioTrack | null = null;
   #camera: ICameraVideoTrack | null = null;
+  #screen: ILocalVideoTrack | null = null;
   #micEnabled = true;
   #cameraEnabled = true;
+  /** Serializes start/stop so a double click cannot publish twice. */
+  #sharing: Promise<void> | null = null;
   /** In-flight `join()`, so `leave()` can wait for it to unwind before tearing down. */
   #joining: Promise<void> | null = null;
   #remoteUid: string | number | null = null;
@@ -93,6 +112,15 @@ export class SessionClient {
 
   get disposed(): boolean {
     return this.#phase === "disposed";
+  }
+
+  /** False for a student who joined without a camera (missing or blocked). */
+  get hasCamera(): boolean {
+    return this.#camera !== null;
+  }
+
+  get sharingScreen(): boolean {
+    return this.#screen !== null;
   }
 
   /**
@@ -177,14 +205,13 @@ export class SessionClient {
   }
 
   /**
-   * Turn the local camera on or off (SPEC §9's `toggleCamera`) — **tutor
-   * only**. The student never creates a camera track (§9, confirmed against
-   * the live app: tutor publishes camera + microphone, student publishes
-   * microphone only), so `#camera` is null for a student session and this is
-   * a deliberate no-op returning `null` rather than a state that does not
-   * exist. A caller building the control bar uses that `null` to decide
-   * whether to render the button at all, rather than inferring it from
-   * `isTutor` a second time.
+   * Turn the local camera on or off (SPEC §9's `toggleCamera`). `#camera` is
+   * null for a student who joined without one (missing or blocked, see
+   * `#createLocalTracks`), and then this is a deliberate no-op returning `null`
+   * rather than a state that does not exist. A caller building the control bar
+   * uses that `null` to decide whether to render the button at all. While the
+   * screen is being shared the camera is unpublished, so the flip is remembered
+   * on the track and takes effect when the share stops.
    */
   async toggleCamera(): Promise<boolean | null> {
     if (!this.#camera) return null;
@@ -215,27 +242,123 @@ export class SessionClient {
   }
 
   /**
-   * Create exactly the tracks this participant publishes.
+   * Create the tracks this participant publishes: microphone and camera, for
+   * both roles (2026-09-30).
    *
-   * The tutor's pair is created in one call so the browser raises a single
-   * permission prompt rather than two. Assigning to the fields *before* the next
-   * `await` matters: it is what lets a concurrent `leave()` find and close them.
+   * The pair is created in one call so the browser raises a single permission
+   * prompt rather than two. Assigning to the fields *before* the next `await`
+   * matters: it is what lets a concurrent `leave()` find and close them.
+   *
+   * A **student** whose camera fails (none plugged in, blocked in the address
+   * bar, in use elsewhere) still joins: the failure is swallowed, the
+   * microphone is created on its own and `hasCamera` stays false. A **tutor's**
+   * camera failure is a join failure, as before: the tutor's picture is what
+   * the student paid for.
    */
   async #createLocalTracks(
     AgoraRTC: typeof import("agora-rtc-sdk-ng").default,
     isTutor: boolean,
   ): Promise<(IMicrophoneAudioTrack | ICameraVideoTrack)[]> {
-    if (isTutor) {
+    try {
       const [mic, camera] = await AgoraRTC.createMicrophoneAndCameraTracks();
       this.#mic = mic;
       this.#camera = camera;
       return [mic, camera];
+    } catch (err) {
+      if (isTutor || this.disposed) throw err;
     }
-    // Student: microphone only. No camera track is ever created, so there is no
-    // camera to leak and no permission prompt for one.
+    // Student, camera unavailable: microphone only. The prompt for the camera
+    // has been answered (or there was nothing to ask for), so this asks once
+    // more for the microphone alone.
     const mic = await AgoraRTC.createMicrophoneAudioTrack();
     this.#mic = mic;
     return [mic];
+  }
+
+  /**
+   * Share this screen (SPEC §9's `startScreenShare`, built 2026-09-30).
+   *
+   * The browser's own picker chooses the screen, window or tab. The screen
+   * track replaces the camera on the wire (see the module note); the camera
+   * track is kept alive, unpublished, so stopping the share is a republish and
+   * not a new permission prompt. When the person stops sharing from the
+   * browser's own bar, the SDK fires `track-ended` and this stops itself.
+   *
+   * Returns true once the screen is publishing. False when the picker was
+   * dismissed, the browser has no screen capture, or a share is already on;
+   * the failure reason is handed to `onError` when there is one worth saying.
+   */
+  async startScreenShare(): Promise<boolean> {
+    if (this.#phase !== "joined" || !this.#client || this.#screen || this.#sharing) return false;
+    const client = this.#client;
+    let ok = false;
+    this.#sharing = (async () => {
+      const { default: AgoraRTC } = await import("agora-rtc-sdk-ng");
+      if (this.disposed) return;
+      let screen: ILocalVideoTrack;
+      try {
+        screen = await AgoraRTC.createScreenVideoTrack({ encoderConfig: "1080p_1" }, "disable");
+      } catch (err) {
+        // Dismissing the picker is the common case and not an error worth a
+        // banner. Anything else is.
+        const code = (err as { code?: unknown } | null)?.code;
+        if (code !== "PERMISSION_DENIED") this.#handlers.onError?.(err);
+        return;
+      }
+      if (this.disposed) {
+        screen.stop();
+        screen.close();
+        return;
+      }
+      this.#screen = screen;
+      screen.on("track-ended", () => void this.stopScreenShare());
+      try {
+        if (this.#camera) await client.unpublish(this.#camera);
+        await client.publish(screen);
+        this.#handlers.onLocalScreen?.(screen);
+        ok = true;
+      } catch (err) {
+        this.#screen = null;
+        screen.stop();
+        screen.close();
+        // Put the camera back rather than leaving the room with no video.
+        if (this.#camera && !this.disposed) await client.publish(this.#camera).catch(() => {});
+        this.#handlers.onError?.(err);
+      }
+    })().finally(() => {
+      this.#sharing = null;
+    });
+    await this.#sharing;
+    return ok;
+  }
+
+  /** Stop sharing and put the camera back on the wire. Idempotent. */
+  async stopScreenShare(): Promise<void> {
+    if (this.#sharing) await this.#sharing.catch(() => {});
+    const screen = this.#screen;
+    if (!screen) return;
+    this.#screen = null;
+    this.#handlers.onLocalScreen?.(null);
+    const client = this.#client;
+    try {
+      screen.stop();
+      screen.close();
+    } catch {
+      // Already ended by the browser.
+    }
+    if (!client || this.disposed) return;
+    try {
+      await client.unpublish(screen);
+    } catch {
+      // The SDK dropped it with the ended track; nothing left to unpublish.
+    }
+    if (this.#camera) {
+      try {
+        await client.publish(this.#camera);
+      } catch (err) {
+        this.#handlers.onError?.(err);
+      }
+    }
   }
 
   #bind(client: IAgoraRTCClient): void {
@@ -336,10 +459,11 @@ export class SessionClient {
    */
   async #teardown(): Promise<void> {
     const client = this.#client;
-    const local = [this.#mic, this.#camera];
+    const local = [this.#mic, this.#camera, this.#screen];
     this.#client = null;
     this.#mic = null;
     this.#camera = null;
+    this.#screen = null;
     this.#remoteUid = null;
 
     for (const track of local) {
@@ -352,6 +476,7 @@ export class SessionClient {
       }
     }
     this.#handlers.onLocalVideo?.(null);
+    this.#handlers.onLocalScreen?.(null);
     this.#handlers.onRemoteVideo?.(null);
     this.#handlers.onRemoteAudio?.(null);
 
