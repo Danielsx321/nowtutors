@@ -31,6 +31,12 @@ export interface SessionBookingRow extends SessionTiming {
   type: string;
   /** `session_{booking_id}`, written at accept. Backfilled on join if null. */
   agoraChannel: string | null;
+  /**
+   * When the accept committed. The unmet booking's clock runs from it
+   * (`created_at + INSTANT_UNMET_GRACE_MINUTES`, §12). Optional because the
+   * access check never reads it; only `getSessionState` does.
+   */
+  createdAt?: Date;
   // `startedAt` and `durationMinutes` come from SessionTiming: together they are
   // the hard-stop deadline (§7.4), and refusing a credential past it is what
   // makes the stop hold against a client that ignores its own countdown.

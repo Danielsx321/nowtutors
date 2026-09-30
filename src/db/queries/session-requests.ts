@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, gt, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
+import { closeUnmetInstantSessionsForTutor } from "@/db/queries/complete-sessions";
 import {
   bookings,
   sessionRequests,
@@ -88,6 +89,35 @@ export interface PendingRequestSummary {
   durationMinutes: number;
   priceCredits: number;
   expiresAt: Date;
+}
+
+/** What a student's waiting modal needs to know about its own request. */
+export interface OutgoingRequestState {
+  status: string;
+  bookingId: string | null;
+}
+
+/**
+ * One request, read back by its owner (SPEC §7.4, fallback added 2026-09-30).
+ *
+ * The waiting modal learns of an accept through a Realtime UPDATE and, until
+ * this read existed, through nothing else. On the 30 Sep live test the event was
+ * missed (the socket was still reconnecting after the first session), so the
+ * student's ring ran out and said "No answer" while the accept had charged the
+ * credits, opened the booking and put the tutor in the room alone. This is the
+ * guarded read behind the fallback: scoped to `student_id = me`, so no shape of
+ * id lets a student probe another student's request.
+ */
+export async function getOutgoingRequestState(
+  requestId: string,
+  studentId: string,
+): Promise<OutgoingRequestState | null> {
+  const [row] = await db
+    .select({ status: sessionRequests.status, bookingId: sessionRequests.bookingId })
+    .from(sessionRequests)
+    .where(and(eq(sessionRequests.id, requestId), eq(sessionRequests.studentId, studentId)))
+    .limit(1);
+  return row ?? null;
 }
 
 /**
@@ -577,10 +607,19 @@ function acceptStore(): AcceptStore {
  * `agora_channel` (`session_{booking_id}`, §4.3) can be written by the same
  * INSERT that creates the row rather than by a follow-up UPDATE.
  */
-export function acceptRequestAsTutor(
+export async function acceptRequestAsTutor(
   requestId: string,
   tutorId: string,
 ): Promise<AcceptResult> {
+  // Launch fix M9 refuses an accept while the tutor holds an `in_progress`
+  // instant booking. A booking the student never joined stays `in_progress`
+  // until its clock closes it (`created_at + INSTANT_UNMET_GRACE_MINUTES`, §12),
+  // and on 30 Sep that clock was only ever read by the 15-minute cron, so a
+  // tutor was told "you're in a session" for half an hour by a room nobody was
+  // in. Settle her own overdue rows first, on `db` and outside the transaction:
+  // the statement is idempotent and, whoever closes the row, M9 then reads the
+  // truth. Earnings for a `no_show_student` are still the cron's to write.
+  await closeUnmetInstantSessionsForTutor(tutorId);
   return acceptSessionRequest(acceptStore(), {
     requestId,
     tutorId,

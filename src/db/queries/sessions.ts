@@ -36,6 +36,10 @@ export async function getSessionBooking(
       // room from one whose booked duration ran out while somebody sat in it.
       startedAt: bookings.startedAt,
       durationMinutes: bookings.durationMinutes,
+      // The unmet booking's clock (`created_at + INSTANT_UNMET_GRACE_MINUTES`,
+      // §12): `getSessionState` arms the room's timer from it while
+      // `started_at` is still null.
+      createdAt: bookings.createdAt,
     })
     .from(bookings)
     .where(eq(bookings.id, bookingId))

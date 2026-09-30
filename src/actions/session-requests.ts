@@ -17,6 +17,7 @@ import {
   expireStalePendingForStudent,
   getIncomingRequestDetail,
   getInstantTutorInfo,
+  getOutgoingRequestState,
   getPendingRequestForStudent,
   getPendingRequestsForTutor,
   insertSessionRequest,
@@ -55,6 +56,10 @@ export type RespondToRequestResult = { ok: true } | { error: string };
 
 export type AcceptSessionRequestResult =
   | { ok: true; bookingId: string }
+  | { error: string };
+
+export type OutgoingRequestResult =
+  | { ok: true; status: string; bookingId: string | null }
   | { error: string };
 
 export type IncomingRequestResult =
@@ -342,4 +347,25 @@ export async function listPendingIncomingRequests(): Promise<PendingIncomingRequ
     ok: true,
     requests: rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() })),
   };
+}
+
+/**
+ * The student's own request, read back by id (SPEC §7.4, fallback of 2026-09-30).
+ *
+ * The waiting modal's Realtime channel is the push signal; this is the guarded
+ * read behind it, called after every (re)subscribe and once when the cosmetic
+ * ring runs out. Before it existed a missed UPDATE event left the student on
+ * "No answer" for a request the tutor had accepted: charged, booked, and with
+ * the tutor sitting alone in the room. Scoped to `student_id = me` by the query,
+ * and a request that is not mine is reported exactly as one that does not exist.
+ */
+export async function getOutgoingRequest(requestId: string): Promise<OutgoingRequestResult> {
+  const { user } = await requireRole("student");
+
+  const parsed = requestIdSchema.safeParse(requestId);
+  if (!parsed.success) return { error: "That request no longer exists." };
+
+  const state = await getOutgoingRequestState(parsed.data, user.id);
+  if (!state) return { error: "That request no longer exists." };
+  return { ok: true, status: state.status, bookingId: state.bookingId };
 }

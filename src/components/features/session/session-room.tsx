@@ -14,6 +14,7 @@ import { ConnectionBanner, qualityLevel } from "@/components/features/session/co
 import { PresenceChip, QualityChip } from "@/components/features/session/room-chips";
 import { Lobby } from "@/components/features/session/lobby";
 import { useActiveSession, type SessionMeta } from "@/components/features/session/active-session";
+import { INSTANT_UNMET_GRACE_MINUTES } from "@/lib/sessions/deadline";
 
 /**
  * The instant-session room (SPEC §7.4 in-session UI, §9).
@@ -117,6 +118,7 @@ export function SessionRoom(props: SessionRoomProps) {
           viewerIsTutor={viewerIsTutor}
           otherPartyName={otherPartyName}
           durationMinutes={durationMinutes}
+          status={session.endedStatus}
         />
       </div>
     );
@@ -327,12 +329,54 @@ function SessionEnded({
   viewerIsTutor,
   otherPartyName,
   durationMinutes,
+  status,
 }: {
   viewerIsTutor: boolean;
   otherPartyName: string;
   durationMinutes: number | null;
+  /** The server's closing status; `no_show_*` gets its own wording. */
+  status: string | null;
 }) {
   const bookings = viewerIsTutor ? "/tutor/bookings" : "/dashboard/bookings";
+
+  // The pair never met and the grace ran out (§12). Say so, and say what it
+  // means for the money in the refunds page's own words, rather than the
+  // generic "is over" line, which would be untrue.
+  if (status === "no_show_student" || status === "no_show_tutor") {
+    const otherMissing =
+      (status === "no_show_student" && viewerIsTutor) || (status === "no_show_tutor" && !viewerIsTutor);
+    return (
+      <section
+        aria-labelledby="ended-title"
+        className="mx-auto w-full max-w-xl space-y-4 rounded-panel bg-surface-raised p-6 text-center md:p-8"
+      >
+        <h2 id="ended-title" className="font-display text-h2 font-semibold text-text">
+          {otherMissing ? `${otherPartyName} didn\u2019t join` : "This session was closed"}
+        </h2>
+        <p className="text-body text-text">
+          {otherMissing
+            ? `Nobody arrived within ${INSTANT_UNMET_GRACE_MINUTES} minutes, so the session was closed.`
+            : `The session was closed after ${INSTANT_UNMET_GRACE_MINUTES} minutes because you hadn\u2019t joined.`}
+        </p>
+        <p className="mx-auto max-w-prose text-small text-text-muted">
+          Your camera and microphone have been released.
+          {status === "no_show_tutor"
+            ? viewerIsTutor
+              ? " No earnings are recorded for it."
+              : " Your credits come back: contact us and the team returns them to your wallet, and you can book again straight away."
+            : viewerIsTutor
+              ? " The session counts as taken, so your earnings from it follow once it\u2019s been closed out."
+              : " The session counts as taken. It was paid for in full when it was accepted, and the credits aren\u2019t returned."}
+        </p>
+        <div className="flex flex-wrap justify-center gap-2 pt-2">
+          <Button asChild>
+            <Link href={bookings}>Back to bookings</Link>
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section
       aria-labelledby="ended-title"

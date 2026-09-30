@@ -957,6 +957,17 @@ Rules:
 >   NULL` in the WHERE). Otherwise a student whose tutor never arrived could end
 >   it, and Part 3C would pay a tutor who was never in the room while §7.4 forbids
 >   refunding the student. Those bookings are Part 3C's `no_show_*` case.
+>   *Amended 2026-09-30:* End pressed on such a booking now runs the unmet no-show
+>   statement instead (§12, `closeUnmetInstantSession`), which matches only once
+>   `created_at + INSTANT_UNMET_GRACE_MINUTES` has passed on the database's clock;
+>   inside the grace it still returns `transitioned: false`. The room's ended
+>   screen names who did not join and quotes the refunds page on the money.
+> - **The student's waiting modal reads its request back** (added 2026-09-30):
+>   `getOutgoingRequest`, scoped to `student_id = me`, after every (re)subscribe
+>   of its Realtime channel and once when the countdown ring runs out. The
+>   channel is the push signal; this is the data, the same shape the tutor side
+>   got with `listPendingIncomingRequests` on 28 Sep. Without it a missed UPDATE
+>   left a charged student on "No answer" while the tutor waited alone.
 > - **Nothing in this pass touches the ledger, computes a refund, writes
 >   `tutor_earnings`, clears `is_live`, or needs a migration.** `ended_at` and
 >   `billed_minutes` have existed since `0000`.
@@ -1714,14 +1725,28 @@ never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or th
   that decides what a student is billed. An instant booking with `started_at`
   NULL never elapses and is the cron's `no_show_*` case, classified from
   `student_joined_at` / `tutor_joined_at`. **Its clock is `created_at +
-  duration_minutes <= now()`, with `started_at IS NULL` in the predicate itself**
-  — an instant booking is created by the accept transaction and begins
-  immediately (§7.4), so `created_at` is the instant analogue of
-  `scheduled_start_at` and this is the *same* booked window, not a second
-  definition of it. There is **no grace period** on it: `ended_at` for these rows
-  is `now()` at classification and §7.11 derives `available_at` from `ended_at`,
-  so a grace would add its own length to the tutor's withdrawal date for a
-  session that never happened. Both predicates then create `tutor_earnings`
+  INSTANT_UNMET_GRACE_MINUTES <= now()` (five minutes, `lib/sessions/deadline.ts`),
+  with `started_at IS NULL` in the predicate itself** — an instant booking is
+  created by the accept transaction and both people are sent into the room at
+  once (§7.4), so `created_at` is the instant analogue of `scheduled_start_at`.
+  *Amended 2026-09-30:* the clock used to be `created_at + duration_minutes`, the
+  full booked window. On the 30 Sep live test a student's tab missed the accept
+  event, the tutor sat alone in the room, and that unmet `in_progress` row then
+  blocked every later accept (launch fix M9) and every End press (a never-started
+  session cannot reach `completed`) for the whole half hour, with "run now" in
+  admin correctly finding nothing due. Five minutes is long enough for a slow
+  device check and short enough that the tutor is back in the Live list before
+  the next student gives up. The statement is `closeUnmetInstantSessions` in
+  `db/queries/complete-sessions.ts`, and it now has **three callers**, all
+  writing the same classification on Postgres's clock: this cron (all rows),
+  `getSessionState` and `endSession` (one booking: the room arms a timer from
+  `unmetDeadline` and asks once it passes, and the person left waiting can press
+  End), and `acceptRequestAsTutor` (the tutor's own rows, before M9 looks, so a
+  stuck tutor heals on her next accept without waiting for the cron). `ended_at`
+  for these rows is `now()` at classification and §7.11 derives `available_at`
+  from `ended_at`; the money rules are unchanged (`no_show_student` pays the
+  tutor who turned up, `no_show_tutor` pays nobody and the admin refunds by
+  hand, as the refunds page says). Both predicates then create `tutor_earnings`
   (§7.11) from the row's `price_credits` and `ended_at` — for `completed` and
   `no_show_student` only; see §7.11. This line previously described only the
   scheduled half; that half was written down and the instant half was not, which
