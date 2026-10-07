@@ -1836,6 +1836,7 @@ nowtutors/
 ├── src/
 │   ├── app/
 │   │   ├── (public)/
+│   │   ├── (public-lookup)/       ← /tutors/[slug]; no loading.tsx, so notFound() is a real 404
 │   │   ├── (auth)/
 │   │   ├── (student)/dashboard/
 │   │   ├── (tutor)/tutor/

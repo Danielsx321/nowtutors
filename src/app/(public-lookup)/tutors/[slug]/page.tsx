@@ -55,7 +55,9 @@ export async function generateMetadata({
  * Public tutor profile (SPEC §6, §7.2). Only APPROVED, non-suspended tutors are
  * reachable — anything else 404s (the query returns null and we notFound()), so
  * a pending/rejected/suspended tutor is indistinguishable from one that never
- * existed. No redirect, no empty page.
+ * existed. No redirect, no empty page. The route lives in `(public-lookup)`,
+ * the public group with no `loading.tsx`, so that 404 is the response status
+ * and not only the view (the group's layout.tsx has the full reason).
  *
  * NO ratings or reviews anywhere: they come after launch (§18).
  *
