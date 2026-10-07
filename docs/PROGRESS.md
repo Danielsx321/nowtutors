@@ -22,6 +22,13 @@ dashboard top bar with section tabs and the header's active underline; navy on b
 then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
 room.
 
+- **Launch readiness (`launch-domain-readiness`, 2026-10-07).** The code the domain switch needs, ahead of it:
+  `metadataBase` plus Open Graph and Twitter defaults with a 1200×630 card (`public/brand/og.v1.png`),
+  `robots.ts` (production allows the public site and points at the sitemap; everything else disallows `/`),
+  `sitemap.ts` (static routes plus approved tutor profiles through `browseTutors`, static-only if the database is
+  down), and production host redirects in `next.config.ts`: `www` to `nowtutors.com` always, the old
+  `nowtutors-brown.vercel.app` only when `LAUNCH_REDIRECT_VERCEL_HOST=1`; webhook and cron paths exempt. Nothing
+  changes on the live site until `NEXT_PUBLIC_APP_URL` changes and that flag is set. SPEC §6 and §2.1, DECISIONS.
 - **Room features (`feat/room-features`, 2026-09-30).** Noora's three asks from the 30 Sep call: the student's
   camera (both roles publish; a student without one joins audio-only), screen share for either side (swaps the
   video track, tagged and letterboxed on the other end via a per-booking Realtime signal), and an in-session chat
