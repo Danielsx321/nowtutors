@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { buildHostRedirects } from "./src/lib/seo/redirects";
 
 // Allow next/image to load avatars from the Supabase Storage public path. This
 // is the Next equivalent of Bubble's image-host allowlist — the fix for the
@@ -31,6 +32,12 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
     ];
+  },
+  // Domain switch (SPEC §6, DECISIONS 2026-10-07): in production, www folds
+  // into https://nowtutors.com, and the old vercel.app host does too once
+  // LAUNCH_REDIRECT_VERCEL_HOST=1 is set. Webhook and cron paths are exempt.
+  async redirects() {
+    return buildHostRedirects();
   },
 };
 

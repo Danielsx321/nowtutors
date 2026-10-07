@@ -3,6 +3,7 @@ import { Funnel_Display, Funnel_Sans } from "next/font/google";
 import { Suspense } from "react";
 import { Providers } from "@/components/providers";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
+import { resolveSiteUrl } from "@/lib/seo/site-url";
 import "./globals.css";
 
 // Two faces, both bundled at build by next/font (no runtime request to
@@ -22,9 +23,32 @@ const funnelSans = Funnel_Sans({
   display: "swap",
 });
 
+const description = "Live tutoring marketplace: find a tutor and learn now.";
+
+// Relative image and canonical URLs resolve against `metadataBase`, which
+// follows NEXT_PUBLIC_APP_URL (then the deployment's own host, then localhost).
+// The share card is a versioned brand file so it can be cached for good, like
+// the wordmark (next.config.ts, "/brand/:file*").
+const ogImage = { url: "/brand/og.v1.png", width: 1200, height: 630, alt: "NowTutors: live tutoring marketplace" };
+
 export const metadata: Metadata = {
+  metadataBase: resolveSiteUrl(),
   title: "NowTutors",
-  description: "Live tutoring marketplace: find a tutor and learn now.",
+  description,
+  openGraph: {
+    type: "website",
+    siteName: "NowTutors",
+    title: "NowTutors",
+    description,
+    url: "/",
+    images: [ogImage],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NowTutors",
+    description,
+    images: [ogImage.url],
+  },
 };
 
 export default function RootLayout({

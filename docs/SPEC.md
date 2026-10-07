@@ -116,6 +116,7 @@ RESEND_API_KEY=
 EMAIL_FROM="NowTutors <noreply@nowtutors.com>"
 
 # Ops
+LAUNCH_REDIRECT_VERCEL_HOST=      # 1 in production once nowtutors.com is proven (§6)
 CRON_SECRET=
 SENTRY_DSN=
 ```
@@ -711,6 +712,8 @@ POST /api/paypal/orders/[orderId]/capture
 POST /api/webhooks/paypal
 GET  /api/cron/*                   (Section 12, CRON_SECRET protected)
 ```
+
+**Crawlers, share cards and the domain switch (launch readiness, 2026-10-07).** `robots.ts` allows crawling only when `VERCEL_ENV` is `production`, disallowing the signed-in and machine routes (`/admin`, `/dashboard`, `/tutor/` and `/tutor$` so `/tutors` stays open, `/onboarding`, `/api`, `/auth`, `/dev`, the session routes, `/suspended`) and pointing at `/sitemap.xml`; every other deployment disallows `/`. `sitemap.ts` lists the static public routes plus one URL per approved tutor, read through `browseTutors` (no new SQL), built on request and falling back to the static routes when the database is unreachable. The root layout sets `metadataBase` from `NEXT_PUBLIC_APP_URL` (then `VERCEL_URL`, then localhost) with Open Graph and Twitter defaults and the 1200×630 card at `public/brand/og.v1.png`. `next.config.ts` redirects, in production only, `www.nowtutors.com` to `https://nowtutors.com` permanently, and `nowtutors-brown.vercel.app` likewise once `LAUNCH_REDIRECT_VERCEL_HOST=1`; `/api/webhooks/*` and `/api/cron/*` are exempt from both. Rule builders live in `lib/seo/` and are unit tested.
 
 Prefer Server Actions over API routes for mutations initiated by our own UI. API routes exist for third-party callbacks, cron, and anything the Agora/PayPal SDKs need to hit directly.
 
