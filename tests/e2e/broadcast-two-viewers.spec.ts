@@ -14,8 +14,8 @@ import { assertTestProjectRef } from "../../src/db/load-env";
  *   the host ends it → both viewers show "This broadcast has ended".
  *
  * Test project only. Chromium runs with a fake camera and microphone and
- * auto-accepted permission prompts. Real Agora: the token service is pinged first
- * so a sleeping Render instance doesn't eat the join budget.
+ * auto-accepted permission prompts. Real Agora, with tokens minted by the app
+ * itself (no external token service to wake since 2026-10-07).
  *
  * "Playing" is checked on the page itself: some `<video>` the Agora SDK attached
  * has `readyState >= 2` (a decoded frame), which is a picture, not just a join.
@@ -34,7 +34,7 @@ const VIEWER_EMAILS = ["student2@nowtutors.dev", "student1@nowtutors.dev"];
 const TITLE_PREFIX = "E2E broadcast";
 const SIGNIN_TIMEOUT_MS = 15_000;
 const ACTION_TIMEOUT_MS = 20_000;
-/** Token request (a cold token service), Agora join and the first decoded frame. */
+/** Token request, Agora join and the first decoded frame. */
 const MEDIA_TIMEOUT_MS = 90_000;
 /** Presence sync and Agora's user-left, both push events. */
 const PUSH_TIMEOUT_MS = 60_000;
@@ -94,7 +94,7 @@ async function expectVideoPlaying(page: Page, who: string) {
     .toBe(true);
 }
 
-test("E2E 7: two signed-in viewers watch one broadcast, and both see it end", async ({ browser, request }) => {
+test("E2E 7: two signed-in viewers watch one broadcast, and both see it end", async ({ browser }) => {
   const [ids] = await sql<{ tutor: string; inSession: number }[]>`
     select p.id as tutor,
            (select count(*)::int from bookings b where b.tutor_id = p.id and b.status = 'in_progress') as "inSession"
@@ -104,22 +104,6 @@ test("E2E 7: two signed-in viewers watch one broadcast, and both see it end", as
   expect(ids.inSession, "tutor3 has no in_progress session").toBe(0);
   tutorId = ids.tutor;
   await endLeftovers();
-
-  // Wake the token service (Render free tier) before anyone waits on a join.
-  // Through the app's own sweep, which pings it server-side: the app server runs
-  // with this machine's CA bundle (`with-ca-certs.mjs`) and the Playwright runner
-  // does not, so a direct HTTPS call from here fails certificate verification.
-  // The sweep's ping gives up after 15 s and a cold start can take longer, so it
-  // gets three tries; if the service is still waking, the join budget covers it.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const res = await request.get("/api/cron/sweep-presence", {
-      headers: { Authorization: `Bearer ${TEST_ENV.CRON_SECRET}` },
-      timeout: 60_000,
-    });
-    expect(res.status(), `sweep-presence answered ${res.status()}`).toBe(200);
-    const summary = (await res.json()) as { agoraWarmPing?: { ok?: boolean } };
-    if (summary.agoraWarmPing?.ok) break;
-  }
 
   // 1. The tutor goes live.
   const host = await signedInPage(browser, TUTOR_EMAIL, /\/tutor(\/|$)/, {

@@ -16,7 +16,6 @@ import {
   listDueEarningIds,
 } from "@/db/queries/release-earnings";
 import { readWalletDrift } from "@/db/queries/reconcile-wallets";
-import { pingTokenService } from "@/lib/agora/token-service";
 import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
 import { runReleaseEarningsSweep } from "@/lib/earnings/release-earnings";
 import { summarizeWalletDrift } from "@/lib/wallets/reconcile";
@@ -56,10 +55,6 @@ async function sweepPresence(): Promise<CronSummary> {
   // still expire every one of those requests at its own deadline.
   const { expiredIds } = await expirePendingRequestsForTutors(sweptUserIds);
 
-  // SPEC §9 cold-start note: the token service sleeps on Render's free tier. One
-  // cheap GET on this cadence keeps it awake. `pingTokenService` never throws.
-  const agoraPing = await pingTokenService();
-
   // SPEC §7.8 (Phase 9 Part 3): a live broadcast whose host is no longer a fresh
   // broadcast-mode row in `live_tutors` is ended. Viewers already stopped
   // getting tokens at read time; this tidies the row. Derived from the view,
@@ -74,7 +69,6 @@ async function sweepPresence(): Promise<CronSummary> {
     pendingRequestsExpired: expiredIds.length,
     broadcastsEnded: broadcastsEndedIds.length,
     broadcastsEndedIds,
-    agoraWarmPing: agoraPing,
     durationMs: Date.now() - startedAt,
   };
   console.info("[cron/sweep-presence]", JSON.stringify(summary));
