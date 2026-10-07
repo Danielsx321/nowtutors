@@ -165,25 +165,35 @@ async function remove() {
     return;
   }
 
-  // Child rows first, in FK order, so the account delete below can't be
-  // blocked by a booking or an earning the live check created. Each step is
-  // allowed to find nothing.
+  // Child rows first, in FK order (session_requests and earnings point at
+  // bookings; viewers at broadcasts; messages at conversations), so the
+  // account delete below can't be blocked by anything the live check
+  // created. Each step is allowed to find nothing. The first production run
+  // on 2026-10-07 stopped on session_requests, hence the full list.
   const steps: [string, () => PromiseLike<{ error: unknown }>][] = [
+    ["session_requests (student)", () => admin.from("session_requests").delete().in("student_id", ids)],
+    ["session_requests (tutor)", () => admin.from("session_requests").delete().in("tutor_id", ids)],
     ["tutor_earnings", () => admin.from("tutor_earnings").delete().in("tutor_id", ids)],
     ["withdrawal_requests", () => admin.from("withdrawal_requests").delete().in("tutor_id", ids)],
     ["payments", () => admin.from("payments").delete().in("user_id", ids)],
     ["bookings (student)", () => admin.from("bookings").delete().in("student_id", ids)],
     ["bookings (tutor)", () => admin.from("bookings").delete().in("tutor_id", ids)],
     ["credit_transactions", () => admin.from("credit_transactions").delete().in("user_id", ids)],
+    ["notifications", () => admin.from("notifications").delete().in("user_id", ids)],
     ["audit_log (actor)", () => admin.from("audit_log").delete().in("actor_id", ids)],
     ["audit_log (target)", () => admin.from("audit_log").delete().in("target_id", ids)],
+    ["messages", () => admin.from("messages").delete().in("sender_id", ids)],
     ["conversations (a)", () => admin.from("conversations").delete().in("participant_a", ids)],
     ["conversations (b)", () => admin.from("conversations").delete().in("participant_b", ids)],
+    ["broadcast_viewers", () => admin.from("broadcast_viewers").delete().in("user_id", ids)],
     ["broadcasts", () => admin.from("broadcasts").delete().in("tutor_id", ids)],
-    ["favourites", () => admin.from("favourites").delete().in("student_id", ids)],
+    ["favourites (student)", () => admin.from("favourites").delete().in("student_id", ids)],
+    ["favourites (tutor)", () => admin.from("favourites").delete().in("tutor_id", ids)],
     ["student_subjects", () => admin.from("student_subjects").delete().in("student_id", ids)],
     ["tutor_subjects", () => admin.from("tutor_subjects").delete().in("tutor_id", ids)],
+    ["availability_exceptions", () => admin.from("availability_exceptions").delete().in("tutor_id", ids)],
     ["availability_rules", () => admin.from("availability_rules").delete().in("tutor_id", ids)],
+    ["tutor_payout_details", () => admin.from("tutor_payout_details").delete().in("tutor_id", ids)],
     ["wallets", () => admin.from("wallets").delete().in("user_id", ids)],
   ];
   for (const [label, run] of steps) {
