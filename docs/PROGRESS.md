@@ -22,7 +22,7 @@ dashboard top bar with section tabs and the header's active underline; navy on b
 then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
 room.
 
-- **Agora tokens minted in-app (`agora-token-in-app`, 2026-10-07) IN REVIEW.** `POST /api/agora/token` builds the
+- **Agora tokens minted in-app (`agora-token-in-app`, 2026-10-07). Merged via PR #134 (`3f0a771`).** `POST /api/agora/token` builds the
   token itself with Agora's `agora-token` package from the App ID and a new server-only `AGORA_APP_CERTIFICATE`,
   instead of calling the Render free-tier token service (unauthenticated, near its monthly hour cap, crashed 27 Sep).
   Roles, channels, the wildcard uid and the session-capped TTL are unchanged; privilege expiry now equals token
@@ -31,6 +31,11 @@ room.
   **Before merge:** `AGORA_APP_CERTIFICATE` set (Sensitive) in Vercel Production and Preview, and in `.env.local` /
   `.env.test` (Daniels pastes it); then the two-browser instant session and E2E test 7 against the preview. Render
   stays up as the rollback until launch plus a clean week (RUNBOOK "Render token service retired").
+  **Proven on production 2026-10-07:** `AGORA_APP_CERTIFICATE` set in Vercel Production (Preview still to tick, so
+  preview video answers 503 until then); an instant session between two throwaway accounts (`pnpm
+  db:seed:test-users:prod`, removed afterwards) connected video both ways on nowtutors.com, and ending it from one
+  side ended it on the other. Daniels saw 10 to 15 s from accept to first picture; not diagnosed (camera permission
+  prompts and the Agora join are the usual suspects, the token itself is now a local HMAC). E2E test 7 not run.
 - **Launch readiness (`launch-domain-readiness`, 2026-10-07).** The code the domain switch needs, ahead of it:
   `metadataBase` plus Open Graph and Twitter defaults with a 1200×630 card (`public/brand/og.v1.png`),
   `robots.ts` (production allows the public site and points at the sitemap; everything else disallows `/`),
