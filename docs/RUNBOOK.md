@@ -402,6 +402,11 @@ already-running script.
   broadcast) to see a 200 from the token route and video both ways; (5) once tokens minted with the old
   certificate have expired (an hour is the longest), delete or disable the old primary in the console and record
   the date here.
+- [ ] **Throwaway accounts for a two-person check on production.** `CONFIRM_PROD=1 pnpm db:seed:test-users:prod`
+  makes `test.tutor@nowtutors.dev` (approved, instant, 20 credits/hr, Algebra, visible on /tutors) and
+  `test.student@nowtutors.dev` (100 credits through the ledger) with a one-off password printed once; the same
+  command with `--remove` deletes everything the pair touched and then the accounts. Remove them the same day:
+  the tutor is public while it exists. `pnpm db:seed:test-users:test` is the same on the test project.
 - [ ] **Render token service retired** (after launch is verified and a week passes with no `[agora/token]` errors
   in Sentry). Render logs first: no token requests since the in-app PR merged (the Bubble app was the only other
   caller and is down). Then remove `AGORA_TOKEN_SERVICE_URL` from Vercel (Production, Preview, Development) and from

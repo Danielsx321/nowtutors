@@ -28,6 +28,8 @@
     "db:seed": "node scripts/with-ca-certs.mjs tsx src/db/seed.ts --env=dev",
     "db:seed:test": "node scripts/with-ca-certs.mjs tsx src/db/seed.ts --env=test",
     "db:seed:prod-settings": "node scripts/with-ca-certs.mjs tsx src/db/seed-prod-settings.ts --env=prod",
+    "db:seed:test-users:test": "node scripts/with-ca-certs.mjs tsx src/db/seed-test-users.ts --env=test",
+    "db:seed:test-users:prod": "node scripts/with-ca-certs.mjs tsx src/db/seed-test-users.ts --env=prod",
     "db:verify-rls": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls.ts --env=dev",
     "db:verify-rls:test": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls.ts --env=test",
     "db:verify-rls:prod": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls-prod.ts --env=prod"
