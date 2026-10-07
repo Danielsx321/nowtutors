@@ -26,7 +26,7 @@ Rules:
 - Never change the database schema without updating docs/SPEC.md Section 4 in the same commit.
 - Never add a dependency not listed in Section 2 without asking first.
 - All money and credit mutations go through the ledger functions in Section 8. Never UPDATE a balance directly.
-- All Agora tokens are issued through our own /api/agora/token route, never client-side, never by calling the Render service directly from the browser.
+- All Agora tokens are minted server-side in our own /api/agora/token route with the App Certificate, never client-side.
 - Server-side authorization on every route handler. Do not rely on the client hiding a button.
 - Write the migration, then the query layer, then the UI. In that order.
 - If something in the spec is ambiguous, stop and ask. Do not guess and proceed.
@@ -71,7 +71,7 @@ Locked unless there is a specific reason to deviate.
 | Home page globe | **`cobe`** (MIT, `^2.0.1`, no dependencies) | Added for the "live globe" rebuild, approved by Daniels 2026-09-17. A small WebGL globe on `/` only, dynamically imported in a Client Component, with a static fallback when WebGL is unavailable or reduced motion is asked for. Installed in Part C (2026-09-18). The approval named `phenomenon` as a dependency; that was cobe 0.6, and cobe 2 dropped it, so nothing else was added. cobe 2 has no render loop of its own: `globe.tsx` turns it with `requestAnimationFrame` and `globe.update()` |
 | Forms | **react-hook-form + zod** | One zod schema per form, reused server-side for validation |
 | Realtime | **Supabase Realtime** (Postgres changes + presence) | Replaces all `Do every 10 seconds` polling |
-| Video (instant + broadcast) | **Agora Web SDK (`agora-rtc-sdk-ng`)** | Existing Render token service reused |
+| Video (instant + broadcast) | **Agora Web SDK (`agora-rtc-sdk-ng`)**; tokens minted in-app with **`agora-token`** (Agora's official Node token builder, ISC, `^2.0.6`) | `/api/agora/token` builds every token itself from the App ID and the server-only App Certificate (amended 2026-10-07; the reused Render token service is retired, §9) |
 | Video (scheduled) | **LessonSpace API** | Server-side room creation, per-user join links |
 | Payments | **PayPal Orders v2 REST API + PayPal JS SDK** | Direct, no plugin wrapper |
 | Transactional email | **Resend** + **react-email** | Booking confirmations, reminders, withdrawal notices |
@@ -98,7 +98,7 @@ DIRECT_URL=                        # direct, for migrations
 
 # Agora
 NEXT_PUBLIC_AGORA_APP_ID=cd013255335c46d2bd94ad7a8e354ecd
-AGORA_TOKEN_SERVICE_URL=https://agora-token-service-3irp.onrender.com
+AGORA_APP_CERTIFICATE=            # server only, never NEXT_PUBLIC_; Agora console, project "Now Tutors", Primary Certificate
 
 # LessonSpace
 LESSONSPACE_API_KEY=
@@ -160,7 +160,7 @@ A cron sweep also exists (Section 12) to tidy the underlying rows, but correctne
 
 **3.6 Credits are an append-only ledger.** Balance is never edited in place. Every change is a row. This makes the reconciliation problems that plagued the current build tractable: any balance can be explained by replaying its transactions.
 
-**3.7 Agora tokens are authorized.** The Render token service is reused as-is, but the browser never calls it. `/api/agora/token` checks that the signed-in user is actually a participant in that booking (or that the broadcast is public) before requesting a token, and issues `subscriber` rather than `publisher` where appropriate. Currently any client that knows a channel name can publish to it. **A session token runs out with the session** (`sessionTokenLifetime`, `lib/agora/token-request.ts`): once the pair has met it lasts the time left plus 60 seconds, before that the booked duration, never more than an hour. Every token used to last 3,600 seconds whatever was booked, so a 30-minute session's token worked for 60.
+**3.7 Agora tokens are authorized.** Tokens are minted only by `/api/agora/token`, after the access check, and the browser never sees the App Certificate (amended 2026-10-07: they were fetched from a reused Render token service until then, §9). The route checks that the signed-in user is actually a participant in that booking (or that the broadcast is public) before minting a token, and issues `subscriber` rather than `publisher` where appropriate. Currently any client that knows a channel name can publish to it. **A session token runs out with the session** (`sessionTokenLifetime`, `lib/agora/token-request.ts`): once the pair has met it lasts the time left plus 60 seconds, before that the booked duration, never more than an hour. Every token used to last 3,600 seconds whatever was booked, so a 30-minute session's token worked for 60.
 
 ---
 
@@ -1440,15 +1440,17 @@ The tutor side additionally **reads what is already pending on mount and after e
 
 ## 9. Agora integration
 
-Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy or modify it.
+Tokens are minted in `/api/agora/token` with `agora-token`'s `RtcTokenBuilder.buildTokenWithUid`, from `NEXT_PUBLIC_AGORA_APP_ID` and the server-only `AGORA_APP_CERTIFICATE` (`lib/agora/token-builder.ts`, `lib/agora/token-minter.ts`). Token and privilege expiry are the same TTL, so no privilege outlives the token. No outbound request is made to get a token.
+
+> **Amended 2026-10-07 (`agora-token-in-app`).** This line used to read "Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy or modify it." That service ran on Render's free tier: unauthenticated (code review T2), near its monthly hour cap, and it crashed once on 27 Sep. Minting in-app removes the public minting endpoint and the cold start. The certificate is a Vercel **Sensitive** variable in Production and Preview, read lazily, validated as 32 hex characters, and never logged. See DECISIONS, "Agora tokens minted in-app".
 
 `POST /api/agora/token` with `{ bookingId }` for a session, or `{ broadcastId }` for a broadcast:
 
 1. `requireApiUser()` — the API-route guard (§5 Layer 2), not the redirect-based page guard.
 2. For a session: load the booking by id, confirm the caller is its `student_id` or `tutor_id`, and confirm `status = 'in_progress'`. Role → `publisher`, for **both** participants. The channel comes from `bookings.agora_channel`, never from the request.
 3. For `broadcast`: load the broadcast by id. The host of a `live` broadcast → `publisher`; any other signed-in user → `subscriber`, only while the broadcast is `live` **and** the host is fresh in `live_tutors` with `live_mode = 'broadcast'` (amended in Phase 9 Part 3; this step previously required only `live`). Missing, ended and stale-host broadcasts are the same 404. The channel comes from `broadcasts.agora_channel` and must equal `broadcast_{id}`, or nobody gets a token.
-4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity. The token itself is minted at the service's wildcard `uid/0`, which authorizes the *channel* for any uid; the client then joins under its own derived uid.
-5. Fetch from the Render service, return `{ token, uid, appId, channel, expiresAt }` with a TTL shorter than the token's.
+4. Derive a numeric `uid` deterministically from the user id (hash to a 32-bit int) so reconnects keep identity. The token itself is minted for the wildcard uid `0`, which authorizes the *channel* for any uid; the client then joins under its own derived uid.
+5. Build the token, return `{ token, uid, appId, channel, expiresAt }` with a TTL shorter than the token's.
 6. Client renews via a `setTimeout` scheduled off the route's reported `expiresAt` (not Agora's `token-privilege-will-expire` event — see the Part 3B remainder amendment below).
 
 **The request carries an id, not a channel** (amended in Phase 6 Part 3A; this line previously specified `{ channel, purpose }` with the booking id parsed back out of the channel string). Taking the id and reading the channel off the row is the safer direction — a caller cannot name a channel they were not admitted to — and the id is what the client actually holds after the §7.4 handshake. The `purpose` discriminator is deferred until broadcasts exist (Phase 9); until then the two shapes are distinguished by which id is present.
@@ -1456,6 +1458,8 @@ Reuse the deployed token service at `AGORA_TOKEN_SERVICE_URL`. Do not redeploy o
 Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tolerate SSR), expose `join`, `leave`, `toggleMic`, `toggleCamera`, `startScreenShare`, and handle `user-published`, `user-unpublished`, `user-left`, `connection-state-change`, `network-quality`.
 
 **Cold-start note:** the Render free tier sleeps. First token request after idle can take 30–50 seconds. Either move to a paid instance or ping the service from the presence cron to keep it warm. Recommend the latter for now — one line in the cron handler.
+
+> **Superseded 2026-10-07:** no external service, nothing to warm. The warm ping, `AGORA_TOKEN_SERVICE_URL`, the 45 s fetch timeout and the route's `maxDuration = 60` are gone.
 
 > **Confirmed against the live app (Bubble live-app investigation, 2026-08-24).** The Phase
 > 6/Phase 7 split — Agora for the instant session room, LessonSpace for scheduled sessions — is
@@ -1518,7 +1522,8 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 >   `toggleMic` / `toggleCamera` / `startScreenShare` surface named above is therefore not yet on
 >   `lib/agora/client.ts`, which exposes `join` and `leave` only.
 > - **The warm ping is live** in `cron/sweep-presence`, hitting the service's `/ping` endpoint. It
->   never throws and cannot fail the sweep.
+>   never throws and cannot fail the sweep. *(Removed 2026-10-07 with the Render service: tokens
+>   are minted in-app.)*
 
 > **Part 3B amendment (`feat/phase6-part3b-end-session`).** Step 2's checks gain
 > one more: a booking whose booked duration has elapsed is refused a token even
@@ -1706,7 +1711,7 @@ route is `cronHandler("<job>")` (`lib/cron/handler.ts`) over one job body per jo
 and "run now" calls that same function server-side behind `requireRole('admin')`, never the URL and
 never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or the failure.
 
-- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired; also pings the Agora token service to keep it warm. **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); the Agora warm-ping landed in Phase 6 Part 3A, and **Phase 9 Part 3 added the stale-broadcast half** (`endStaleBroadcasts`, returned as `broadcastsEnded` and `broadcastsEndedIds`): a `live` broadcast whose host isn't a fresh broadcast-mode row in `live_tutors` is ended, derived from the view like the tutor half.
+- **sweep-presence** — stale tutors offline, stale broadcasts ended, their pending requests expired. (It also pinged the Render Agora token service to keep it warm, from Phase 6 Part 3A until 2026-10-07, when tokens moved in-app and the ping and its `agoraWarmPing` summary field were removed.) **The work set is derived from the `live_tutors` view** (`is_live = true` AND not in the view), never from a threshold of its own — see §7.5. Phase 6 Part 1 built the tutors-offline half and Part 2 added the request expiry (returned as `pendingRequestsExpired`); the Agora warm-ping landed in Phase 6 Part 3A (removed 2026-10-07), and **Phase 9 Part 3 added the stale-broadcast half** (`endStaleBroadcasts`, returned as `broadcastsEnded` and `broadcastsEndedIds`): a `live` broadcast whose host isn't a fresh broadcast-mode row in `live_tutors` is ended, derived from the view like the tutor half.
 - **expire-requests** — `session_requests` `pending` past `expires_at` → `expired`. Built in Phase 6 Part 2; returns `{ ok, job, expired, expiredIds, durationMs }`. **Tidy-up, not enforcement**: the accept transaction refuses (and terminally expires) a request past its deadline on its own, and the "one pending request at a time" read ignores rows past theirs, so an hour of this job failing strands nobody — it keeps the table honest for the inbox, the waiting modal, and an operator reading what happened.
 - **expire-unpaid** — `bookings` in `pending_payment` past 20 minutes → `expired`. Built in Phase 8
   Part 3 (`db/queries/expire-unpaid.ts`); returns `{ ok, job, expired, expiredIds, durationMs }`.
@@ -1965,7 +1970,7 @@ run before changing a column whose semantics are enforced in SQL.
 4. Tutor requests withdrawal → admin marks paid → balances reconcile.
 5. Student cancels inside and outside the free window → correct refund in both cases.
 6. **Two browsers exchange messages in real time** (Phase 9 acceptance, `tests/e2e/messaging-realtime.spec.ts`). student2 opens tutor3's profile, presses Message and sends a line; tutor3's topbar badge reads 1 **without a reload**; tutor3 opens the thread and replies; student2 sees the reply without a reload and their badge clears because the open thread marked it read. Unread messages for both accounts are marked read first, and the two messages are deleted afterwards.
-7. **A broadcast is watchable by two viewers** (Phase 9 acceptance, `tests/e2e/broadcast-two-viewers.spec.ts`). Chromium with a fake camera and microphone. tutor3 goes live from `/tutor/broadcasts`; student2 and student1 each open it from `/live` and their pages play the host's video (a `<video>` with `readyState >= 2`); the host's count reads 2; the host ends it and both viewers show "This broadcast has ended" without reloading; the row reads `ended`, `peak_viewers = 2`, two distinct viewer rows, and tutor3 is out of broadcast mode. Real Agora: the token service is pinged first.
+7. **A broadcast is watchable by two viewers** (Phase 9 acceptance, `tests/e2e/broadcast-two-viewers.spec.ts`). Chromium with a fake camera and microphone. tutor3 goes live from `/tutor/broadcasts`; student2 and student1 each open it from `/live` and their pages play the host's video (a `<video>` with `readyState >= 2`); the host's count reads 2; the host ends it and both viewers show "This broadcast has ended" without reloading; the row reads `ended`, `peak_viewers = 2`, two distinct viewer rows, and tutor3 is out of broadcast mode. Real Agora, with tokens minted by the app (the token-service wake-up before the joins was removed 2026-10-07).
 
 Tests 6 and 7 run against the test project only and sign in with the seeded password, so a person runs them: `pnpm test:e2e tests/e2e/messaging-realtime.spec.ts tests/e2e/broadcast-two-viewers.spec.ts` (RUNBOOK).
 
@@ -2027,7 +2032,7 @@ Phases 0–2 are fast. Phases 4, 6, and 8 carry the real risk. Phase 9 is the mo
 
 ## 17. Runbook (create in Phase 0, complete through the build)
 
-`docs/RUNBOOK.md` covers: Supabase project creation and RLS verification steps; Vercel env var setup per environment; Google OAuth consent screen and redirect URIs; PayPal app creation, sandbox vs live credentials, webhook registration and the webhook id; **LessonSpace waiting room setting (dashboard, not code)**; Agora project settings and token service health check; Resend domain verification and DNS records; DNS cutover for nowtutors.com; first-admin promotion SQL; rollback procedure.
+`docs/RUNBOOK.md` covers: Supabase project creation and RLS verification steps; Vercel env var setup per environment; Google OAuth consent screen and redirect URIs; PayPal app creation, sandbox vs live credentials, webhook registration and the webhook id; **LessonSpace waiting room setting (dashboard, not code)**; Agora project settings and App Certificate (set per environment, and how to rotate it); Resend domain verification and DNS records; DNS cutover for nowtutors.com; first-admin promotion SQL; rollback procedure.
 
 ---
 

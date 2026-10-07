@@ -22,6 +22,15 @@ dashboard top bar with section tabs and the header's active underline; navy on b
 then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
 room.
 
+- **Agora tokens minted in-app (`agora-token-in-app`, 2026-10-07) IN REVIEW.** `POST /api/agora/token` builds the
+  token itself with Agora's `agora-token` package from the App ID and a new server-only `AGORA_APP_CERTIFICATE`,
+  instead of calling the Render free-tier token service (unauthenticated, near its monthly hour cap, crashed 27 Sep).
+  Roles, channels, the wildcard uid and the session-capped TTL are unchanged; privilege expiry now equals token
+  expiry, pinned by a decoding test. The `sweep-presence` warm ping, `AGORA_TOKEN_SERVICE_URL` in code, the 45 s
+  timeout and `maxDuration = 60` are gone. Closes T2. Gates: typecheck, lint, unit 977 (40 new), DOM 204, build.
+  **Before merge:** `AGORA_APP_CERTIFICATE` set (Sensitive) in Vercel Production and Preview, and in `.env.local` /
+  `.env.test` (Daniels pastes it); then the two-browser instant session and E2E test 7 against the preview. Render
+  stays up as the rollback until launch plus a clean week (RUNBOOK "Render token service retired").
 - **Launch readiness (`launch-domain-readiness`, 2026-10-07).** The code the domain switch needs, ahead of it:
   `metadataBase` plus Open Graph and Twitter defaults with a 1200×630 card (`public/brand/og.v1.png`),
   `robots.ts` (production allows the public site and points at the sitemap; everything else disallows `/`),
@@ -1429,7 +1438,7 @@ rather than stubbed** — an inert control that looks live is worse than one tha
   row instead of writing back a stale null. Status untouched — instant bookings are already
   `in_progress` from the accept transaction.
 - **Warm ping** — `cron/sweep-presence` now GETs the token service's `/ping` and reports it in the
-  job summary. Never throws, cannot fail the sweep.
+  job summary. Never throws, cannot fail the sweep. *(Removed 2026-10-07: tokens are minted in-app.)*
 - **SPEC §9 corrected.** Its "confirmed against the live app" note claimed Bubble's client-side role
   choice was "the same publisher/subscriber split this section already specifies". Step 2 specifies
   no split, and a client-chosen role is what §9 exists to prevent. That sentence is what created the
@@ -1457,7 +1466,7 @@ rather than stubbed** — an inert control that looks live is worse than one tha
   reads the column, which is now covered.
 - **The token service cold start is real and measured**: a probe during this build took **22s** on
   the first request. The route allows 45s with `maxDuration = 60`; the warm ping is what keeps that
-  path cold-start-free in practice.
+  path cold-start-free in practice. *(Moot since 2026-10-07: no external service, nothing to warm.)*
 
 ## Bubble live-app investigation (2026-08-24)
 

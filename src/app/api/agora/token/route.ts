@@ -7,9 +7,9 @@ import { sessionTokenLifetime, tokenExpiresAt } from "@/lib/agora/token-request"
 import {
   agoraAppId,
   AgoraConfigError,
-  AgoraTokenServiceError,
-  fetchRtcToken,
-} from "@/lib/agora/token-service";
+  AgoraTokenMintError,
+  mintRtcToken,
+} from "@/lib/agora/token-minter";
 import { checkBroadcastAccess } from "@/lib/broadcasts/access";
 import {
   getBroadcastAccessRow,
@@ -23,7 +23,10 @@ import {
 
 /**
  * `POST /api/agora/token` — the only way a browser gets an Agora token
- * (SPEC §9, CLAUDE.md). The Render service is never called from the client.
+ * (SPEC §9, CLAUDE.md). The token is minted here, in this function, with the
+ * server-only App Certificate (`lib/agora/token-minter.ts`); no outbound request
+ * is made for it, and the certificate never reaches the browser. (Until
+ * 2026-10-07 it was fetched from a reused Render service.)
  *
  * The request carries **one id and nothing else**: `{ bookingId }` for an instant
  * session, or `{ broadcastId }` for a live broadcast (Phase 9 Part 3). Both body
@@ -51,14 +54,6 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * Render's free tier sleeps and the first token request after idle takes 30–50s
- * (SPEC §9). The default function budget would cut that off mid-flight and turn
- * a cold start into a failed join; the warm ping in `cron/sweep-presence` is what
- * keeps it from being reached.
- */
-export const maxDuration = 60;
 
 export async function POST(request: Request) {
   let user;
@@ -145,7 +140,7 @@ export async function POST(request: Request) {
     { startedAt: stamp.startedAt, durationMinutes: booking?.durationMinutes ?? null },
     issuedAt,
   );
-  const minted = await mintToken(stamp.agoraChannel, access.role, { bookingId }, life.ttlSeconds);
+  const minted = mintToken(stamp.agoraChannel, access.role, { bookingId }, life.ttlSeconds);
   if (!minted.ok) return minted.response;
 
   return NextResponse.json({
@@ -194,7 +189,7 @@ async function broadcastToken(broadcastId: string, userId: string): Promise<Next
     }
   }
 
-  const minted = await mintToken(access.channel, access.role, { broadcastId });
+  const minted = mintToken(access.channel, access.role, { broadcastId });
   if (!minted.ok) return minted.response;
 
   return NextResponse.json({
@@ -213,19 +208,20 @@ type Minted =
   | { ok: true; token: string; appId: string }
   | { ok: false; response: NextResponse };
 
-/** Fetch a token for an already-authorized channel and role, mapping failures to responses. */
-async function mintToken(
+/** Mint a token for an already-authorized channel and role, mapping failures to responses. */
+function mintToken(
   channel: string,
   role: AgoraRole,
   context: Record<string, string>,
   ttlSeconds?: number,
-): Promise<Minted> {
+): Minted {
   try {
     const appId = agoraAppId();
-    const token = await fetchRtcToken(channel, role, ttlSeconds);
+    const token = mintRtcToken(channel, role, ttlSeconds);
     return { ok: true, token, appId };
   } catch (err) {
     if (err instanceof AgoraConfigError) {
+      // Names the variable, never its value.
       console.error("[agora/token] not configured", err.message);
       return {
         ok: false,
@@ -235,18 +231,15 @@ async function mintToken(
         ),
       };
     }
-    if (err instanceof AgoraTokenServiceError) {
-      // A third party was slow or unhappy. 502 — ours is fine, theirs is not.
-      console.error("[agora/token] token service failed", {
-        ...context,
-        status: err.status,
-        detail: err.detail,
-      });
+    if (err instanceof AgoraTokenMintError) {
+      // No third party any more: if the build fails, the fault is ours. Same
+      // words the client already retries on. Only the error's name is logged.
+      console.error("[agora/token] token mint failed", { ...context, err: err.name });
       return {
         ok: false,
         response: NextResponse.json(
           { error: "Couldn't connect to video. Please try again." },
-          { status: 502 },
+          { status: 500 },
         ),
       };
     }

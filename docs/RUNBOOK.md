@@ -247,7 +247,8 @@ already-running script.
     where content->>'job' = 'sweep-presence' order by created desc limit 5;` (or just filter the
     general log) now shows real scheduled firings, e.g.
     `{"ok":true,"job":"sweep-presence","swept":0,"sweptUserIds":[],"pendingRequestsExpired":0,
-    "agoraWarmPing":{"ok":true,"status":200,"durationMs":147},"durationMs":840}` — every five
+    "agoraWarmPing":{"ok":true,"status":200,"durationMs":147},"durationMs":840}` (since 2026-10-07 there is no
+    `agoraWarmPing` field: the Render warm ping was removed when tokens moved in-app) — every five
     minutes, going back through the whole session. **`swept: 0` is the correct answer, not an
     absence of evidence:** the deployed data has no live tutors to sweep, so a zero proves the pipe
     (route reached, guard passed, response captured) rather than the sweep logic itself, which is
@@ -384,11 +385,29 @@ already-running script.
   `*/10 * * * *`. Verify in `cron.job` and `net._http_response`
   (`{"ok":true,"job":"expire-unpaid","expired":N,...}`). Tidy-up only: an unscheduled job is not an
   outage (§4.2).
-- [ ] Agora project settings and token-service health check. **The warm ping is built** (corrected
-  Phase 10 Part 5): `sweep-presence` calls `pingTokenService()` every run and reports
-  `agoraWarmPing` in its response (`src/lib/cron/jobs.ts`). What is still open is the Agora console
-  side, with Noora: the App Certificate (T2) and the co-host token setting (T5), then the `live`
-  mode check below.
+- [ ] **Agora App Certificate set per environment** (`agora-token-in-app`, 2026-10-07). Tokens are minted
+  in-app (`src/lib/agora/token-minter.ts`) from `NEXT_PUBLIC_AGORA_APP_ID` and the server-only
+  `AGORA_APP_CERTIFICATE`; the Render token service and the `sweep-presence` warm ping are gone. Set
+  `AGORA_APP_CERTIFICATE` in Vercel as a **Sensitive** variable for **Production and Preview** (dev, test and
+  production share one App ID), value pasted by Daniels from the Agora console (project "Now Tutors", Primary
+  Certificate), never typed by Claude, never in a commit or chat. Locally it goes in `.env.local` and `.env.test`.
+  **Set it before the PR that removes Render merges**, or production video answers 503 "Video isn't available right
+  now" from the first deploy. Check without printing it: `grep -c '^AGORA_APP_CERTIFICATE=' .env.local` is 1, and
+  a join on the preview returns 200 from `POST /api/agora/token` with no request to `onrender.com`. Still open on
+  the console side: the co-host token setting (T5), then the `live` mode check below.
+- [ ] **Rotating the Agora App Certificate** (only if it leaks, or on a schedule if one is ever set). Agora lets
+  two certificates work at once, so there is no outage: (1) Agora console, project "Now Tutors", enable the
+  **Secondary** certificate; (2) set `AGORA_APP_CERTIFICATE` in Vercel Production and Preview (and `.env.local`,
+  `.env.test`) to the secondary value; (3) redeploy production; (4) one join on production (instant session or
+  broadcast) to see a 200 from the token route and video both ways; (5) once tokens minted with the old
+  certificate have expired (an hour is the longest), delete or disable the old primary in the console and record
+  the date here.
+- [ ] **Render token service retired** (after launch is verified and a week passes with no `[agora/token]` errors
+  in Sentry). Render logs first: no token requests since the in-app PR merged (the Bubble app was the only other
+  caller and is down). Then remove `AGORA_TOKEN_SERVICE_URL` from Vercel (Production, Preview, Development) and from
+  `.env.local` / `.env.test`; Render dashboard, **Suspend** `agora-token-service`; one week later, **Delete** it
+  (permanent, Daniels clicks it). Until then Render is the rollback: revert the merge and redeploy, and the old path
+  works again (one cold start, since nothing keeps it warm). Done on: ______
 - [ ] **pg_cron scheduling for `/api/cron/booking-reminders`** — Phase 10 Part 3. Run
   `drizzle/snippets/pg_cron_booking_reminders.sql` in the SQL editor on `mipnoxlhurdbaahmvhhx` after the merge
   deploys (it reuses the Vault secrets from `pg_cron_sweep_presence.sql`), then again on the production project
@@ -516,7 +535,7 @@ already-running script.
 - **Don't run `pnpm build` while `pnpm dev` is serving the same folder.** They share `.next`, and the build
   overwrites the dev server's chunks: pages start returning a bare "Internal Server Error" ("Cannot find module
   ./vendor-chunks/..."). Stop the dev server, delete `.next`, start it again. Found 2026-09-16.
-- [ ] **Agora `live` mode check**: Phase 9 Part 3. Broadcasts use the same App ID and token service as
+- [ ] **Agora `live` mode check**: Phase 9 Part 3. Broadcasts use the same App ID and certificate as
   instant sessions, in `live` mode (host plus audience at the low-latency level). After the deploy, a tutor
   starts a broadcast on production and a signed-in student in another browser opens it from `/live`: the
   student must see and hear the tutor. If the viewer gets a token but no video, check the Agora console
@@ -524,8 +543,8 @@ already-running script.
 - [ ] **E2E tests 6 and 7 (`tests/e2e/messaging-realtime.spec.ts`, `tests/e2e/broadcast-two-viewers.spec.ts`)**: Phase 9
   acceptance. Test project only; they sign in with the seeded password, so a person runs them, from `~/nowtutors`:
   `pnpm test:e2e tests/e2e/messaging-realtime.spec.ts tests/e2e/broadcast-two-viewers.spec.ts`. One run builds the app
-  first (about 5 minutes) and needs nothing listening on port 3000. Test 7 uses the real Agora App ID and token service
-  from `.env.test` (it held placeholders, `localhost:9999`, until 2026-09-15; they now match `.env.local`), with a fake camera, and pings the token service before joining. If test 7 fails on a viewer's video
+  first (about 5 minutes) and needs nothing listening on port 3000. Test 7 uses the real Agora App ID and App Certificate
+  from `.env.test` (the App ID held a placeholder until 2026-09-15 and now matches `.env.local`; `AGORA_APP_CERTIFICATE` is needed there since 2026-10-07, when tokens moved in-app and the Render wake-up before joining was removed), with a fake camera. If test 7 fails on a viewer's video
   but the host's own preview played, check the Agora project's `live` mode (RUNBOOK "Agora `live` mode check"). Paste
   the runner output into PROGRESS; SPEC §16 marks Phase 9 COMPLETE only when both pass.
 - [x] **E2E test 4 (`tests/e2e/withdrawal-reconcile.spec.ts`) — Phase 8 acceptance. PASSED 2026-09-15** (56.9s; reconcile 0 mismatches across 11 wallets). Re-run it the same way after any change to the withdrawal or release path. Test project only;

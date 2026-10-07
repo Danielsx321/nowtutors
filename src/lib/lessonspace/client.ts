@@ -3,7 +3,7 @@ import "server-only";
 /**
  * The one place that talks to LessonSpace (SPEC §7.7). Everything that reaches
  * their API goes through here: host, auth header, and a thin typed fetch. Same
- * shape as `lib/paypal/client.ts` and `lib/agora/token-service.ts` — no SDK, the
+ * shape as `lib/paypal/client.ts` — no SDK, the
  * REST launch endpoint is a single call and SPEC §2 pins the dependency list
  * (CLAUDE.md — no unlisted deps).
  *
@@ -39,13 +39,12 @@ import "server-only";
 const LAUNCH_URL = "https://api.thelessonspace.com/v2/spaces/launch/";
 
 /** How long we wait on the launch call before giving up. LessonSpace is a normal
- *  hosted API (not a sleeping free-tier dyno like the Agora token service), so a
- *  modest ceiling is right — a hung launch should fail the join cleanly, not hang
+ *  hosted API, so a modest ceiling is right — a hung launch should fail the join cleanly, not hang
  *  the request handler. */
 const REQUEST_TIMEOUT_MS = 15_000;
 
 /** Raised when the server has no LessonSpace API key configured. Mirrors
- *  {@link import("@/lib/agora/token-service").AgoraConfigError}. */
+ *  {@link import("@/lib/agora/token-minter").AgoraConfigError}. */
 export class LessonSpaceConfigError extends Error {
   readonly code = "lessonspace_not_configured" as const;
   constructor(missing: string) {

@@ -1,47 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
   EXPIRY_MARGIN_SECONDS,
-  parseRtcTokenResponse,
-  rtcTokenPath,
   tokenExpiresAt,
   TOKEN_TTL_SECONDS,
 } from "@/lib/agora/token-request";
 import { agoraUid } from "@/lib/agora/uid";
 
 /**
- * The wire contract with the Render token service, and the deterministic uid
- * (SPEC §9 steps 4–6).
+ * The reported expiry and the deterministic uid (SPEC §9 steps 4–6).
  *
- * The service is deployed and must not be modified, so its route shape is a
- * fixed external contract. A typo in it fails at runtime, against a third party,
- * in the one request standing between two people and their session.
+ * The Render service's path and response shape used to be pinned here too; since
+ * 2026-10-07 the token is built in-app and its contents are pinned by decoding it
+ * in `agora-token-builder.test.ts`.
  */
-
-describe("rtc token path", () => {
-  it("matches the deployed service's documented shape", () => {
-    // Verified against the live service during this build:
-    // GET /rtc/{channel}/{role}/uid/0/?expiry=3600 -> { "rtcToken": "..." }
-    expect(rtcTokenPath("session_abc", "publisher")).toBe(
-      "/rtc/session_abc/publisher/uid/0/?expiry=3600",
-    );
-  });
-
-  it("carries the role it is given", () => {
-    expect(rtcTokenPath("session_abc", "subscriber")).toContain("/subscriber/");
-  });
-
-  it("requests a wildcard uid, not the participant's uid", () => {
-    // uid 0 means "valid for any uid" — the token authorizes the CHANNEL, and
-    // the client joins under its own deterministic uid (§9 step 4).
-    expect(rtcTokenPath("session_abc", "publisher")).toContain("/uid/0/");
-  });
-
-  it("encodes the channel rather than interpolating it raw", () => {
-    expect(rtcTokenPath("a/b?c", "publisher")).toBe(
-      "/rtc/a%2Fb%3Fc/publisher/uid/0/?expiry=3600",
-    );
-  });
-});
 
 describe("reported expiry", () => {
   it("is EARLIER than the token's real expiry", () => {
@@ -58,20 +29,6 @@ describe("reported expiry", () => {
   it("never reports an expiry in the past, even if the margin exceeds the TTL", () => {
     const issued = new Date("2026-08-24T12:00:00.000Z");
     expect(tokenExpiresAt(issued, 60, 3600).getTime()).toBeGreaterThan(issued.getTime());
-  });
-});
-
-describe("token response parsing", () => {
-  it("reads the service's rtcToken", () => {
-    expect(parseRtcTokenResponse({ rtcToken: "007eJx…" })).toBe("007eJx…");
-  });
-
-  it("treats a 200 without a token as no token", () => {
-    // Otherwise the browser is handed `undefined` and Agora produces the error
-    // three layers away from the thing that actually went wrong.
-    for (const body of [null, undefined, {}, { rtcToken: "" }, { rtcToken: 7 }, "ok", []]) {
-      expect(parseRtcTokenResponse(body)).toBeNull();
-    }
   });
 });
 
