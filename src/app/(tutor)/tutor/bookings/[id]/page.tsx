@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/auth/guards";
 import { getBookingDetailForParticipant } from "@/db/queries/bookings";
 import { findConversationBetween } from "@/db/queries/messaging";
 import { BookingDetailView } from "@/components/features/booking/booking-detail-view";
+import { MessageStudentButton } from "@/components/features/messaging/message-student-button";
 
 export const metadata = { title: "Booking · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -48,7 +49,11 @@ export default async function TutorBookingDetailPage({
             <MessageSquare className="size-5" aria-hidden />
             Open conversation
           </Link>
-        ) : undefined
+        ) : (
+          // No thread yet. The booking on this page is what lets the tutor open
+          // one (2026-09-30); before that, only the student could.
+          <MessageStudentButton studentId={booking.studentId} />
+        )
       }
     />
   );

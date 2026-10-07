@@ -138,27 +138,36 @@ export function MiniPlayer() {
   const chip = level && level !== "good" ? <QualityChip level={level} /> : null;
 
   // Same tile choice as the room's stage: the tutor's camera for both people.
-  const tile = viewerIsTutor ? (
+  // The other person's picture when they are here (camera or shared screen),
+  // otherwise your own, so the player is never an empty frame. Both roles
+  // publish a camera since 2026-09-30.
+  const showRemote = session.remotePresent && session.remoteVideo !== null;
+  const ownVideo = session.localScreen ?? (session.cameraEnabled === false ? null : session.localVideo);
+  const tile = showRemote ? (
     <VideoTile
       compact
       overlay={chip}
-      name={viewerName}
-      roleLabel="You"
-      avatarUrl={viewerAvatarUrl}
-      track={session.cameraEnabled === false ? null : session.localVideo}
-      muted={!session.micEnabled}
-      emptyReason={live ? "camera-off" : "waiting"}
+      name={otherPartyName}
+      roleLabel={viewerIsTutor ? "Student" : "Tutor"}
+      avatarUrl={otherPartyAvatarUrl}
+      track={session.remoteVideo}
+      fit={session.remoteSharing ? "contain" : "cover"}
+      badge={session.remoteSharing ? "Sharing screen" : undefined}
+      emptyReason="camera-off"
       className="aspect-video rounded-none border-0"
     />
   ) : (
     <VideoTile
       compact
       overlay={chip}
-      name={otherPartyName}
-      roleLabel="Tutor"
-      avatarUrl={otherPartyAvatarUrl}
-      track={session.remoteVideo}
-      emptyReason={session.remotePresent ? "camera-off" : "waiting"}
+      name={viewerName}
+      roleLabel="You"
+      avatarUrl={viewerAvatarUrl}
+      track={ownVideo}
+      fit={session.localScreen ? "contain" : "cover"}
+      badge={session.localScreen ? "Sharing screen" : undefined}
+      muted={!session.micEnabled}
+      emptyReason={live ? (session.cameraEnabled === null ? "audio-only" : "camera-off") : "waiting"}
       className="aspect-video rounded-none border-0"
     />
   );

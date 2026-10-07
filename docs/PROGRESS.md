@@ -22,6 +22,17 @@ dashboard top bar with section tabs and the header's active underline; navy on b
 then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
 room.
 
+- **Room features (`feat/room-features`, 2026-09-30).** Noora's three asks from the 30 Sep call: the student's
+  camera (both roles publish; a student without one joins audio-only), screen share for either side (swaps the
+  video track, tagged and letterboxed on the other end via a per-booking Realtime signal), and an in-session chat
+  panel that is the pair's Messages thread (opened server-side with the student as starter). SPEC §7.4, §9, §7.9
+  amended; DECISIONS has the entry. Not yet tested live with two people.
+- **Unmet instant sessions (`fix/instant-session-unmet`, 2026-09-30).** From the live test with Noora: a
+  missed accept event left the student on "No answer" and the tutor blocked by M9 for the whole booked window.
+  Unmet bookings now close five minutes after accept (cron, the room's own timer, End, and the accept path
+  itself); the student's waiting modal reads its request back after every subscribe and when the ring runs
+  out. DECISIONS has the entry. Still open from the same call: Supabase Auth over Resend SMTP (LAUNCH step 7),
+  and Noora's asks for a student camera, in-session chat and screen share (SPEC §7.4, parked since 16 Sep).
 - **Launch fixes merged** (PR #118, `927fa03`, 2026-09-28) and Nora's design edits (PR #119, `5dd9298`).
   `drizzle/0021` to `0024` **confirmed applied** to `mipnoxlhurdbaahmvhhx` (checked 2026-09-29, 25 rows in
   `drizzle.__drizzle_migrations`).

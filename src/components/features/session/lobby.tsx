@@ -25,6 +25,12 @@ import { cn } from "@/lib/utils";
  * sound file to ship.
  */
 export interface LobbyProps {
+  /**
+   * The camera is wanted but not required (a student, 2026-09-30): when it is
+   * missing or blocked the check falls back to the microphone alone and says
+   * so, instead of blocking the join.
+   */
+  cameraOptional?: boolean;
   /** Tutors publish a camera as well as a microphone (§9). */
   needsCamera: boolean;
   otherPartyName: string;
@@ -37,7 +43,9 @@ export interface LobbyProps {
 type Check =
   | { state: "checking" }
   | { state: "ready" }
-  | { state: "blocked" | "missing" | "busy" | "unsupported" | "failed" };
+  | { state: "blocked" | "missing" | "busy" | "unsupported" | "failed" }
+  /** Microphone ready, camera not available; joining with audio only. */
+  | { state: "ready-audio-only" };
 
 function problemCopy(state: Check["state"], needsCamera: boolean): string {
   const device = needsCamera ? "Camera or microphone" : "Microphone";
@@ -67,6 +75,7 @@ function classify(err: unknown): Check["state"] {
 
 export function Lobby({
   needsCamera,
+  cameraOptional = false,
   otherPartyName,
   otherPartyAvatarUrl,
   joinLabel = "Join session",
@@ -95,17 +104,27 @@ export function Lobby({
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: needsCamera });
+        let stream: MediaStream;
+        let audioOnly = false;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: needsCamera });
+        } catch (err) {
+          // A student's camera is wanted, not required: ask for the microphone
+          // alone and say the picture is off. A microphone failure still throws.
+          if (!needsCamera || !cameraOptional) throw err;
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioOnly = true;
+        }
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
-        if (needsCamera && videoRef.current) {
+        if (needsCamera && !audioOnly && videoRef.current) {
           videoRef.current.srcObject = stream;
           void videoRef.current.play().catch(() => {});
         }
-        setCheck({ state: "ready" });
+        setCheck({ state: audioOnly ? "ready-audio-only" : "ready" });
 
         // Mic meter: an AnalyserNode on the live input, read once per frame.
         // A render loop, not a network poll.
@@ -135,7 +154,7 @@ export function Lobby({
       void audio?.close().catch(() => {});
       release();
     };
-  }, [needsCamera, attempt, release]);
+  }, [needsCamera, cameraOptional, attempt, release]);
 
   const testSpeakers = () => {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -158,7 +177,8 @@ export function Lobby({
     onJoin();
   };
 
-  const ready = check.state === "ready";
+  const ready = check.state === "ready" || check.state === "ready-audio-only";
+  const audioOnly = check.state === "ready-audio-only";
   const problem = check.state !== "checking" && !ready;
 
   return (
@@ -173,11 +193,16 @@ export function Lobby({
             muted
             playsInline
             aria-label="Your camera preview"
-            className={cn("size-full -scale-x-100 object-cover", !ready && "invisible")}
+            className={cn("size-full -scale-x-100 object-cover", (!ready || audioOnly) && "invisible")}
           />
         ) : (
           <div className="grid size-full place-items-center text-small text-text-muted">
-            Students join with audio. Your tutor&apos;s video appears in the room.
+            You&apos;ll join with audio. The other person&apos;s video appears in the room.
+          </div>
+        )}
+        {audioOnly && (
+          <div className="absolute inset-0 grid place-items-center p-4 text-center text-small text-text-muted">
+            No camera available. You&apos;ll join with audio only; you can still see {otherPartyName}.
           </div>
         )}
         {check.state === "checking" && (
@@ -207,7 +232,7 @@ export function Lobby({
           {ready && (
             <p className="inline-flex items-center gap-2 text-small text-success">
               <CheckCircle2 className="size-4" aria-hidden />
-              {needsCamera ? "Camera and microphone ready" : "Microphone ready"}
+              {needsCamera && !audioOnly ? "Camera and microphone ready" : "Microphone ready"}
             </p>
           )}
           {problem && (

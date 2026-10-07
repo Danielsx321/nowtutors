@@ -12,6 +12,11 @@ import {
   type TestConnection,
 } from "./helpers/test-db";
 import { splitEarnings } from "@/lib/credits/fees";
+import {
+  closeUnmetInstantSession,
+  closeUnmetInstantSessionsForTutor,
+  INSTANT_UNMET_GRACE_MINUTES,
+} from "@/db/queries/complete-sessions";
 
 /**
  * The `complete-sessions` sweep against a real Postgres (SPEC §12, §7.11, §7.4).
@@ -258,9 +263,10 @@ describe("complete-sessions sweep (test project)", () => {
 
   it("leaves a never-started instant booking whose window has not passed alone", async () => {
     const { bookingId } = await seed({
-      // Five minutes into a thirty-minute booked window — the tutor accepted and
-      // the pair may still be connecting.
-      createdMinutesAgo: 5,
+      // Two minutes after accept, inside the unmet grace (five minutes since
+      // 2026-09-30, it was the booked duration): the tutor accepted and the pair
+      // may still be connecting.
+      createdMinutesAgo: 2,
       durationMinutes: 30,
       studentJoinedMinutesAgo: null,
       tutorJoinedMinutesAgo: null,
@@ -271,6 +277,79 @@ describe("complete-sessions sweep (test project)", () => {
     expect((await readClassification(conn, bookingId)).status).toBe(
       "in_progress",
     );
+  });
+
+  it("closes an unmet instant booking once the grace passes, long before the booked duration", async () => {
+    // The 30 Sep live test: the tutor accepted and sat in the room, the student's
+    // tab never learned of the accept. Six minutes in, a thirty-minute window
+    // still has twenty-four to run; the old clock would have left the tutor
+    // blocked (launch fix M9) for all of them.
+    const { bookingId } = await seed({
+      createdMinutesAgo: INSTANT_UNMET_GRACE_MINUTES + 1,
+      durationMinutes: 30,
+      studentJoinedMinutesAgo: null,
+      tutorJoinedMinutesAgo: INSTANT_UNMET_GRACE_MINUTES,
+      priceCredits: 30,
+    });
+
+    const result = await runCompleteSessionsSweep();
+    expect(result.noShowStudentIds).toContain(bookingId);
+    expect((await readClassification(conn, bookingId)).status).toBe("no_show_student");
+    // Same money rule as the full-window case: the tutor turned up and is paid.
+    expect(await readEarnings(conn, bookingId)).not.toBeNull();
+  });
+
+  it("closeUnmetInstantSession: one booking, only once the grace has passed on Postgres's clock", async () => {
+    const early = await seed({
+      createdMinutesAgo: 1,
+      durationMinutes: 30,
+      studentJoinedMinutesAgo: 1,
+      tutorJoinedMinutesAgo: null,
+    });
+    expect(await closeUnmetInstantSession(early.bookingId)).toBeNull();
+    expect((await readClassification(conn, early.bookingId)).status).toBe("in_progress");
+
+    const due = await seed({
+      createdMinutesAgo: INSTANT_UNMET_GRACE_MINUTES + 1,
+      durationMinutes: 30,
+      studentJoinedMinutesAgo: INSTANT_UNMET_GRACE_MINUTES,
+      tutorJoinedMinutesAgo: null,
+    });
+    const closed = await closeUnmetInstantSession(due.bookingId);
+    expect(closed?.bookingId).toBe(due.bookingId);
+    expect(closed?.status).toBe("no_show_tutor");
+    // Exactly once: the row has left `in_progress`, so a second call finds nothing.
+    expect(await closeUnmetInstantSession(due.bookingId)).toBeNull();
+    // A pair that met is never this statement's to close, however old.
+    const met = await seed({ startedMinutesAgo: 10, createdMinutesAgo: 10, durationMinutes: 30 });
+    expect(await closeUnmetInstantSession(met.bookingId)).toBeNull();
+  });
+
+  it("closeUnmetInstantSessionsForTutor: heals the tutor's own overdue rows, leaves her in-grace row, touches nobody else's", async () => {
+    // Every fixture booking belongs to the test project's first tutor, so the
+    // "someone else" case is a tutor id that owns nothing: it must close nothing
+    // and leave the overdue row exactly where it was.
+    const stuck = await seed({
+      createdMinutesAgo: INSTANT_UNMET_GRACE_MINUTES + 2,
+      durationMinutes: 60,
+      studentJoinedMinutesAgo: null,
+      tutorJoinedMinutesAgo: INSTANT_UNMET_GRACE_MINUTES + 1,
+    });
+    const fresh = await seed({
+      createdMinutesAgo: 1,
+      durationMinutes: 60,
+      studentJoinedMinutesAgo: null,
+      tutorJoinedMinutesAgo: 1,
+    });
+
+    expect(await closeUnmetInstantSessionsForTutor(randomUUID())).toEqual([]);
+    expect((await readClassification(conn, stuck.bookingId)).status).toBe("in_progress");
+
+    const closed = await closeUnmetInstantSessionsForTutor(stuck.tutorId);
+    expect(closed.map((r) => r.bookingId)).toEqual([stuck.bookingId]);
+    expect((await readClassification(conn, stuck.bookingId)).status).toBe("no_show_student");
+    // Inside the grace: the pair may still be connecting.
+    expect((await readClassification(conn, fresh.bookingId)).status).toBe("in_progress");
   });
 
   // -------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import type { PlayableVideoTrack } from "@/components/features/session/video-til
 import type { TimeStage } from "@/components/features/session/session-timer";
 import { useTokenRenewal } from "@/hooks/use-token-renewal";
 import { getSessionState } from "@/actions/sessions";
+import { useSessionShareSignal } from "@/hooks/use-session-share-signal";
 
 /**
  * The instant session this browser tab is in, held above every route group.
@@ -72,20 +73,35 @@ export interface ActiveSession {
   connection: ConnectionState | null;
   stage: TimeStage;
   localVideo: PlayableVideoTrack | null;
+  /** This person's screen while they share it (2026-09-30); null otherwise. */
+  localScreen: PlayableVideoTrack | null;
   remoteVideo: PlayableVideoTrack | null;
   remotePresent: boolean;
+  /** The other person's video is their screen, not their camera (room signal). */
+  remoteSharing: boolean;
   /** Server-issued. Replaced whenever the server tells us a truer one. */
   deadline: string | null;
   /** Terminal: the server closed the session and the call has been torn down. */
   finished: boolean;
+  /**
+   * The booking's status as the server last reported it, so the ended screen
+   * can say "they didn't join" for a `no_show_*` instead of "session ended".
+   */
+  endedStatus: string | null;
   micEnabled: boolean;
-  /** Null for a student: no camera track exists to toggle (§9, media split). */
+  /** Null when no camera track exists to toggle: a student who joined without one. */
   cameraEnabled: boolean | null;
+  /** Sharing this screen right now. */
+  sharing: boolean;
+  /** The browser can capture a screen at all (phones mostly cannot). */
+  canShareScreen: boolean;
   /** Join this booking. False when another booking is already held. */
   start: (meta: SessionMeta) => boolean;
   retry: () => void;
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
+  /** Start or stop sharing this screen. */
+  toggleScreenShare: () => Promise<void>;
   /** The session is over (ended by someone, or out of time): release devices, keep the summary. */
   finish: () => void;
   /** Hang up and forget the session. The booking itself is untouched on the server. */
@@ -140,11 +156,18 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
   const [remotePresent, setRemotePresent] = React.useState(false);
   const [connection, setConnection] = React.useState<ConnectionState | null>(null);
   const [deadline, setDeadline] = React.useState<string | null>(null);
+  /** `created_at + INSTANT_UNMET_GRACE_MINUTES` while the pair has not met (§12). */
+  const [unmetDeadline, setUnmetDeadline] = React.useState<string | null>(null);
+  const [endedStatus, setEndedStatus] = React.useState<string | null>(null);
   const [finished, setFinished] = React.useState(false);
   /** The current token's server-reported expiry (§9 step 5). Drives renewal below. */
   const [tokenExpiresAt, setTokenExpiresAt] = React.useState<string | null>(null);
   const [micEnabled, setMicEnabled] = React.useState(true);
   const [cameraEnabled, setCameraEnabled] = React.useState<boolean | null>(null);
+  const [localScreen, setLocalScreen] = React.useState<PlayableVideoTrack | null>(null);
+  const sharing = localScreen !== null;
+  const canShareScreen =
+    typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getDisplayMedia === "function";
   const [playerCorner, setPlayerCorner] = React.useState<PlayerCorner | null>(null);
   const [signingOut, setSigningOut] = React.useState(false);
 
@@ -163,6 +186,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     setError(null);
     setNotice(null);
     setLocalVideo(null);
+    setLocalScreen(null);
     setRemoteVideo(null);
     setRemotePresent(false);
     setTokenExpiresAt(null);
@@ -210,6 +234,8 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       const result = await getSessionState(bookingId);
       if ("error" in result) return;
       setDeadline(result.state.deadline);
+      setUnmetDeadline(result.state.unmetDeadline ?? null);
+      setEndedStatus(result.state.status);
       if (result.state.finished) finish();
     } catch {
       // Intentionally ignored; see above.
@@ -243,6 +269,17 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     return () => clearTimeout(timer);
   }, [deadline, finished, phase]);
 
+  // The unmet actor (2026-09-30): the same shape for the person waiting alone.
+  // The server hands down `unmetDeadline` while `started_at` is null; a second
+  // past it the room asks again and `getSessionState` closes the booking as a
+  // no-show. Cleared by the server the moment the other party arrives.
+  React.useEffect(() => {
+    if (!unmetDeadline || finished || phase !== "live") return;
+    const wait = Math.max(0, new Date(unmetDeadline).getTime() - Date.now()) + 1000;
+    const timer = setTimeout(() => void refreshRef.current(), wait);
+    return () => clearTimeout(timer);
+  }, [unmetDeadline, finished, phase]);
+
   React.useEffect(() => {
     // Nothing joins until the room's lobby calls `start()`.
     if (!bookingId) return;
@@ -250,6 +287,7 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     // while the join is still awaiting device permission.
     const client = new SessionClient({
       onLocalVideo: setLocalVideo,
+      onLocalScreen: setLocalScreen,
       onRemoteVideo: setRemoteVideo,
       onRemotePresence: (present) => {
         setRemotePresent(present);
@@ -289,6 +327,9 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
         await client.join(grant);
         if (cancelled || client.disposed) return;
         setTokenExpiresAt(grant.expiresAt);
+        // A student whose camera was missing or blocked joined with audio only:
+        // no camera button, rather than one that does nothing.
+        setCameraEnabled(client.hasCamera ? true : null);
         setPhase("live");
       } catch (err) {
         if (cancelled) return;
@@ -316,7 +357,9 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       setFinished(false);
       setDeadline(next.initialDeadline);
       setMicEnabled(true);
-      setCameraEnabled(next.viewerIsTutor ? true : null);
+      // Both roles publish a camera (2026-09-30); corrected after the join if
+      // the student's camera did not come up.
+      setCameraEnabled(true);
       setStage("normal");
       lastStage.current = "normal";
       setMeta(next);
@@ -360,6 +403,20 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
     if (next !== undefined) setCameraEnabled(next);
   }, []);
 
+  const toggleScreenShare = React.useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    if (client.sharingScreen) await client.stopScreenShare();
+    else await client.startScreenShare();
+  }, []);
+
+  // Tell the other person which picture they are getting, and learn theirs.
+  const { remoteSharing } = useSessionShareSignal(
+    bookingId,
+    meta ? (meta.viewerIsTutor ? "tutor" : "student") : null,
+    sharing,
+  );
+
   const reportStage = React.useCallback((next: TimeStage) => {
     if (next === lastStage.current) return;
     lastStage.current = next;
@@ -383,16 +440,22 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       connection,
       stage,
       localVideo,
+      localScreen,
       remoteVideo,
       remotePresent,
+      remoteSharing,
       deadline,
       finished,
+      endedStatus,
       micEnabled,
       cameraEnabled,
+      sharing,
+      canShareScreen,
       start,
       retry,
       toggleMic,
       toggleCamera,
+      toggleScreenShare,
       finish,
       leave,
       reportStage,
@@ -409,16 +472,22 @@ export function ActiveSessionProvider({ children }: { children: React.ReactNode 
       connection,
       stage,
       localVideo,
+      localScreen,
       remoteVideo,
       remotePresent,
+      remoteSharing,
       deadline,
       finished,
+      endedStatus,
       micEnabled,
       cameraEnabled,
+      sharing,
+      canShareScreen,
       start,
       retry,
       toggleMic,
       toggleCamera,
+      toggleScreenShare,
       finish,
       leave,
       reportStage,

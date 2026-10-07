@@ -957,6 +957,17 @@ Rules:
 >   NULL` in the WHERE). Otherwise a student whose tutor never arrived could end
 >   it, and Part 3C would pay a tutor who was never in the room while §7.4 forbids
 >   refunding the student. Those bookings are Part 3C's `no_show_*` case.
+>   *Amended 2026-09-30:* End pressed on such a booking now runs the unmet no-show
+>   statement instead (§12, `closeUnmetInstantSession`), which matches only once
+>   `created_at + INSTANT_UNMET_GRACE_MINUTES` has passed on the database's clock;
+>   inside the grace it still returns `transitioned: false`. The room's ended
+>   screen names who did not join and quotes the refunds page on the money.
+> - **The student's waiting modal reads its request back** (added 2026-09-30):
+>   `getOutgoingRequest`, scoped to `student_id = me`, after every (re)subscribe
+>   of its Realtime channel and once when the countdown ring runs out. The
+>   channel is the push signal; this is the data, the same shape the tutor side
+>   got with `listPendingIncomingRequests` on 28 Sep. Without it a missed UPDATE
+>   left a charged student on "No answer" while the tutor waited alone.
 > - **Nothing in this pass touches the ledger, computes a refund, writes
 >   `tutor_earnings`, clears `is_live`, or needs a migration.** `ended_at` and
 >   `billed_minutes` have existed since `0000`.
@@ -965,7 +976,9 @@ Rules:
 
 **Leaving the room mid-session (added 2026-09-29, mini-player).** The call belongs to the browser tab, not to the room page. Going to any other page keeps it connected and shows a small floating player (the tutor's video, the clock, mic, camera for the tutor, Enlarge back to the room, End with the same confirm), which can be dragged to any corner. Closing or reloading the tab, signing out, or reaching a sign-in or account page leaves the call; the booking itself is untouched and the clock keeps running server-side either way, so the person rejoins through the room as before. One instant session per tab. Scheduled sessions (LessonSpace classroom) and broadcasts are not covered.
 
-> **Design overhaul Part 4 (2026-09-16).** The room now opens on a lobby: a `getUserMedia` check of exactly the devices this participant publishes (microphone, plus camera for the tutor), with the fix in words when one is blocked; nothing touches Agora until Join. The tutor's video is the spotlight with the student as a small tile (a side-by-side switch from `md`); a labelled control bar (Mic, Camera for the tutor, End session set apart); a connection banner driven by the SDK's `connection-state-change` and `network-quality` events (weak own connection, with "Turn off video" for a tutor; the other person's unstable connection; reconnecting; lost, with Rejoin as the existing retry); and time-left warnings at 5 minutes (toast), 2 minutes and the last minute (banner), each announced once. **Screen share, the text chat panel and credits consumed/earned are still not built.** Daniels moved them to their own phase so the new video features can be tested with two real people (DECISIONS, design overhaul Part 4). The join, renewal, end and teardown logic is unchanged.
+> **Design overhaul Part 4 (2026-09-16).** The room now opens on a lobby: a `getUserMedia` check of exactly the devices this participant publishes (microphone, plus camera for the tutor), with the fix in words when one is blocked; nothing touches Agora until Join. The tutor's video is the spotlight with the student as a small tile (a side-by-side switch from `md`); a labelled control bar (Mic, Camera for the tutor, End session set apart); a connection banner driven by the SDK's `connection-state-change` and `network-quality` events (weak own connection, with "Turn off video" for a tutor; the other person's unstable connection; reconnecting; lost, with Rejoin as the existing retry); and time-left warnings at 5 minutes (toast), 2 minutes and the last minute (banner), each announced once. **Screen share and the text chat panel were still not built** at that point; Daniels moved them to their own phase so the new video features could be tested with two real people (DECISIONS, design overhaul Part 4). The join, renewal, end and teardown logic is unchanged.
+>
+> **Room features (2026-09-30, from Noora's asks on the 30 Sep call).** Three of the missing pieces are built: (1) **the student's camera**: both participants publish camera and microphone; the student's lobby checks the camera as optional and a student whose camera is missing or blocked joins with audio only (`hasCamera` false, no Camera button), while a tutor's camera failure still refuses the join. Each tile now draws the local track for "You" and the remote track for the other person; the tutor is the spotlight by default. (2) **Screen share, either side**: a Share button (hidden where the browser has no `getDisplayMedia`, so on most phones) opens the browser's picker; the screen track replaces the camera on the wire and the camera comes back when sharing stops, including from the browser's own Stop sharing bar (`lib/agora/client.ts`). The sharer's picture takes the spotlight, letterboxed and tagged "Sharing screen"; which it is travels on a per-booking Realtime broadcast (`hooks/use-session-share-signal.ts`), since Agora does not say. (3) **In-session chat**: a Chat button opens a panel beside the stage holding the pair's conversation from §7.9, the same `Thread` component; unread messages count on the button while the panel is closed, and the thread is saved to Messages. The room page finds or opens the conversation server-side with the booking's student as starter (`lib/messaging/session-chat.ts`), so §7.9's "only a student starts" rule holds for either viewer. Credits consumed/earned in the room remain unbuilt. The mini-player shows the other person's picture when they are present (camera or screen), otherwise your own.
 
 ### 7.5 Presence and going live
 
@@ -1293,7 +1306,7 @@ End broadcast: status `ended`, `ended_at`, `is_live = false`. Cron sweep also en
 Conversation list + thread view, shared component for both roles. Send text and optional attachment. Realtime subscription on `messages` filtered by `conversation_id` for the open thread, plus a lighter subscription on `conversations` for unread badges. Mark read when the thread is visible. Unread count in the header. Email notification only if the recipient has been offline for more than 5 minutes.
 
 > **Settled 2026-09-15 (DECISIONS, "Phase 9 Part 1"), all as recommended:**
-> - **Only a student starts a conversation, and only with an approved tutor who isn't suspended.** A
+> - **Only a student starts a conversation, and only with an approved tutor who isn't suspended.** *Amended 2026-09-30:* **a tutor may also open the thread with a student who has a paid booking with them** (confirmed, in progress, completed or a no-show; not an unpaid hold), from the booking's detail page (`startConversationWithStudent`, `MessageStudentButton`). A tutor still cannot message someone who only viewed their profile; the refusal is the same `not_student`. A
 >   tutor replies inside a thread a student opened but can't open one. No student-to-student,
 >   tutor-to-tutor or admin threads. Once a thread exists, either participant may keep writing while
 >   they themselves aren't suspended. Every reason a target can't be messaged returns the same
@@ -1318,6 +1331,7 @@ Conversation list + thread view, shared component for both roles. Send text and 
 >   and re-read after every (re)subscribe.
 > - **Read state:** marked on open, when a message from the other party arrives while the tab is
 >   visible, and when the tab becomes visible. No read receipts are shown to the sender in v1.
+> - **In the instant room (2026-09-30):** the same thread renders in the session room's chat panel (§7.4 room features). The room page finds the pair's conversation or opens it with the booking's student as the starter, whoever is viewing, so the starter rule above is kept in the data while a tutor can still write from the room. Reads and sends go through the same actions; nothing about the rules changed.
 > - **Email** for an unread message: built in Phase 10 Part 3 (§11, "New message while away").
 >   `notifications` is still not written.
 >
@@ -1468,6 +1482,8 @@ Client wrapper in `lib/agora/client.ts`: dynamic-import the SDK (it does not tol
 > broadcast (channel keyed to the tutor's profile id, shown only while the tutor is live) — a
 > broadcast preview widget, not a session, and not evidence that §4.6's broadcasts are anything
 > other than net-new. See DECISIONS, Finding A.
+
+> **Amended 2026-09-30 (room features).** The media split above is superseded: **both participants publish camera and microphone.** `SessionClient` creates the pair for either role; a student whose camera fails falls back to microphone only, a tutor's failure is a join failure. Screen share (`startScreenShare` / `stopScreenShare`) swaps the published video track, because an `AgoraRTCClient` publishes one video track at a time; it never adds a second uid or asks the token route for anything new. Both still hold `publisher` tokens (step 2), unchanged.
 
 > **Part 3A implementation (Phase 6, `feat/phase6-part3a-session-room`).** The room shell and the
 > join path are built; the controls are not.
@@ -1714,14 +1730,28 @@ never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or th
   that decides what a student is billed. An instant booking with `started_at`
   NULL never elapses and is the cron's `no_show_*` case, classified from
   `student_joined_at` / `tutor_joined_at`. **Its clock is `created_at +
-  duration_minutes <= now()`, with `started_at IS NULL` in the predicate itself**
-  — an instant booking is created by the accept transaction and begins
-  immediately (§7.4), so `created_at` is the instant analogue of
-  `scheduled_start_at` and this is the *same* booked window, not a second
-  definition of it. There is **no grace period** on it: `ended_at` for these rows
-  is `now()` at classification and §7.11 derives `available_at` from `ended_at`,
-  so a grace would add its own length to the tutor's withdrawal date for a
-  session that never happened. Both predicates then create `tutor_earnings`
+  INSTANT_UNMET_GRACE_MINUTES <= now()` (five minutes, `lib/sessions/deadline.ts`),
+  with `started_at IS NULL` in the predicate itself** — an instant booking is
+  created by the accept transaction and both people are sent into the room at
+  once (§7.4), so `created_at` is the instant analogue of `scheduled_start_at`.
+  *Amended 2026-09-30:* the clock used to be `created_at + duration_minutes`, the
+  full booked window. On the 30 Sep live test a student's tab missed the accept
+  event, the tutor sat alone in the room, and that unmet `in_progress` row then
+  blocked every later accept (launch fix M9) and every End press (a never-started
+  session cannot reach `completed`) for the whole half hour, with "run now" in
+  admin correctly finding nothing due. Five minutes is long enough for a slow
+  device check and short enough that the tutor is back in the Live list before
+  the next student gives up. The statement is `closeUnmetInstantSessions` in
+  `db/queries/complete-sessions.ts`, and it now has **three callers**, all
+  writing the same classification on Postgres's clock: this cron (all rows),
+  `getSessionState` and `endSession` (one booking: the room arms a timer from
+  `unmetDeadline` and asks once it passes, and the person left waiting can press
+  End), and `acceptRequestAsTutor` (the tutor's own rows, before M9 looks, so a
+  stuck tutor heals on her next accept without waiting for the cron). `ended_at`
+  for these rows is `now()` at classification and §7.11 derives `available_at`
+  from `ended_at`; the money rules are unchanged (`no_show_student` pays the
+  tutor who turned up, `no_show_tutor` pays nobody and the admin refunds by
+  hand, as the refunds page says). Both predicates then create `tutor_earnings`
   (§7.11) from the row's `price_credits` and `ended_at` — for `completed` and
   `no_show_student` only; see §7.11. This line previously described only the
   scheduled half; that half was written down and the instant half was not, which

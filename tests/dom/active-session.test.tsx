@@ -33,8 +33,26 @@ vi.mock("@/lib/agora/client", () => ({
     async toggleCamera() {
       return null;
     }
+    hasCamera = true;
+    sharingScreen = false;
+    async startScreenShare() {
+      return false;
+    }
+    async stopScreenShare() {}
   },
 }));
+vi.mock("@/actions/messaging", () => ({
+  createAttachmentUpload: vi.fn(),
+  getAttachmentUrl: vi.fn(),
+  getMessage: vi.fn(),
+  getThreadPage: vi.fn(),
+  markConversationRead: vi.fn(),
+  sendMessage: vi.fn(),
+}));
+vi.mock("@/hooks/use-session-share-signal", () => ({
+  useSessionShareSignal: () => ({ remoteSharing: false, status: "connecting" }),
+}));
+
 
 vi.mock("@/components/features/session/lobby", () => ({
   Lobby: ({ onJoin }: { onJoin: () => void }) => (
@@ -216,6 +234,38 @@ describe("ActiveSessionProvider", () => {
       vi.advanceTimersByTime(10_000);
     });
     expect(getSessionState.mock.calls.length).toBe(before + 1);
+  });
+
+  it("asks the server when the unmet grace passes and says who didn't join", async () => {
+    // The 30 Sep case from the waiting side: nobody arrives. The server hands
+    // down `unmetDeadline` while `started_at` is null; a second past it the
+    // room asks once more, and the answer is the closing status.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const unmetDeadline = new Date(Date.now() + 2000).toISOString();
+    getSessionState.mockResolvedValue({
+      state: { deadline: null, unmetDeadline, finished: false, status: "in_progress" },
+    });
+    await joinB1();
+    const before = getSessionState.mock.calls.length;
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(getSessionState.mock.calls.length).toBe(before);
+
+    getSessionState.mockResolvedValue({
+      state: { deadline: null, unmetDeadline: null, finished: true, status: "no_show_tutor" },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    await settle();
+    expect(getSessionState.mock.calls.length).toBe(before + 1);
+    expect(exposed?.finished).toBe(true);
+    // The viewer is the student and the tutor never came: named, with the
+    // refunds page's promise, not the generic "is over" line.
+    expect(screen.getByRole("heading", { name: /Elizabeth didn.t join/ })).not.toBeNull();
+    expect(screen.getByText(/Your credits come back/)).not.toBeNull();
   });
 
   it("refuses a second booking while one is held", async () => {

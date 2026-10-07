@@ -86,11 +86,14 @@ export function InstantRequestWidget({
   const price = sessionPriceCredits(hourlyRateCredits, duration);
   const canAfford = walletBalance >= price;
 
-  const outcome = useOutgoingSessionRequest(waiting?.requestId ?? null);
   const { secondsLeft, fraction, elapsed } = useCountdown(
     waiting?.expiresAt ?? null,
     ttlSeconds,
   );
+  // The ring's end is handed to the hook: it reads the row back before the
+  // modal says "No answer", because the tutor may have accepted on an event
+  // this tab never received (2026-09-30).
+  const outcome = useOutgoingSessionRequest(waiting?.requestId ?? null, elapsed);
 
   // Accepted: the booking exists and is already `in_progress` with its channel
   // set, so this navigation is the handshake completing — into the room built in

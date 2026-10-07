@@ -41,11 +41,17 @@ export function Thread({
   viewerId,
   initialMessages,
   initialHasOlder,
+  className,
+  onIncoming,
 }: {
   conversationId: string;
   viewerId: string;
   initialMessages: ThreadMessage[];
   initialHasOlder: boolean;
+  /** Replaces the page-height wrapper class; the session room's panel sets its own. */
+  className?: string;
+  /** A message from the other party arrived (the room counts unread while its panel is closed). */
+  onIncoming?: (message: ThreadMessage) => void;
 }) {
   const [messages, setMessages] = React.useState(initialMessages);
   const [hasOlder, setHasOlder] = React.useState(initialHasOlder);
@@ -86,8 +92,9 @@ export function Thread({
         .then((message) => {
           if (!message) return;
           add([message]);
-          if (message.senderId !== viewerId && document.visibilityState === "visible") {
-            markRead();
+          if (message.senderId !== viewerId) {
+            onIncoming?.(message);
+            if (document.visibilityState === "visible") markRead();
           }
         })
         .catch((err: unknown) => console.error("[messages/thread] read-back failed", err));
@@ -147,7 +154,7 @@ export function Thread({
   // keeps the composer above the browser's own chrome on a phone. Part 5
   // rebuilds this thread; the height stays a shell concern until then.
   return (
-    <div className="flex h-[calc(100dvh-18rem)] min-h-96 flex-col md:h-[calc(100dvh-14rem)]">
+    <div className={className ?? "flex h-[calc(100dvh-18rem)] min-h-96 flex-col md:h-[calc(100dvh-14rem)]"}>
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto pr-1" aria-live="polite">
         {hasOlder && (
           <div className="flex justify-center py-2">

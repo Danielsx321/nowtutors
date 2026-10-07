@@ -5,6 +5,7 @@ import { bookingStatusMeta } from "@/lib/bookings/status";
 import { Badge } from "@/components/ui/badge";
 import { SessionRoom } from "@/components/features/session/session-room";
 import { hasElapsed, sessionDeadline } from "@/lib/sessions/deadline";
+import { getSessionChat } from "@/lib/messaging/session-chat";
 
 export const metadata = { title: "Session · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -65,6 +66,13 @@ export default async function SessionPage({
 
   const open = view.status === "in_progress" && !elapsed;
 
+  // The chat panel's thread (2026-09-30): the pair's conversation, opened with
+  // the student as starter if it does not exist yet. Only for a room that will
+  // actually render.
+  const chat = open
+    ? await getSessionChat({ studentId: view.studentId, tutorId: view.tutorId, viewerId: user.id })
+    : null;
+
   // The room draws its own top bar (heading, presence chip, clock), as in the
   // session-room mockup. The closed states keep a plain header with the status.
   return (
@@ -97,6 +105,7 @@ export default async function SessionPage({
           otherPartyAvatarUrl={view.otherPartyAvatarUrl}
           initialDeadline={deadline?.toISOString() ?? null}
           durationMinutes={view.durationMinutes}
+          chat={chat}
         />
       )}
     </div>

@@ -49,10 +49,27 @@ export type StartRefusal =
 export function canStartConversation(
   starter: StarterProfile,
   target: TargetProfile | null,
+  /**
+   * The pair already has a paid booking between them (2026-09-30). This is what
+   * lets a **tutor** open the thread: a student who booked them is not a
+   * stranger, and "running two minutes late" must not wait for the student to
+   * write first. Without it the tutor is refused as before, so a tutor still
+   * cannot message someone who only looked at their profile.
+   */
+  hasBookingTogether = false,
 ): { ok: true } | { ok: false; reason: StartRefusal } {
   if (starter.isSuspended) return { ok: false, reason: "starter_suspended" };
-  if (starter.role !== "student") return { ok: false, reason: "not_student" };
   if (target && target.id === starter.id) return { ok: false, reason: "self" };
+
+  if (starter.role === "tutor") {
+    if (!hasBookingTogether) return { ok: false, reason: "not_student" };
+    if (!target || target.role !== "student" || target.isSuspended) {
+      return { ok: false, reason: "target_unavailable" };
+    }
+    return { ok: true };
+  }
+
+  if (starter.role !== "student") return { ok: false, reason: "not_student" };
   if (
     !target ||
     target.role !== "tutor" ||
@@ -103,12 +120,12 @@ export function messagingRefusalMessage(
     case "self":
       return "You can't message yourself.";
     case "not_student":
-      return "Only students can start a conversation. You can reply to students who message you.";
+      return "Only students can start a conversation with a tutor. You can message a student once they've booked you.";
     case "starter_suspended":
     case "sender_suspended":
       return "Your account is suspended, so you can't send messages.";
     case "target_unavailable":
-      return "This tutor isn't available to message.";
+      return "This person isn't available to message.";
     case "empty":
       return "Write a message before sending.";
     case "too_long":
