@@ -9,7 +9,7 @@ import { SUBJECTS } from "./canonical-subjects";
 // Two throwaway accounts for a live two-person check: one approved tutor who
 // accepts instant requests and one student holding 100 credits (an instant
 // half hour at 20 credits an hour costs 10). Made for the first real video
-// session on production after PR #134 (Agora tokens minted in-app), 2026-10-07.
+// session on production after pull request 134 (Agora tokens minted in-app), 2026-10-07.
 //
 // Both carry an obviously fake name and a `@nowtutors.dev` address, and the
 // tutor is visible on /tutors while they exist, so remove them as soon as the
