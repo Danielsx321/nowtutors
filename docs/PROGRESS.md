@@ -4,13 +4,12 @@ _Read this first. Authoritative spec: `docs/SPEC.md`. Decisions log: `docs/DECIS
 
 ## Current state (2026-09-29)
 
-**MINI-PLAYER IN REVIEW on branch `session-mini-player`** (after the navy dashboard PR #125, also in review). An
-instant session now survives leaving the room: the call lives in `ActiveSessionProvider` in the root providers and
-shows in a draggable corner player on every other page, with Enlarge back to the room (DECISIONS, "Instant-session
-mini-player"). Automated lanes green. **Still to do live:** one two-person instant session on the dev server against
-the test project (student navigates to Messages and a tutor profile mid-session, video, sound and clock carry on in
-the player, Enlarge returns without the lobby, End from the player closes both sides, Log out releases the camera),
-then the same on production after merge. **Next:** Phase 10 Part 6 (launch).
+**PHASE 10 PART 6 (launch) PREP IN REVIEW on branch `phase-10-part6-launch`.** The navy dashboard (PR #125, `f43b2eb`)
+and the instant-session mini-player (PR #126, `d7a94bf`) are merged. Part 6 prep: `docs/LAUNCH.md` (decisions D1 to D6,
+preparation, the 18-step cutover with owner and proof per step, rollback, first-week watch) and three guarded production
+scripts (`db:migrate:prod`, `db:seed:prod-settings`, `db:verify-rls:prod`; `.env.production.local`, `CONFIRM_PROD=1`, refuse
+the dev and test refs). **Waiting on:** D1 region, D2 Bubble data, D3 real-card payer, D4 legal details (Noora), D5 Agora
+settings (Noora), then a launch session with Daniels. Still to see live: the mini-player at phone width, and on production.
 
 
 **PHASE 10 PART 5 (error and loading states, accessibility, record cleanup) IN REVIEW on branch
