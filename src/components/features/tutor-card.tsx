@@ -31,18 +31,48 @@ function cardState(t: TutorCardData) {
   return "offline" as const;
 }
 
-/** Up to three subject chips (the query already caps `subjects` at three). */
+const chipClass =
+  "rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-caption font-medium text-text";
+
+/** Up to `max` subject chips, wrapping freely (the row variant). */
 function SubjectChips({ subjects, max }: { subjects: string[]; max: number }) {
   const shown = subjects.filter(Boolean).slice(0, max);
   if (shown.length === 0) return null;
   return (
     <ul aria-label="Subjects" className="flex flex-wrap justify-end gap-1.5">
       {shown.map((s) => (
-        <li
-          key={s}
-          className="rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-caption font-medium text-text"
-        >
+        <li key={s} className={chipClass}>
           {s}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The grid card's chips: one chip per line, two lines at most, long names
+ * truncated, and a "+N" pill on the second line for the rest. Every card then
+ * spends the same height on subjects whatever the tutor teaches, which with
+ * `h-full` on the card is what keeps a row of cards level.
+ */
+function SubjectChipsFixed({ subjects }: { subjects: string[] }) {
+  const all = subjects.filter(Boolean);
+  const shown = all.slice(0, 2);
+  const more = all.length - shown.length;
+  // No subjects: keep the height, drop the list (nothing to announce).
+  if (shown.length === 0) return <div aria-hidden className="min-h-[3.5rem]" />;
+  return (
+    <ul aria-label="Subjects" className="flex min-h-[3.5rem] min-w-0 flex-col items-end gap-1.5">
+      {shown.map((s, i) => (
+        <li key={s} className="flex min-w-0 max-w-full items-center gap-1.5">
+          <span className={`${chipClass} block min-w-0 truncate`} title={s}>
+            {s}
+          </span>
+          {i === shown.length - 1 && more > 0 && (
+            <span className={`${chipClass} shrink-0`} aria-label={`${more} more subject${more > 1 ? "s" : ""}`}>
+              +{more}
+            </span>
+          )}
         </li>
       ))}
     </ul>
@@ -56,8 +86,8 @@ function SubjectChips({ subjects, max }: { subjects: string[]; max: number }) {
  * instant-available), the live chip on the photo only when live (an offline
  * tutor shows no status text: absence is the signal), the favourite heart, and
  * the name with the country on a navy strip along the photo's bottom edge;
- * under the photo the stacked rate beside up to three subject chips; one
- * full-width action. Experience and sessions moved to the profile's identity
+ * under the photo the stacked rate beside the subject chips (two lines at
+ * most, so every card is the same height); one full-width action. Experience and sessions moved to the profile's identity
  * line. No rating until reviews exist, after launch (SPEC §18).
  *
  * The action follows the state: blue "Request now" when a request can start a
@@ -172,7 +202,7 @@ export function TutorCard({
   }
 
   return (
-    <article data-state={state} className={`${cardClass} flex flex-col gap-3`}>
+    <article data-state={state} className={`${cardClass} flex h-full flex-col gap-3`}>
       {/* Static ring in a grid: many pulsing rings at once is noise; the chip carries the word. */}
       <OnAirRing active={state === "instant"} still className="block rounded-photo">
         <TutorPhoto
@@ -207,7 +237,7 @@ export function TutorCard({
             size="sm"
             stacked
           />
-          <SubjectChips subjects={tutor.subjects} max={3} />
+          <SubjectChipsFixed subjects={tutor.subjects} />
         </div>
 
         {/* One action, full width on the card. */}

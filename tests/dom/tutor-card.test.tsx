@@ -125,14 +125,16 @@ describe("TutorCard, grid", () => {
     expect(action.className).not.toMatch(/\bbg-live\b/);
   });
 
-  it("v3: up to three subject chips under the photo, none when there are no subjects", () => {
+  it("uniform cards: two subject lines under the photo, a +N pill for the rest, none when there are no subjects", () => {
     const card = renderCard(tutor({ subjects: ["Algebra", "Physics", "Chemistry", "Music"] }));
     const chips = within(card).getByRole("list", { name: "Subjects" });
     expect(within(chips).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Algebra",
-      "Physics",
-      "Chemistry",
+      "Physics+2",
     ]);
+    expect(within(chips).getByLabelText("2 more subjects")).toBeTruthy();
+    const two = renderCard(tutor({ subjects: ["Algebra", "Physics"] }));
+    expect(within(two).queryByText(/^\+\d/)).toBeNull();
     const bare = renderCard(tutor({ subjects: [] }));
     expect(within(bare).queryByRole("list", { name: "Subjects" })).toBeNull();
   });
