@@ -84,6 +84,7 @@ export function ProfileStage({
         src={avatarUrl}
         name={tutorName}
         sizes="(min-width: 1024px) 760px, 100vw"
+        fit="contain"
         className={cn("aspect-[16/9] w-full rounded-panel", mode.kind === "overlay" && "[&_img]:brightness-[0.55]")}
         initialsClassName="text-[96px]"
       />
