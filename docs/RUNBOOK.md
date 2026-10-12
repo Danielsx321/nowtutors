@@ -748,3 +748,35 @@ The test project's database is in Paris. Through a VPN with a US exit, every sta
 connection) ran past the specs' 20 s budgets. It looked like a hung server action and like machine load; it was
 neither. Check with `curl -s https://ipinfo.io/json` before a run. A network change during a run
 (`net::ERR_NETWORK_CHANGED`) fails the spec in flight; re-run that spec alone.
+
+## Tutor guide: editing, rebuilding the PDF, the one-off send (2026-10-12)
+
+The guide is `src/content/tutor-guide.ts` (DECISIONS, `tutor-guide`). To change it:
+
+1. Edit the text there, bump `updated`, keep links to routes in `lib/routes.ts` and no em dashes
+   (`tests/unit/tutor-guide.test.ts` checks both).
+2. `pnpm guide:pdf` rebuilds `public/tutor-guide.pdf` (one chromium, a few seconds). Commit the PDF with the
+   edit: the approval email attaches it by URL, so the deployed file is what tutors get.
+3. When an admin changes `platform_fee_percent`, `earnings_hold_hours`, `min_withdrawal_usd`,
+   `min_booking_notice_minutes`, `max_booking_days_ahead` or `session_durations`, the guide's "currently"
+   sentences need the same edit.
+
+To send the guide to every approved tutor (done once after it shipped; again only if it changes a lot):
+
+```bash
+cd ~/nowtutors
+CONFIRM_PROD=1 pnpm email:tutor-guide:prod -- --dry-run
+```
+
+That lists who would get it, emails masked, and sends nothing. Then:
+
+```bash
+CONFIRM_PROD=1 pnpm email:tutor-guide:prod
+```
+
+One line per tutor with the Resend id, 700 ms apart, a count at the end, exit 1 if any failed. Needs
+`.env.production.local` with `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`,
+`DIRECT_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` and `NEXT_PUBLIC_APP_URL=https://nowtutors.com`
+(copy from Vercel's Production env if the file was deleted at launch close-out); the script names each missing
+value and stops. `--only someone@example.com` sends to that one tutor. `pnpm email:tutor-guide -- --dry-run`
+(dev) and `:test` never reach Resend: they print envelopes through the log transport.

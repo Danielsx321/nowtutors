@@ -71,7 +71,9 @@ export const studentNav: NavItem[] = [
 /**
  * Tutor order: the daily loop first (Today, Bookings, Messages, Availability,
  * Earnings), then a divider, then the things visited now and then. Messages
- * moved up from ninth: a tutor who misses a message loses the booking.
+ * moved up from ninth: a tutor who misses a message loses the booking. Guide
+ * (the tutor guide, `content/tutor-guide.ts`) sits last: a reference page, not
+ * a daily stop.
  */
 export const tutorNav: NavItem[] = [
   { label: "Today", href: "/tutor", icon: Home },
@@ -83,6 +85,7 @@ export const tutorNav: NavItem[] = [
   { label: "Broadcasts", href: "/tutor/broadcasts", icon: Radio },
   { label: "Profile", href: "/tutor/profile", icon: UserRound },
   { label: "Settings", href: "/tutor/settings", icon: Settings },
+  { label: "Guide", href: "/tutor/guide", icon: BookOpen },
 ];
 
 export const adminNav: NavItem[] = [

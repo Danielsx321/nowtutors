@@ -48,7 +48,7 @@ export default async function PendingApprovalPage() {
           rejected
             ? tp?.note ??
               "Please contact support if you think this was a mistake."
-            : "Our team reviews new tutor profiles before they go live. You'll get an email as soon as you're approved — usually within a day."
+            : "Our team reviews new tutor profiles before they go live. You'll get an email as soon as you're approved, usually within a day."
         }
         action={
           <form action={signOut}>
@@ -58,6 +58,20 @@ export default async function PendingApprovalPage() {
           </form>
         }
       />
+      {rejected ? null : (
+        <p className="mt-6 text-center text-small text-text-muted">
+          While you wait,{" "}
+          <a
+            href="/tutor-guide.pdf"
+            target="_blank"
+            rel="noopener"
+            className="focus-ring rounded-sm text-accent underline"
+          >
+            read the tutor guide
+          </a>{" "}
+          (PDF): going live, taking a request, and how you get paid.
+        </p>
+      )}
     </div>
   );
 }

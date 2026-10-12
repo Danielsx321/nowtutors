@@ -1,7 +1,7 @@
 import * as React from "react";
 import { render } from "@react-email/render";
 import { templates, type TemplateContext } from "./templates";
-import type { EmailPropsByType, EmailType, Recipient } from "@/lib/email/types";
+import type { EmailAttachment, EmailPropsByType, EmailType, Recipient } from "@/lib/email/types";
 import { firstNameOf } from "@/lib/email/format";
 import { PREFERENCE_BY_TYPE } from "@/lib/email/preferences";
 import { isExistingRoute } from "@/lib/routes";
@@ -21,7 +21,7 @@ export interface RenderedEmail {
   subject: string;
   html: string;
   text: string;
-  attachments?: Array<{ filename: string; content: string; contentType?: string }>;
+  attachments?: EmailAttachment[];
 }
 
 /**
