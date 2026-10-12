@@ -17,6 +17,9 @@ import type { Recipient } from "../lib/email/types";
 // Flags:
 //   --dry-run        list who would get it (emails masked) and send nothing
 //   --only <email>   send to that one approved tutor, nobody else
+//   --to <email>     a preview: send the rendered email to that address, whoever
+//                    it is (an admin checking the copy), without reading the
+//                    tutor list; the greeting uses the name before the @
 //
 // Run via the pnpm scripts, never directly:
 //   pnpm email:tutor-guide -- --dry-run                 dev project, log transport
@@ -37,6 +40,10 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const onlyAt = process.argv.indexOf("--only");
 const ONLY = onlyAt >= 0 ? process.argv[onlyAt + 1]?.trim().toLowerCase() : undefined;
 if (onlyAt >= 0 && !ONLY) throw new Error("--only needs an email address after it.");
+const toAt = process.argv.indexOf("--to");
+const TO = toAt >= 0 ? process.argv[toAt + 1]?.trim().toLowerCase() : undefined;
+if (toAt >= 0 && !TO) throw new Error("--to needs an email address after it.");
+if (TO && (ONLY || DRY_RUN)) throw new Error("--to is a preview send on its own; drop --only and --dry-run.");
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -93,7 +100,7 @@ async function approvedTutors(): Promise<ProfileRow[]> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  const rows = await approvedTutors();
+  const rows = TO ? [] : await approvedTutors();
   const skipped: string[] = [];
   const targets: Recipient[] = [];
   for (const r of rows) {
@@ -117,6 +124,17 @@ async function main() {
     });
   }
   if (ONLY && targets.length === 0) throw new Error(`No approved, unsuspended tutor with the email ${ONLY}.`);
+  if (TO) {
+    targets.push({
+      id: "preview",
+      email: TO,
+      fullName: TO.split("@")[0],
+      displayName: null,
+      timezone: null,
+      notificationPreferences: {},
+      role: "tutor",
+    });
+  }
 
   console.log(`[tutor-guide] env=${dbEnv} approved=${rows.length} to send=${targets.length} skipped=${skipped.length}`);
   for (const s of skipped) console.log(`  skip ${s}`);

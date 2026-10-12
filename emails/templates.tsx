@@ -125,19 +125,20 @@ export const templates: { [T in EmailType]: Template<T> } = {
     subject: () => "Your NowTutors tutor guide",
     body: (_p, ctx) => (
       <Shell
-        preview="Going live, taking a request, bookings, and how you get paid."
-        heading={`Your tutor guide, ${ctx.firstName}.`}
+        preview="Everything you need for your first week, in one place."
+        heading={`Congratulations on joining as a tutor, ${ctx.firstName}.`}
         cta={{ label: "Read the guide", href: ctx.url("/tutor/guide") }}
         footerNote={replyLine(ctx)}
       >
         <P>
-          You were approved before we had this written, so here it is now. The guide walks through the
-          site the way your first week does: your profile, going live, what happens when a request comes
-          in, bookings ahead, the classroom, and how you get paid.
+          Your profile is approved and students can find you from today. To make your first week easy,
+          we&rsquo;ve put together a short guide: setting up your profile, going live, what happens when
+          a request comes in, bookings ahead, the classroom, and how you get paid.
         </P>
         <P>
           It&rsquo;s attached as a PDF, and it&rsquo;s always under{" "}
           <A href={ctx.url("/tutor/guide")}>Guide</A> in your sidebar, where the newest version lives.
+          Give it ten minutes before your first session and the rest takes care of itself.
         </P>
       </Shell>
     ),
