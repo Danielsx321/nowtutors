@@ -42,10 +42,15 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !serviceKey) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
 
-const missing = ["EMAIL_FROM", "NEXT_PUBLIC_APP_URL"].filter((k) => !process.env[k]?.trim());
-if (dbEnv === "prod" && !process.env.RESEND_API_KEY?.trim()) missing.push("RESEND_API_KEY");
+// A dry run only reads the database. The email values are checked before a
+// real send, so the list can be looked at before the env file is complete.
+const missing = DRY_RUN ? [] : ["EMAIL_FROM", "NEXT_PUBLIC_APP_URL"].filter((k) => !process.env[k]?.trim());
+if (!DRY_RUN && dbEnv === "prod" && !process.env.RESEND_API_KEY?.trim()) missing.push("RESEND_API_KEY");
 if (missing.length) {
-  throw new Error(`Refusing to run: ${missing.join(", ")} not set in the env file for --env=${dbEnv}.`);
+  throw new Error(
+    `Refusing to send: ${missing.join(", ")} not set in the env file for --env=${dbEnv}. ` +
+      "Copy the values from Vercel's Production environment (docs/RUNBOOK.md, Tutor guide).",
+  );
 }
 
 const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
