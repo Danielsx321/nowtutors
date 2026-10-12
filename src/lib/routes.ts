@@ -43,6 +43,7 @@ export const EXISTING_ROUTES = [
   "/tutor/profile",
   "/tutor/settings",
   "/tutor/withdrawals",
+  "/tutor/guide",
   "/tutor/pending-approval",
   // Admin
   "/admin",

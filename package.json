@@ -32,7 +32,11 @@
     "db:seed:test-users:prod": "node scripts/with-ca-certs.mjs tsx src/db/seed-test-users.ts --env=prod",
     "db:verify-rls": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls.ts --env=dev",
     "db:verify-rls:test": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls.ts --env=test",
-    "db:verify-rls:prod": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls-prod.ts --env=prod"
+    "db:verify-rls:prod": "node scripts/with-ca-certs.mjs tsx src/db/verify-rls-prod.ts --env=prod",
+    "guide:pdf": "tsx scripts/build-tutor-guide-pdf.ts",
+    "email:tutor-guide": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=dev",
+    "email:tutor-guide:test": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=test",
+    "email:tutor-guide:prod": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=prod"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

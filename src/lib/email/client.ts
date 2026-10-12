@@ -32,7 +32,12 @@ export function resendTransport(apiKey: string): EmailTransport {
         subject: message.subject,
         html: message.html,
         text: message.text,
-        attachments: message.attachments,
+        attachments: message.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          path: a.path,
+          contentType: a.contentType,
+        })),
       });
       if (error) return { ok: false, error: `${error.name}: ${error.message}` };
       return { ok: true, id: data?.id ?? null };

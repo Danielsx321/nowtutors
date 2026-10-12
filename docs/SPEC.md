@@ -684,6 +684,8 @@ TUTOR  (layout guards role = tutor + approval_status = approved)
 /tutor/messages[/[conversationId]]
 /tutor/settings                    (Phase 10 Part 4) Timezone, email notifications, password, then the
                                    PayPal payout email. The name is edited on /tutor/profile
+/tutor/guide                       (2026-10-12) The tutor guide, `content/tutor-guide.ts`, rendered long-form;
+                                   "Guide" last in the sidebar. The same content prints to public/tutor-guide.pdf
 /tutor/pending-approval            Shown instead of /tutor when approval_status != approved
 
 SESSION  (participants only)
@@ -1659,7 +1661,9 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
 Student: booking confirmed (with `.ics`) **(built)**, reminder 24h **(built)**, reminder 1h **(built)**, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**, new message while away **(built, Part 3)**.
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**.
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**.
+
+**The tutor guide PDF (2026-10-12).** `public/tutor-guide.pdf` is built from `content/tutor-guide.ts` by `pnpm guide:pdf` (Playwright chromium, `scripts/build-tutor-guide-pdf.ts`) and committed. The approval email and the `tutor-guide` email attach it **by URL** (`EmailAttachment.path`, which Resend fetches from the site) and link `/tutor/guide`; `/tutor/pending-approval` links the PDF for applicants. Attachments are therefore `content` (base64, the `.ics` files) or `path` (a URL), never both.
 Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.
 
 **When each booking and payment email goes out (Part 2).** Every one is queued after its transaction commits, at a point that happens once:

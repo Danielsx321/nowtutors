@@ -11,6 +11,7 @@ export type EmailType =
   | "tutor-welcome"
   | "tutor-approved"
   | "tutor-rejected"
+  | "tutor-guide"
   | "withdrawal-requested"
   | "withdrawal-paid"
   | "withdrawal-rejected"
@@ -47,6 +48,8 @@ export interface EmailPropsByType {
   "tutor-welcome": Record<string, never>;
   "tutor-approved": Record<string, never>;
   "tutor-rejected": { note: string };
+  /** The one-off guide send (`db/send-tutor-guide.ts`) for tutors approved before the guide existed. */
+  "tutor-guide": Record<string, never>;
   "withdrawal-requested": {
     amountCredits: number;
     /** `numeric(10,2)` text, e.g. `"30.66"`. */
@@ -132,8 +135,19 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text: string;
-  /** `content` is base64, which is what Resend expects for a string. */
-  attachments?: Array<{ filename: string; content: string; contentType?: string }>;
+  /**
+   * `content` is base64, which is what Resend expects for a string. `path` is
+   * a URL Resend fetches itself, used for the static tutor guide PDF so the
+   * bytes never ride through the app. One of the two is set.
+   */
+  attachments?: EmailAttachment[];
+}
+
+export interface EmailAttachment {
+  filename: string;
+  content?: string;
+  path?: string;
+  contentType?: string;
 }
 
 export type TransportResult = { ok: true; id: string | null } | { ok: false; error: string };

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Facts, P, Quote, Shell } from "./shell";
-import type { BookingFacts, EmailPropsByType, EmailType } from "@/lib/email/types";
+import type { BookingFacts, EmailAttachment, EmailPropsByType, EmailType } from "@/lib/email/types";
+import { tokens } from "@/lib/design/tokens";
 import { absoluteWhen, creditsLine, slugToWords, usdLine } from "@/lib/email/format";
 import { bookingIcs } from "@/lib/email/ics";
 import { maskEmail } from "@/lib/withdrawals/mask-email";
@@ -28,11 +29,8 @@ export interface TemplateContext {
 export interface Template<T extends EmailType> {
   subject(props: EmailPropsByType[T], ctx: TemplateContext): string;
   body(props: EmailPropsByType[T], ctx: TemplateContext): React.ReactElement;
-  /** Files to attach. Content is base64 (what Resend takes as a string). */
-  attachments?(
-    props: EmailPropsByType[T],
-    ctx: TemplateContext,
-  ): Array<{ filename: string; content: string; contentType: string }>;
+  /** Files to attach: base64 `content`, or a `path` URL Resend fetches. */
+  attachments?(props: EmailPropsByType[T], ctx: TemplateContext): EmailAttachment[];
 }
 
 const when = (p: BookingFacts, ctx: TemplateContext) => absoluteWhen(new Date(p.startAt), ctx.timezone);
@@ -57,6 +55,25 @@ function icsAttachment(p: BookingFacts, ctx: TemplateContext, path: string, with
     },
   ];
 }
+
+/**
+ * The tutor guide, `public/tutor-guide.pdf`, built from `content/tutor-guide.ts`
+ * by `pnpm guide:pdf`. Attached by URL: Resend fetches it from the site, so the
+ * approval send carries no bytes and the template stays free of `node:fs`
+ * (the kitchen sink imports this file on the client).
+ */
+const guidePdf = (ctx: TemplateContext): EmailAttachment => ({
+  filename: "NowTutors tutor guide.pdf",
+  path: ctx.url("/tutor-guide.pdf"),
+  contentType: "application/pdf",
+});
+
+/** An inline link in a body paragraph, in the site's accent like the shell's links. */
+const A = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <a href={href} style={{ color: tokens.accent.light }}>
+    {children}
+  </a>
+);
 
 const replyLine = (ctx: TemplateContext) =>
   ctx.replyTo ? `Reply to this email and it reaches ${ctx.replyTo}.` : "Reply to this email if anything looks wrong.";
@@ -94,8 +111,37 @@ export const templates: { [T in EmailType]: Template<T> } = {
           Go live when you&rsquo;re ready to take instant requests, or set your availability so students
           can book ahead. Your earnings show on the dashboard as sessions complete.
         </P>
+        <P>
+          We&rsquo;ve written a short tutor guide: going live, taking a request, joining a booked session,
+          and how you get paid. It&rsquo;s attached, and it&rsquo;s always under{" "}
+          <A href={ctx.url("/tutor/guide")}>Guide</A> in your sidebar.
+        </P>
       </Shell>
     ),
+    attachments: (_p, ctx) => [guidePdf(ctx)],
+  },
+
+  "tutor-guide": {
+    subject: () => "Your NowTutors tutor guide",
+    body: (_p, ctx) => (
+      <Shell
+        preview="Going live, taking a request, bookings, and how you get paid."
+        heading={`Your tutor guide, ${ctx.firstName}.`}
+        cta={{ label: "Read the guide", href: ctx.url("/tutor/guide") }}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          You were approved before we had this written, so here it is now. The guide walks through the
+          site the way your first week does: your profile, going live, what happens when a request comes
+          in, bookings ahead, the classroom, and how you get paid.
+        </P>
+        <P>
+          It&rsquo;s attached as a PDF, and it&rsquo;s always under{" "}
+          <A href={ctx.url("/tutor/guide")}>Guide</A> in your sidebar, where the newest version lives.
+        </P>
+      </Shell>
+    ),
+    attachments: (_p, ctx) => [guidePdf(ctx)],
   },
 
   "tutor-rejected": {
@@ -569,6 +615,7 @@ const SAMPLE_BOOKING: BookingFacts = {
 export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
   "tutor-welcome": {},
   "tutor-approved": {},
+  "tutor-guide": {},
   "tutor-rejected": { note: "Your intro video is missing sound. Re-upload it and we'll take another look." },
   "withdrawal-requested": { amountCredits: 23, amountUsd: "30.66", destination: "tina.reyes@example.com" },
   "withdrawal-paid": {

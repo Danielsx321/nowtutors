@@ -5385,3 +5385,38 @@ No migration, no dependency, no change on the live site until `NEXT_PUBLIC_APP_U
 1. **The client's slogan is "Instant Quality Tutoring".** The share card and the site description carried "Live tutoring. Find a tutor and learn now.", which the client flagged as wrong. `layout.tsx` description is now "Instant Quality Tutoring." for Open Graph, Twitter and the meta description.
 2. **New card `public/brand/og.v2.png`, `og.v1.png` deleted.** A new filename because `/brand/*` is cached for good, and WhatsApp and other apps cache link previews by image URL. Same layout as v1: wordmark in white on `ink` navy, slogan in white below, `highlight` rule.
 3. **The card now has a generator, `scripts/render-og-card.mjs`** (sharp, already in `node_modules` through Next). Run from the repo root with `node scripts/render-og-card.mjs`; edit `SLOGAN` and bump `OUT`.
+
+## Tutor guide: one content module, three renderings (`tutor-guide`, 2026-10-12)
+
+Daniels' idea: after approval, a tutor gets a guide to the site, attached to the approval email and readable
+from a section of the app, and the tutors already approved get it too.
+
+1. **The guide is data, `src/content/tutor-guide.ts`, not MDX.** Twelve sections of typed blocks (`p`, `list`,
+   `steps`, `note`) with one bit of markup, `[label](/path)`, parsed by `content/inline.ts`. `/tutor/guide`
+   renders it with React; `scripts/build-tutor-guide-pdf.ts` renders the same object to HTML and prints it to
+   `public/tutor-guide.pdf` with Playwright's chromium (already installed for E2E). One source, so the page,
+   the PDF and the sidebar never disagree, and `tests/unit/tutor-guide.test.ts` can walk every link against
+   `lib/routes.ts` and refuse an em dash.
+2. **Attached by URL, not bytes.** Resend's `attachments[].path` is a URL it fetches. The approval email
+   therefore carries no base64 blob, `emails/templates.tsx` stays free of `node:fs` (the kitchen sink imports
+   it on the client), and nothing depends on whether Vercel's function bundle can read `public/` with `fs`.
+   `EmailAttachment` allows `content` or `path`; the `.ics` files keep using `content`.
+3. **The page requires approval, like every tutor page.** The "section on the site" is the sidebar, where
+   Guide sits last (a reference page, not a daily stop). Applicants get the PDF link on
+   `/tutor/pending-approval`, which lives in its own group precisely so they never see a sidebar of pages
+   they can't open.
+4. **Numbers are static with "currently", the way `/legal/terms` writes them.** Fee 25%, hold 48 h, minimum
+   $30, booking notice 2 h, 7 days ahead, 30/60/90/120 minutes. The PDF can't read settings live, and a page
+   that says 48 hours beside a PDF that says "see settings" is worse than both saying 48 hours. RUNBOOK says
+   to edit the guide and rebuild the PDF when an admin changes one.
+5. **The one-off send is a guarded script, `src/db/send-tutor-guide.ts`, not a hook and not Gmail.**
+   `pnpm email:tutor-guide:prod` with `CONFIRM_PROD=1` lists approved, unsuspended tutors through the
+   Supabase admin client, renders `tutor-guide` with `renderEmail` and sends through the Resend transport
+   directly: `lib/email/index.ts` is `server-only` and uses Next's `after()`, and `send.ts` pulls in
+   `@sentry/nextjs`, none of which exist in a script. `--dry-run` lists and sends nothing; `--only <email>`
+   sends to one. **Dev and test always use the log transport whatever the env file holds**: the dev project
+   still carries real sign-ups from before the 2026-10-07 cutover, and the first dry run listed six of them.
+6. **`tutor-guide` is `"always"`.** Sent once, by a person, to accounts that applied to teach. None of the four
+   preference flags fits, and opting out of a one-off guide is not a thing a tutor needs.
+7. **The PDF is committed and tested for presence, not built in CI or at `next build`.** CI has no chromium
+   and a deploy shouldn't run one for a file that changes a few times a year.

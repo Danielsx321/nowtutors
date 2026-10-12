@@ -27,6 +27,7 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "tutor-welcome": "/tutor/pending-approval",
   "tutor-approved": "/tutor",
   "tutor-rejected": "/tutor/pending-approval",
+  "tutor-guide": "/tutor/guide",
   "withdrawal-requested": "/tutor/withdrawals",
   "withdrawal-paid": "/tutor/withdrawals",
   "withdrawal-rejected": "/tutor/withdrawals",
@@ -60,6 +61,20 @@ describe("email templates", () => {
       expect(out.text.length).toBeGreaterThan(80);
     });
   }
+
+  it("attaches the tutor guide by URL to the approval and the guide emails, and links the page", async () => {
+    for (const type of ["tutor-approved", "tutor-guide"] as const) {
+      const out = await renderEmail(type, {}, { recipient, appUrl });
+      expect(out.attachments).toHaveLength(1);
+      expect(out.attachments?.[0]).toMatchObject({
+        filename: "NowTutors tutor guide.pdf",
+        path: "https://nowtutors.test/tutor-guide.pdf",
+        contentType: "application/pdf",
+      });
+      expect(out.attachments?.[0].content).toBeUndefined();
+      expect(out.html).toContain("https://nowtutors.test/tutor/guide");
+    }
+  });
 
   it("greets by first name and never prints a full PayPal address", async () => {
     const out = await renderEmail("withdrawal-paid", SAMPLE_PROPS["withdrawal-paid"], { recipient, appUrl });
@@ -96,7 +111,7 @@ describe("Part 2 templates", () => {
   it("attaches a calendar invite to both confirmations, in the recipient's zone in the body", async () => {
     const student = await renderEmail("booking-confirmed", SAMPLE_PROPS["booking-confirmed"], { recipient, appUrl });
     expect(student.attachments).toHaveLength(1);
-    const ics = Buffer.from(student.attachments![0].content, "base64").toString("utf8");
+    const ics = Buffer.from(student.attachments![0].content ?? "", "base64").toString("utf8");
     expect(ics).toContain("DTSTART:20261002T153000Z");
     expect(ics).toContain("UID:3f0c1b7e-0000-4000-8000-000000000001@nowtutors");
     // 15:30 UTC is 17:30 in Madrid on 2 Oct (summer time).
