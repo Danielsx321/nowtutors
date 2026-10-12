@@ -23,13 +23,13 @@ const funnelSans = Funnel_Sans({
   display: "swap",
 });
 
-const description = "Live tutoring marketplace: find a tutor and learn now.";
+const description = "Instant Quality Tutoring.";
 
 // Relative image and canonical URLs resolve against `metadataBase`, which
 // follows NEXT_PUBLIC_APP_URL (then the deployment's own host, then localhost).
 // The share card is a versioned brand file so it can be cached for good, like
 // the wordmark (next.config.ts, "/brand/:file*").
-const ogImage = { url: "/brand/og.v1.png", width: 1200, height: 630, alt: "NowTutors: live tutoring marketplace" };
+const ogImage = { url: "/brand/og.v2.png", width: 1200, height: 630, alt: "NowTutors: live tutoring marketplace" };
 
 export const metadata: Metadata = {
   metadataBase: resolveSiteUrl(),
