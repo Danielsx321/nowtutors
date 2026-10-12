@@ -1693,7 +1693,8 @@ after the migration: `/`, `/?live=1`, `/tutors/tom-turner`, `/login` all `200`.
 
 - **Tutor guide one-off send (2026-10-12).** `/tutor/guide`, the PDF and the approval attachment shipped
   (DECISIONS, `tutor-guide`). The `tutor-guide` email to the tutors approved before it existed is sent by
-  Daniels with `CONFIRM_PROD=1 pnpm email:tutor-guide:prod` (RUNBOOK) once Noora has read the PDF. Not sent yet.
+  Daniels with `CONFIRM_PROD=1 pnpm email:tutor-guide:prod` (RUNBOOK). **Sent 2026-10-12: 14 tutors, 0 failed.**
+  Closed.
 - **Delete account (SPEC §6) is not built.** Needs a decision: what happens to unspent student credits, unpaid
   tutor earnings, and the append-only ledger rows of a deleted user. Both settings pages say to contact support.
 
