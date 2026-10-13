@@ -99,12 +99,14 @@ export default async function AdminUserPage({
 
       {detail.tutor && (
         <TutorApprovalCard
+          key={detail.id}
           tutor={{
             userId: detail.id,
             slug: detail.tutor.slug,
             approvalStatus: detail.tutor.approvalStatus,
             approvalNote: detail.tutor.approvalNote,
             avatarUrl: detail.tutor.avatarUrl,
+            resubmitted: detail.tutor.resubmitted,
           }}
         />
       )}

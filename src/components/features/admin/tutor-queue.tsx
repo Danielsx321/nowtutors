@@ -47,10 +47,13 @@ export interface QueueTutor {
 function RequestChangesForm({
   tutorId,
   onCancel,
+  onDone,
   onError,
 }: {
   tutorId: string;
   onCancel: () => void;
+  /** Called after a successful send: the parent closes the form. */
+  onDone: () => void;
   onError: (message: string | null) => void;
 }) {
   const [reasons, setReasons] = React.useState<ChangeReason[]>([]);
@@ -58,6 +61,13 @@ function RequestChangesForm({
   const [pending, start] = React.useTransition();
   const toggle = (key: ChangeReason, on: boolean) =>
     setReasons((r) => (on ? Array.from(new Set([...r, key])) : r.filter((k) => k !== key)));
+  // The email already carries one line of guidance per ticked box, so the note
+  // is optional. The placeholder shows those lines, so the admin sees what the
+  // tutor will read and only types what the boxes don't say.
+  const placeholder =
+    reasons.length === 0
+      ? "Tick a box above, or write what to change here."
+      : reasons.map((k) => changeReason(k).guidance).join(" ");
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-muted p-4">
@@ -75,11 +85,18 @@ function RequestChangesForm({
         ))}
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor={`changes-${tutorId}`}>Anything else (emailed to the tutor)</Label>
-        <Textarea id={`changes-${tutorId}`} rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+        <Label htmlFor={`changes-${tutorId}`}>Anything else (optional, emailed to the tutor)</Label>
+        <Textarea
+          id={`changes-${tutorId}`}
+          rows={3}
+          value={note}
+          placeholder={placeholder}
+          onChange={(e) => setNote(e.target.value)}
+        />
       </div>
       <p className="text-caption text-text-muted">
-        They leave the site until you approve them again. Sessions already booked still run.
+        Each ticked box is sent with the guidance shown above. They leave the site until you approve them again.
+        Sessions already booked still run.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -89,6 +106,11 @@ function RequestChangesForm({
               onError(null);
               const res = await requestTutorChanges({ tutorId, reasons, note });
               if ("error" in res) onError(res.error);
+              else {
+                setReasons([]);
+                setNote("");
+                onDone();
+              }
             })
           }
         >
@@ -224,7 +246,12 @@ export function PendingCard({ tutor, resubmitted = false }: { tutor: QueueTutor;
         {error && <Alert variant="danger">{error}</Alert>}
 
         {showChanges && (
-          <RequestChangesForm tutorId={tutor.userId} onCancel={() => setShowChanges(false)} onError={setError} />
+          <RequestChangesForm
+            tutorId={tutor.userId}
+            onCancel={() => setShowChanges(false)}
+            onDone={() => setShowChanges(false)}
+            onError={setError}
+          />
         )}
 
         {showReject && !showChanges && (
@@ -318,7 +345,12 @@ export function ChangedCard({ tutor }: { tutor: QueueTutor }) {
         <Detail tutor={tutor} />
         {error && <Alert variant="danger">{error}</Alert>}
         {showChanges && (
-          <RequestChangesForm tutorId={tutor.userId} onCancel={() => setShowChanges(false)} onError={setError} />
+          <RequestChangesForm
+            tutorId={tutor.userId}
+            onCancel={() => setShowChanges(false)}
+            onDone={() => setShowChanges(false)}
+            onError={setError}
+          />
         )}
 
         <div className="flex flex-wrap gap-2">
@@ -426,19 +458,27 @@ export function TutorApprovalCard({
     approvalStatus: "pending" | "approved" | "rejected" | "changes_requested";
     approvalNote: string | null;
     avatarUrl: string | null;
+    /** On hold and saved since: the fix is in and Approve means "seen it". */
+    resubmitted: boolean;
   };
 }) {
   const [note, setNote] = React.useState("");
-  const [mode, setMode] = React.useState<"idle" | "changes" | "reject">("idle");
+  const [mode, setMode] = React.useState<"idle" | "changes" | "reject" | "undo">("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, start] = React.useTransition();
   const blocker = approvalBlocker(tutor);
   const status = tutor.approvalStatus;
+  // On hold with nothing saved: Approve would mean approving a fix that does
+  // not exist, so it is not offered. The hold can still be undone, as a
+  // deliberate second click, for the case where the hold was the mistake.
+  const waitingOnTutor = status === "changes_requested" && !tutor.resubmitted;
   const label =
     status === "approved"
       ? "Approved and on the site"
       : status === "changes_requested"
-        ? "On hold, waiting on the tutor"
+        ? tutor.resubmitted
+          ? "Resubmitted: the tutor saved changes, review and approve"
+          : "On hold, waiting on the tutor: nothing saved since the request"
         : status === "pending"
           ? "Waiting for a first decision"
           : "Rejected";
@@ -459,7 +499,12 @@ export function TutorApprovalCard({
         {error && <Alert variant="danger">{error}</Alert>}
 
         {mode === "changes" && (
-          <RequestChangesForm tutorId={tutor.userId} onCancel={() => setMode("idle")} onError={setError} />
+          <RequestChangesForm
+            tutorId={tutor.userId}
+            onCancel={() => setMode("idle")}
+            onDone={() => setMode("idle")}
+            onError={setError}
+          />
         )}
         {mode === "reject" && (
           <div className="space-y-1.5">
@@ -470,12 +515,18 @@ export function TutorApprovalCard({
           </div>
         )}
 
-        {blocker && status !== "approved" && (
+        {blocker && status !== "approved" && !waitingOnTutor && (
           <p className="text-small font-medium text-spark-text">{approvalBlockerMessage(blocker)}</p>
+        )}
+        {mode === "undo" && (
+          <Alert variant="warning">
+            Undo the hold? They haven&rsquo;t changed anything. They go back on the site as they are and get the
+            &ldquo;You&rsquo;re back&rdquo; email.
+          </Alert>
         )}
         {mode !== "changes" && (
           <div className="flex flex-wrap gap-2">
-            {status !== "approved" && status !== "rejected" && mode === "idle" && (
+            {status !== "approved" && status !== "rejected" && !waitingOnTutor && mode === "idle" && (
               <Button
                 loading={pending}
                 disabled={!!blocker}
@@ -495,6 +546,27 @@ export function TutorApprovalCard({
               <Button variant="outline" onClick={() => setMode("changes")}>
                 <Pencil aria-hidden />
                 Request changes
+              </Button>
+            )}
+            {waitingOnTutor && mode === "idle" && (
+              <Button variant="outline" disabled={!!blocker} onClick={() => setMode("undo")}>
+                Put back live without changes
+              </Button>
+            )}
+            {mode === "undo" && (
+              <Button
+                variant="danger"
+                loading={pending}
+                onClick={() =>
+                  start(async () => {
+                    setError(null);
+                    const res = await approveTutor({ tutorId: tutor.userId });
+                    if ("error" in res) setError(res.error);
+                    else setMode("idle");
+                  })
+                }
+              >
+                Yes, put them back live
               </Button>
             )}
             {status !== "rejected" && mode === "reject" && (
@@ -518,7 +590,7 @@ export function TutorApprovalCard({
                 Reject
               </Button>
             )}
-            {mode === "reject" && (
+            {(mode === "reject" || mode === "undo") && (
               <Button variant="outline" onClick={() => setMode("idle")}>
                 Cancel
               </Button>
