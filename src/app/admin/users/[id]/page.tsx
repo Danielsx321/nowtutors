@@ -99,6 +99,7 @@ export default async function AdminUserPage({
 
       {detail.tutor && (
         <TutorApprovalCard
+          key={detail.id}
           tutor={{
             userId: detail.id,
             slug: detail.tutor.slug,
