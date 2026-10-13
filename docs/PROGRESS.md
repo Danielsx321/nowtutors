@@ -22,6 +22,8 @@ dashboard top bar with section tabs and the header's active underline; navy on b
 then a floating, draggable mini-player so an instant session survives navigating away, with Enlarge back to the
 room.
 
+- **Request changes: a tutor on hold with a reason (`tutor-request-changes`, 2026-10-13). Merged via PR #144 (`084c07f`), migration 0025 applied on production the same day.** A fourth `approval_status`, `changes_requested`: the admin ticks reasons and adds a note, the tutor leaves the site, keeps `/tutor/profile`, gets `tutor-changes-requested`, and lands under the new Resubmitted tab when they save; Approve from there sends `tutor-back-live`. Reasons and note share `approval_note` (`lib/tutors/change-reasons.ts`); the resubmit signal is `profile_changed_at > profile_reviewed_at`. Gates: typecheck, lint, unit 1002, DOM 209, build; walked through on dev. **Still to do on production:** put Noora's two circled tutors on hold for Photo and watch the Resend log for the two emails. DECISIONS has the entry; RUNBOOK "Tutor approvals" has the admin how-to.
+
 - **Agora tokens minted in-app (`agora-token-in-app`, 2026-10-07). Merged via PR #134 (`3f0a771`).** `POST /api/agora/token` builds the
   token itself with Agora's `agora-token` package from the App ID and a new server-only `AGORA_APP_CERTIFICATE`,
   instead of calling the Render free-tier token service (unauthenticated, near its monthly hour cap, crashed 27 Sep).

@@ -798,5 +798,5 @@ review** is approved tutors who changed something material; they stay live.
 
 The audit log records every step (`tutor.request_changes` carries the reasons). Migration `drizzle/0025`
 added the `changes_requested` value; **production: apply with `CONFIRM_PROD=1 pnpm db:migrate:prod` from
-`~/nowtutors` on `main` after the PR merges** (date it here when done: ____).
+`~/nowtutors` on `main` after the PR merges** (applied 2026-10-13, 25 then 26 rows in `drizzle.__drizzle_migrations`; PR #144 merged the same day).
 
