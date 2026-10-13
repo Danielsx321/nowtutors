@@ -44,6 +44,11 @@ export function TutorPhoto({
   fit?: "cover" | "contain";
 }) {
   const [failed, setFailed] = React.useState(false);
+  // A new src is a new photo: forget the last one's failure, or a replaced
+  // broken photo would show initials until a reload (avatar-crop, 2026-10-13).
+  React.useEffect(() => {
+    setFailed(false);
+  }, [src]);
   const showImg = src && !failed;
   return (
     <div className={cn("relative overflow-hidden rounded-lg bg-surface-muted", className)}>

@@ -5445,3 +5445,22 @@ into the editor, the admin fixing the photo by email. Plan: workspace `plans/202
 7. **No admin email on resubmit** in this PR. The overview counts it ("2 tutors resubmitted") and the
    Resubmitted tab holds it; Noora checks the panel daily.
 
+## Photo crop on upload: see the card before it's saved (`avatar-crop`, 2026-10-13)
+
+Daniels, looking at `/tutors` after the first Request changes: "are we sure they are not uploading the
+right picture but the display is not fitting them well?" Partly yes. The card is a 16:10 frame with a
+fixed crop (`TutorPhoto`, `object-[50%_25%]`), a tutor never sees it, and a tall portrait with the face
+low in the frame comes out as chest and background. Plan: workspace `plans/2026-10-13-nowtutors-photo-crop.md`.
+
+1. **A crop step between choosing and uploading.** `PhotoCropModal` (`react-easy-crop`) shows the
+   photo inside the frame the site will use, with drag and zoom, a live card preview and a live
+   round-avatar preview drawn from the same crop area. Nothing is uploaded until "Use this photo".
+2. **One stored image, no schema change.** The 16:10 crop is what the card shows; the round avatar takes
+   its centre square, where a face sits in a head-and-shoulders frame. `lib/images/crop.ts` draws it to
+   a 1200×750 JPEG (0.86); students, whose only surface is the round avatar, crop to a 600×600 square.
+   Existing photos keep today's behaviour until the tutor changes them.
+3. **Admins judge the same crop.** The queue cards' `Detail` shows the 16:10 card first, labelled "As
+   students see it", beside the round avatar, so a photo request is made on what students see.
+4. **Found on the way:** `Avatar` and `TutorPhoto` kept a `failed` flag across `src` changes, so a tutor
+   replacing a broken photo saw initials until a reload. Both reset on a new `src`.
+
