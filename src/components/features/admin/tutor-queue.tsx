@@ -458,19 +458,27 @@ export function TutorApprovalCard({
     approvalStatus: "pending" | "approved" | "rejected" | "changes_requested";
     approvalNote: string | null;
     avatarUrl: string | null;
+    /** On hold and saved since: the fix is in and Approve means "seen it". */
+    resubmitted: boolean;
   };
 }) {
   const [note, setNote] = React.useState("");
-  const [mode, setMode] = React.useState<"idle" | "changes" | "reject">("idle");
+  const [mode, setMode] = React.useState<"idle" | "changes" | "reject" | "undo">("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, start] = React.useTransition();
   const blocker = approvalBlocker(tutor);
   const status = tutor.approvalStatus;
+  // On hold with nothing saved: Approve would mean approving a fix that does
+  // not exist, so it is not offered. The hold can still be undone, as a
+  // deliberate second click, for the case where the hold was the mistake.
+  const waitingOnTutor = status === "changes_requested" && !tutor.resubmitted;
   const label =
     status === "approved"
       ? "Approved and on the site"
       : status === "changes_requested"
-        ? "On hold, waiting on the tutor"
+        ? tutor.resubmitted
+          ? "Resubmitted: the tutor saved changes, review and approve"
+          : "On hold, waiting on the tutor: nothing saved since the request"
         : status === "pending"
           ? "Waiting for a first decision"
           : "Rejected";
@@ -507,12 +515,18 @@ export function TutorApprovalCard({
           </div>
         )}
 
-        {blocker && status !== "approved" && (
+        {blocker && status !== "approved" && !waitingOnTutor && (
           <p className="text-small font-medium text-spark-text">{approvalBlockerMessage(blocker)}</p>
+        )}
+        {mode === "undo" && (
+          <Alert variant="warning">
+            Undo the hold? They haven&rsquo;t changed anything. They go back on the site as they are and get the
+            &ldquo;You&rsquo;re back&rdquo; email.
+          </Alert>
         )}
         {mode !== "changes" && (
           <div className="flex flex-wrap gap-2">
-            {status !== "approved" && status !== "rejected" && mode === "idle" && (
+            {status !== "approved" && status !== "rejected" && !waitingOnTutor && mode === "idle" && (
               <Button
                 loading={pending}
                 disabled={!!blocker}
@@ -532,6 +546,27 @@ export function TutorApprovalCard({
               <Button variant="outline" onClick={() => setMode("changes")}>
                 <Pencil aria-hidden />
                 Request changes
+              </Button>
+            )}
+            {waitingOnTutor && mode === "idle" && (
+              <Button variant="outline" disabled={!!blocker} onClick={() => setMode("undo")}>
+                Put back live without changes
+              </Button>
+            )}
+            {mode === "undo" && (
+              <Button
+                variant="danger"
+                loading={pending}
+                onClick={() =>
+                  start(async () => {
+                    setError(null);
+                    const res = await approveTutor({ tutorId: tutor.userId });
+                    if ("error" in res) setError(res.error);
+                    else setMode("idle");
+                  })
+                }
+              >
+                Yes, put them back live
               </Button>
             )}
             {status !== "rejected" && mode === "reject" && (
@@ -555,7 +590,7 @@ export function TutorApprovalCard({
                 Reject
               </Button>
             )}
-            {mode === "reject" && (
+            {(mode === "reject" || mode === "undo") && (
               <Button variant="outline" onClick={() => setMode("idle")}>
                 Cancel
               </Button>

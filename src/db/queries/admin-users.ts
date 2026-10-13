@@ -119,6 +119,8 @@ export interface AdminUserDetail {
     approvalNote: string | null;
     avatarUrl: string | null;
     isLive: boolean;
+    /** On hold and saved since (tutor-request-changes): the fix is in. */
+    resubmitted: boolean;
   } | null;
   /** Bookings where the user is student or tutor, counted by status. */
   bookingsByStatus: Record<string, number>;
@@ -154,6 +156,7 @@ export async function getAdminUserDetail(userId: string): Promise<AdminUserDetai
         approvalNote: tutorProfiles.approvalNote,
         avatarUrl: profiles.avatarUrl,
         isLive: tutorProfiles.isLive,
+        resubmitted: sql<boolean>`coalesce(${tutorProfiles.profileChangedAt} > ${tutorProfiles.profileReviewedAt}, false)`,
       })
       .from(tutorProfiles)
       .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))

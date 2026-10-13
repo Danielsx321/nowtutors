@@ -106,6 +106,7 @@ export default async function AdminUserPage({
             approvalStatus: detail.tutor.approvalStatus,
             approvalNote: detail.tutor.approvalNote,
             avatarUrl: detail.tutor.avatarUrl,
+            resubmitted: detail.tutor.resubmitted,
           }}
         />
       )}
