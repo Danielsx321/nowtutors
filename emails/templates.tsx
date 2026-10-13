@@ -5,6 +5,7 @@ import { tokens } from "@/lib/design/tokens";
 import { absoluteWhen, creditsLine, slugToWords, usdLine } from "@/lib/email/format";
 import { bookingIcs } from "@/lib/email/ics";
 import { maskEmail } from "@/lib/withdrawals/mask-email";
+import { changeReason } from "@/lib/tutors/change-reasons";
 
 /**
  * Every template NowTutors sends (SPEC §11), one entry per `EmailType`. Each
@@ -160,6 +161,57 @@ export const templates: { [T in EmailType]: Template<T> } = {
         </P>
         <Quote>{p.note}</Quote>
         <P>If you think this was a mistake, or you&rsquo;ve sorted what the note asks for, reply to this email.</P>
+      </Shell>
+    ),
+  },
+
+  "tutor-changes-requested": {
+    subject: () => "A few changes before your NowTutors profile is back",
+    body: (p, ctx) => (
+      <Shell
+        preview="Your profile is paused while you make a couple of changes."
+        heading={`Almost there, ${ctx.firstName}.`}
+        cta={{ label: "Edit your profile", href: ctx.url("/tutor/profile") }}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          Your profile is paused while you make a couple of changes. Here&rsquo;s what our team asked
+          for:
+        </P>
+        {p.reasons.length > 0 && (
+          <ul style={{ margin: "0 0 14px", paddingLeft: 20 }}>
+            {p.reasons.map((key) => {
+              const r = changeReason(key);
+              return (
+                <li key={key} style={{ margin: "0 0 6px" }}>
+                  <strong>{r.label}.</strong> {r.guidance}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {p.note && <Quote>{p.note}</Quote>}
+        <P>
+          Save your profile when you&rsquo;re done and we&rsquo;ll take another look, usually within a
+          day.
+        </P>
+      </Shell>
+    ),
+  },
+
+  "tutor-back-live": {
+    subject: () => "You're back on NowTutors",
+    body: (_p, ctx) => (
+      <Shell
+        preview="Your profile is back on the site."
+        heading={`You're live again, ${ctx.firstName}.`}
+        cta={{ label: "Open your tutor dashboard", href: ctx.url("/tutor") }}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          Thanks for the update. Your profile is back on the site and students can book you from
+          now.
+        </P>
       </Shell>
     ),
   },
@@ -618,6 +670,8 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
   "tutor-approved": {},
   "tutor-guide": {},
   "tutor-rejected": { note: "Your intro video is missing sound. Re-upload it and we'll take another look." },
+  "tutor-changes-requested": { reasons: ["photo", "headline_about"], note: "A plain background works best." },
+  "tutor-back-live": {},
   "withdrawal-requested": { amountCredits: 23, amountUsd: "30.66", destination: "tina.reyes@example.com" },
   "withdrawal-paid": {
     amountCredits: 23,

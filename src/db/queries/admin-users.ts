@@ -1,4 +1,5 @@
 import "server-only";
+import type { TutorApprovalStatus } from "./admin-tutors";
 import { and, count, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { db, type DbTransaction } from "@/db";
 import { auditLog, bookings, profiles, tutorEarnings, tutorProfiles, wallets, withdrawalRequests } from "@/db/schema";
@@ -40,7 +41,7 @@ export interface AdminUserRow {
   isSuspended: boolean;
   createdAt: Date;
   balance: number;
-  approvalStatus: "pending" | "approved" | "rejected" | null;
+  approvalStatus: TutorApprovalStatus | null;
 }
 
 function searchWhere(q: string | null, filter: UserFilter | null): SQL | undefined {
@@ -112,7 +113,7 @@ export interface AdminUserDetail {
   onboardingCompletedAt: Date | null;
   lastSeenAt: Date | null;
   walletBalance: number;
-  tutor: { slug: string; approvalStatus: "pending" | "approved" | "rejected"; isLive: boolean } | null;
+  tutor: { slug: string; approvalStatus: TutorApprovalStatus; isLive: boolean } | null;
   /** Bookings where the user is student or tutor, counted by status. */
   bookingsByStatus: Record<string, number>;
   earnings: { held: number; available: number; withdrawn: number; reversed: number };

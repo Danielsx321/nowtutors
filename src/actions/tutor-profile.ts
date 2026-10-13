@@ -57,11 +57,24 @@ export async function updateTutorProfile(
     return { error: "Select at least one subject you teach." };
   }
 
-  const existing = await db
-    .select({ subjectId: tutorSubjects.subjectId, level: tutorSubjects.level })
-    .from(tutorSubjects)
-    .where(eq(tutorSubjects.tutorId, user.id));
+  const [existing, [mine]] = await Promise.all([
+    db
+      .select({ subjectId: tutorSubjects.subjectId, level: tutorSubjects.level })
+      .from(tutorSubjects)
+      .where(eq(tutorSubjects.tutorId, user.id)),
+    db
+      .select({ approvalStatus: tutorProfiles.approvalStatus })
+      .from(tutorProfiles)
+      .where(eq(tutorProfiles.userId, user.id))
+      .limit(1),
+  ]);
   const current = new Map(existing.map((r) => [r.subjectId, r.level]));
+  // On hold (tutor-request-changes): any save is the tutor saying "take another
+  // look", including a photo-only fix, which lives on `profiles` where the
+  // change-flag trigger cannot see it. Stamp profile_changed_at here; the
+  // trusted server may (drizzle/0012). Approved tutors keep the trigger's
+  // material-only rule.
+  const resubmitting = mine?.approvalStatus === "changes_requested";
 
   const toInsert = [...desired].filter(([id]) => !current.has(id));
   const toDelete = [...current.keys()].filter((id) => !desired.has(id));
@@ -80,6 +93,7 @@ export async function updateTutorProfile(
         languages: v.languages,
         education: v.education ?? null,
         yearsExperience: v.yearsExperience ?? null,
+        ...(resubmitting ? { profileChangedAt: new Date() } : {}),
       })
       .where(eq(tutorProfiles.userId, user.id));
 

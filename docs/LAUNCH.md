@@ -93,4 +93,4 @@ Anything paid on the new project before a rollback is refunded by hand from the 
 
 ## 4. First week after launch
 
-Each morning on request: Sentry inbox; the `reconcile-wallets` drift line (0); Resend bounces; `select * from net._http_response where status_code <> 200 order by created desc limit 20`; new tutor sign-ups waiting in `/admin`.
+Each morning on request: Sentry inbox; the `reconcile-wallets` drift line (0); Resend bounces; `select * from net._http_response where status_code <> 200 order by created desc limit 20`; new tutor sign-ups waiting in `/admin`, and the Resubmitted tab on `/admin/tutors` (tutors on hold who have fixed what was asked, 2026-10-13).

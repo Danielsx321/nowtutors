@@ -37,6 +37,8 @@ export const PREFERENCE_BY_TYPE: Record<EmailType, PreferenceKey | "always"> = {
   "tutor-welcome": "always",
   "tutor-approved": "always",
   "tutor-rejected": "always",
+  "tutor-changes-requested": "always",
+  "tutor-back-live": "always",
   // Sent once, by a person running the script, to people who applied to teach.
   "tutor-guide": "always",
   "withdrawal-requested": "always",

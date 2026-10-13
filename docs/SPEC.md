@@ -218,7 +218,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | languages | text[] |  |
 | hourly_rate_credits | integer not null | price for a 60-minute scheduled session |
 | accepts_instant | boolean default true |  |
-| approval_status | enum `pending` \| `approved` \| `rejected` | default `pending` |
+| approval_status | enum `pending` \| `approved` \| `rejected` \| `changes_requested` | default `pending`. `changes_requested` (`drizzle/0025`, 2026-10-13): on hold with a reason; off the site like `pending`, editor still open |
 | approval_note | text | admin-visible reason |
 | approved_at | timestamptz |  |
 | is_live | boolean default false | broadcasting or available for instant |
@@ -243,6 +243,8 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 > **Needs re-review** = `profile_changed_at is not null AND (profile_reviewed_at is null OR profile_reviewed_at < profile_changed_at)`.
 >
 > This is deliberately **not** a new `approval_status` value: approval state and change state are orthogonal, and conflating them would make an approved-but-edited tutor indistinguishable from an unapproved one — which would drop them out of search and break earnings/withdrawal assumptions in Phase 8. Both columns are **trigger/admin managed**: `tutor_profile_change_flag` (plus `tutor_subjects_change_flag` for the child table) stamps `profile_changed_at` only when a material value actually *changed*, so a no-op save cannot flag and a tutor cannot clear the flag to dodge review; `profile_reviewed_at` is folded into the admin-only `tutor_approval_guard`.
+
+> **Request changes: a tutor on hold (added 2026-10-13, `drizzle/0025`).** The opposite case to re-review: an admin wants a tutor OFF the site until something is fixed (a photo, most often), without the finality of Reject. That IS a status, `changes_requested`, because every "is this tutor live" check already keys on `approval_status = 'approved'`; the tutor drops out of browse, `live_tutors`, bookings, messaging and broadcasts with no other change, while `/tutor/profile` (which admits any status) stays open. The admin's ticked reasons and note share `approval_note` (`lib/tutors/change-reasons.ts` formats and parses the one column; a plain rejection note parses as a note with no reasons). The **resubmit signal reuses the two timestamps**: the hold stamps `profile_reviewed_at`, a save afterwards stamps `profile_changed_at` (the change-flag triggers now fire for `changes_requested` too; a photo-only save, which lives on `profiles`, is stamped by `updateTutorProfile` itself), and "Resubmitted" is `profile_changed_at > profile_reviewed_at`. Approve from a hold clears the note, stamps `profile_reviewed_at`, and emails `tutor-back-live` instead of the approval email. Already-booked sessions are left alone (the room checks participants, not approval); the On hold card says so.
 
 **`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
 
@@ -686,7 +688,8 @@ TUTOR  (layout guards role = tutor + approval_status = approved)
                                    PayPal payout email. The name is edited on /tutor/profile
 /tutor/guide                       (2026-10-12) The tutor guide, `content/tutor-guide.ts`, rendered long-form;
                                    "Guide" last in the sidebar. The same content prints to public/tutor-guide.pdf
-/tutor/pending-approval            Shown instead of /tutor when approval_status != approved
+/tutor/pending-approval            Shown instead of /tutor when approval_status != approved. For
+                                   changes_requested: what to fix and an "Edit your profile" button
 
 SESSION  (participants only)
 /session/[bookingId]               Instant session — Agora 1:1
@@ -1661,7 +1664,7 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
 Student: booking confirmed (with `.ics`) **(built)**, reminder 24h **(built)**, reminder 1h **(built)**, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**, new message while away **(built, Part 3)**.
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**.
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, changes requested and back live **(built 2026-10-13, `tutor-changes-requested` with the ticked reasons and note, `tutor-back-live` on approval from a hold; both `always`)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**.
 
 **The tutor guide PDF (2026-10-12).** `public/tutor-guide.pdf` is built from `content/tutor-guide.ts` by `pnpm guide:pdf` (Playwright chromium, `scripts/build-tutor-guide-pdf.ts`) and committed. The approval email and the `tutor-guide` email attach it **by URL** (`EmailAttachment.path`, which Resend fetches from the site) and link `/tutor/guide`; `/tutor/pending-approval` links the PDF for applicants. Attachments are therefore `content` (base64, the `.ics` files) or `path` (a URL), never both.
 Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.

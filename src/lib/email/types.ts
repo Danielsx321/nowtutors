@@ -1,3 +1,5 @@
+import type { ChangeReason } from "@/lib/tutors/change-reasons";
+
 /**
  * The email types NowTutors sends itself (SPEC §11). Verify-email and
  * password-reset are not here: Supabase Auth sends those, over Resend's SMTP
@@ -11,6 +13,8 @@ export type EmailType =
   | "tutor-welcome"
   | "tutor-approved"
   | "tutor-rejected"
+  | "tutor-changes-requested"
+  | "tutor-back-live"
   | "tutor-guide"
   | "withdrawal-requested"
   | "withdrawal-paid"
@@ -48,6 +52,10 @@ export interface EmailPropsByType {
   "tutor-welcome": Record<string, never>;
   "tutor-approved": Record<string, never>;
   "tutor-rejected": { note: string };
+  /** On hold with a reason (tutor-request-changes): what to fix, then save. */
+  "tutor-changes-requested": { reasons: ChangeReason[]; note: string | null };
+  /** Approved again after a hold. No guide attached; they have it. */
+  "tutor-back-live": Record<string, never>;
   /** The one-off guide send (`db/send-tutor-guide.ts`) for tutors approved before the guide existed. */
   "tutor-guide": Record<string, never>;
   "withdrawal-requested": {
