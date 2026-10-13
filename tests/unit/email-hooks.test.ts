@@ -67,7 +67,7 @@ vi.mock("@/db", () => {
 vi.mock("@/db/schema", () => ({ tutorProfiles: { userId: "userId", approvalStatus: "s" }, auditLog: {}, profiles: { id: "id", avatarUrl: "a" } }));
 vi.mock("drizzle-orm", () => ({ eq: () => "eq" }));
 
-const { approveTutor, rejectTutor } = await import("@/actions/admin-tutors");
+const { approveTutor, rejectTutor, requestTutorChanges } = await import("@/actions/admin-tutors");
 const { requestWithdrawal } = await import("@/actions/withdrawals");
 const { markWithdrawalPaid, rejectWithdrawal } = await import("@/actions/admin-withdrawals");
 
@@ -106,6 +106,38 @@ describe("tutor approval emails", () => {
       to: { userId: TUTOR_ID },
       props: { note: "No sound on the intro video." },
     });
+  });
+
+  it("queues tutor-changes-requested with the reasons and note, and a hold stamps profile_reviewed_at", async () => {
+    m.requireRole.mockResolvedValue(ADMIN);
+    m.dbSelectRows = [{ status: "approved", avatarUrl: "https://x/y.png" }];
+    const res = await requestTutorChanges({ tutorId: TUTOR_ID, reasons: ["photo"], note: "  Plain background.  " });
+    expect(res).toEqual({ ok: true });
+    expect(m.queueEmail).toHaveBeenCalledWith({
+      type: "tutor-changes-requested",
+      to: { userId: TUTOR_ID },
+      props: { reasons: ["photo"], note: "Plain background." },
+    });
+    const set = m.tx.update.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> } | undefined;
+    expect(set).toBeDefined();
+  });
+
+  it("refuses an empty request and a rejected tutor without sending", async () => {
+    m.requireRole.mockResolvedValue(ADMIN);
+    expect(await requestTutorChanges({ tutorId: TUTOR_ID, reasons: [], note: "" })).toEqual({
+      error: "Tick at least one reason or write a note.",
+    });
+    m.dbSelectRows = [{ status: "rejected", avatarUrl: null }];
+    const res = await requestTutorChanges({ tutorId: TUTOR_ID, reasons: ["photo"], note: "" });
+    expect("error" in res).toBe(true);
+    expect(m.queueEmail).not.toHaveBeenCalled();
+  });
+
+  it("approving from a hold queues tutor-back-live, not the welcome", async () => {
+    m.requireRole.mockResolvedValue(ADMIN);
+    m.dbSelectRows = [{ status: "changes_requested", avatarUrl: "https://x/y.png" }];
+    expect(await approveTutor({ tutorId: TUTOR_ID })).toEqual({ ok: true });
+    expect(m.queueEmail).toHaveBeenCalledWith({ type: "tutor-back-live", to: { userId: TUTOR_ID }, props: {} });
   });
 
   it("sends nothing when the tutor is not found", async () => {

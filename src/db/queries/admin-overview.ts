@@ -27,6 +27,8 @@ export interface AdminOverview {
   capturedTodayCount: number;
   capturedMonthUsd: string;
   pendingTutorApprovals: number;
+  /** On hold and saved since: the tutor wants another look (tutor-request-changes). */
+  tutorsResubmitted: number;
   tutorsNeedingReReview: number;
   withdrawalsRequested: number;
   withdrawalsApproved: number;
@@ -62,6 +64,7 @@ export async function getAdminOverview(
       captured_today_count: number;
       captured_month_usd: string;
       pending_tutor_approvals: number;
+      tutors_resubmitted: number;
       tutors_needing_re_review: number;
       withdrawals_requested: number;
       withdrawals_approved: number;
@@ -91,6 +94,11 @@ export async function getAdminOverview(
           where p.status = 'captured' and p.captured_at >= b.month_start and p.captured_at < b.month_end) as captured_month_usd,
         (select count(*) from tutor_profiles where approval_status = 'pending')::int as pending_tutor_approvals,
         (select count(*) from tutor_profiles
+          where approval_status = 'changes_requested'
+            and profile_changed_at is not null
+            and profile_reviewed_at is not null
+            and profile_changed_at > profile_reviewed_at)::int as tutors_resubmitted,
+        (select count(*) from tutor_profiles
           where approval_status = 'approved'
             and profile_changed_at is not null
             and (profile_reviewed_at is null or profile_reviewed_at < profile_changed_at))::int as tutors_needing_re_review,
@@ -110,6 +118,7 @@ export async function getAdminOverview(
     capturedTodayCount: Number(row.captured_today_count),
     capturedMonthUsd: String(row.captured_month_usd),
     pendingTutorApprovals: Number(row.pending_tutor_approvals),
+    tutorsResubmitted: Number(row.tutors_resubmitted),
     tutorsNeedingReReview: Number(row.tutors_needing_re_review),
     withdrawalsRequested: Number(row.withdrawals_requested),
     withdrawalsApproved: Number(row.withdrawals_approved),

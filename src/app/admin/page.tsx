@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth/guards";
 import { getAdminOverview, safeTimeZone } from "@/db/queries/admin-overview";
-import { getChangedTutors, getPendingTutors, type AdminTutorRow } from "@/db/queries/admin-tutors";
+import { getChangedTutors, getPendingTutors, getResubmittedTutors, type AdminTutorRow } from "@/db/queries/admin-tutors";
 import { listAdminWithdrawals, type AdminWithdrawal } from "@/db/queries/withdrawals";
 import { listAuditLog } from "@/db/queries/admin-audit";
 import { getLiveTutorCount } from "@/db/queries/tutors";
@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
 const usd = (amount: string | number) =>
   Number(amount).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-type QueueItem = { kind: "new" | "changed"; tutor: AdminTutorRow };
+type QueueItem = { kind: "new" | "resubmitted" | "changed"; tutor: AdminTutorRow };
 
 /**
  * `/admin`, the admin's home (live-globe rebuild Part G, as approved in Part
@@ -67,7 +67,7 @@ export default async function AdminOverviewPage() {
     .limit(1);
   const timeZone = safeTimeZone(me?.timezone);
 
-  const [overview, drift, pending, changed, requested, approved, audit, liveCount, revenue] = await Promise.all([
+  const [overview, drift, pending, changed, resubmitted, requested, approved, audit, liveCount, revenue] = await Promise.all([
     getAdminOverview(timeZone),
     readWalletDrift()
       .then(({ walletsChecked, rows }) => summarizeWalletDrift(walletsChecked, rows))
@@ -77,6 +77,7 @@ export default async function AdminOverviewPage() {
       }),
     getPendingTutors(),
     getChangedTutors(),
+    getResubmittedTutors(),
     listAdminWithdrawals("requested"),
     listAdminWithdrawals("approved"),
     listAuditLog({ page: 1 }),
@@ -87,12 +88,15 @@ export default async function AdminOverviewPage() {
   const now = new Date();
   const waiting =
     overview.pendingTutorApprovals +
+    overview.tutorsResubmitted +
     overview.tutorsNeedingReReview +
     overview.withdrawalsRequested +
     overview.withdrawalsApproved;
   const waitingParts = [
     overview.pendingTutorApprovals > 0 &&
       `${overview.pendingTutorApprovals} ${overview.pendingTutorApprovals === 1 ? "tutor" : "tutors"} to approve`,
+    overview.tutorsResubmitted > 0 &&
+      `${overview.tutorsResubmitted} ${overview.tutorsResubmitted === 1 ? "tutor" : "tutors"} resubmitted`,
     overview.tutorsNeedingReReview > 0 &&
       `${overview.tutorsNeedingReReview} ${overview.tutorsNeedingReReview === 1 ? "profile" : "profiles"} to re-review`,
     overview.withdrawalsRequested > 0 &&
@@ -101,10 +105,13 @@ export default async function AdminOverviewPage() {
       `${overview.withdrawalsApproved} ${overview.withdrawalsApproved === 1 ? "withdrawal" : "withdrawals"} to pay`,
   ].filter(Boolean) as string[];
   const queueHref =
-    overview.pendingTutorApprovals + overview.tutorsNeedingReReview > 0 ? "/admin/tutors" : "/admin/withdrawals";
+    overview.pendingTutorApprovals + overview.tutorsResubmitted + overview.tutorsNeedingReReview > 0
+      ? "/admin/tutors"
+      : "/admin/withdrawals";
 
   const queue: QueueItem[] = [
     ...pending.map((tutor) => ({ kind: "new" as const, tutor })),
+    ...resubmitted.map((tutor) => ({ kind: "resubmitted" as const, tutor })),
     ...changed.map((tutor) => ({ kind: "changed" as const, tutor })),
   ].slice(0, 4);
 
@@ -341,12 +348,14 @@ export default async function AdminOverviewPage() {
 function QueueCard({ item, now, timeZone }: { item: QueueItem; now: Date; timeZone: string }) {
   const { tutor, kind } = item;
   const name = tutor.displayName ?? tutor.email;
-  const blocker = kind === "new" ? approvalBlocker(tutor) : null;
+  const blocker = kind !== "changed" ? approvalBlocker(tutor) : null;
   const subjects = tutor.subjects.map((s) => s.name).slice(0, 2).join(", ");
   const when =
     kind === "new"
       ? `submitted ${timeAgo(tutor.createdAt, now, timeZone)}`
-      : `changed ${tutor.profileChangedAt ? timeAgo(tutor.profileChangedAt, now, timeZone) : "recently"} · re-review`;
+      : kind === "resubmitted"
+        ? `fixed ${tutor.profileChangedAt ? timeAgo(tutor.profileChangedAt, now, timeZone) : "recently"} · was on hold`
+        : `changed ${tutor.profileChangedAt ? timeAgo(tutor.profileChangedAt, now, timeZone) : "recently"} · re-review`;
 
   return (
     <li className="flex flex-col gap-2.5 rounded-[20px] border border-border bg-surface-raised p-2.5">
@@ -359,15 +368,15 @@ function QueueCard({ item, now, timeZone }: { item: QueueItem; now: Date; timeZo
           </div>
         )}
         <span className="absolute left-2.5 top-2.5 rounded-full bg-surface-raised px-2.5 py-0.5 text-caption font-semibold text-text">
-          {kind === "new" ? "New tutor" : "Profile changed"}
+          {kind === "new" ? "New tutor" : kind === "resubmitted" ? "Resubmitted" : "Profile changed"}
         </span>
       </div>
       <div className="grid gap-2 px-1 pb-1">
         <b className="font-display text-body font-semibold text-text">{name}</b>
         <span className="text-small text-text-muted">{[subjects, when].filter(Boolean).join(" · ")}</span>
         {blocker && <span className="text-caption font-medium text-spark-text">{approvalBlockerMessage(blocker)}</span>}
-        <Button asChild size="sm" variant={kind === "new" && !blocker ? "primary" : "outline"}>
-          <Link href="/admin/tutors">{kind === "new" ? "Review" : "Compare changes"}</Link>
+        <Button asChild size="sm" variant={kind !== "changed" && !blocker ? "primary" : "outline"}>
+          <Link href="/admin/tutors">{kind === "changed" ? "Compare changes" : "Review"}</Link>
         </Button>
       </div>
     </li>

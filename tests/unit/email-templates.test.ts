@@ -27,6 +27,8 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "tutor-welcome": "/tutor/pending-approval",
   "tutor-approved": "/tutor",
   "tutor-rejected": "/tutor/pending-approval",
+  "tutor-changes-requested": "/tutor/profile",
+  "tutor-back-live": "/tutor",
   "tutor-guide": "/tutor/guide",
   "withdrawal-requested": "/tutor/withdrawals",
   "withdrawal-paid": "/tutor/withdrawals",

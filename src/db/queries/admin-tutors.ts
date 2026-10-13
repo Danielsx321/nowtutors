@@ -4,6 +4,9 @@ import { db } from "@/db";
 import { profiles, tutorProfiles } from "@/db/schema";
 import { getTutorSubjects, type TutorSubjectEntry } from "./tutor-profile";
 
+/** `tutor_approval_status` (drizzle/0000 + 0025). */
+export type TutorApprovalStatus = "pending" | "approved" | "rejected" | "changes_requested";
+
 export interface AdminTutorRow {
   userId: string;
   slug: string;
@@ -18,7 +21,7 @@ export interface AdminTutorRow {
   yearsExperience: number | null;
   languages: string[];
   hourlyRateCredits: number;
-  approvalStatus: "pending" | "approved" | "rejected";
+  approvalStatus: TutorApprovalStatus;
   approvalNote: string | null;
   createdAt: Date;
   profileChangedAt: Date | null;
@@ -92,5 +95,51 @@ export async function getChangedTutors(): Promise<AdminTutorRow[]> {
       ),
     )
     .orderBy(desc(tutorProfiles.profileChangedAt));
+  return withSubjects(rows);
+}
+
+/**
+ * On hold and still waiting on the tutor (tutor-request-changes): status
+ * `changes_requested` and no save since the hold. Newest hold first, so the
+ * admin sees what they just did at the top.
+ */
+export async function getOnHoldTutors(): Promise<AdminTutorRow[]> {
+  const rows = await db
+    .select(baseColumns)
+    .from(tutorProfiles)
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+    .where(
+      and(
+        eq(tutorProfiles.approvalStatus, "changes_requested"),
+        or(
+          sql`${tutorProfiles.profileChangedAt} is null`,
+          sql`${tutorProfiles.profileReviewedAt} is null`,
+          sql`${tutorProfiles.profileChangedAt} <= ${tutorProfiles.profileReviewedAt}`,
+        ),
+      ),
+    )
+    .orderBy(desc(tutorProfiles.profileReviewedAt));
+  return withSubjects(rows);
+}
+
+/**
+ * On hold and saved since (tutor-request-changes): the tutor has done what was
+ * asked, or at least something, and wants another look. Oldest resubmit first,
+ * the same fairness as the pending queue.
+ */
+export async function getResubmittedTutors(): Promise<AdminTutorRow[]> {
+  const rows = await db
+    .select(baseColumns)
+    .from(tutorProfiles)
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+    .where(
+      and(
+        eq(tutorProfiles.approvalStatus, "changes_requested"),
+        isNotNull(tutorProfiles.profileChangedAt),
+        isNotNull(tutorProfiles.profileReviewedAt),
+        sql`${tutorProfiles.profileChangedAt} > ${tutorProfiles.profileReviewedAt}`,
+      ),
+    )
+    .orderBy(asc(tutorProfiles.profileChangedAt));
   return withSubjects(rows);
 }

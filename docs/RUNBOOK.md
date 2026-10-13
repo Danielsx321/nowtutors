@@ -780,3 +780,23 @@ One line per tutor with the Resend id, 700 ms apart, a count at the end, exit 1 
 (copy from Vercel's Production env if the file was deleted at launch close-out); the script names each missing
 value and stops. `--only someone@example.com` sends to that one tutor. `pnpm email:tutor-guide -- --dry-run`
 (dev) and `:test` never reach Resend: they print envelopes through the log transport.
+
+## Tutor approvals: Approve, Request changes, Reject (2026-10-13)
+
+`/admin/tutors` has four tabs. **Pending** is new applications. **Resubmitted** is tutors who were put on
+hold and have saved their profile since. **On hold** is tutors still waiting on the tutor. **Edited since
+review** is approved tutors who changed something material; they stay live.
+
+- **Approve**: needs a photo. From Pending it sends the welcome with the guide attached; from Resubmitted it
+  sends one line, "You're live again".
+- **Request changes**: for anything fixable (a photo, a thin about, a wrong rate). Tick the reasons, add a
+  note if the tick boxes don't say it, Send. The tutor leaves the site at once, gets an email with the
+  reasons and a button into their editor, and lands under Resubmitted the moment they save. Sessions they
+  already have booked still run; cancel those from Bookings if the hold is serious.
+- **Reject**: final. The tutor sees the note and a Log out button, nothing else. A rejected tutor cannot be
+  put on hold; approve them first if that was a mistake.
+
+The audit log records every step (`tutor.request_changes` carries the reasons). Migration `drizzle/0025`
+added the `changes_requested` value; **production: apply with `CONFIRM_PROD=1 pnpm db:migrate:prod` from
+`~/nowtutors` on `main` after the PR merges** (date it here when done: ____).
+

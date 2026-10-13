@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { tutorProfiles, auditLog, profiles } from "@/db/schema";
 import { approvalBlocker, approvalBlockerMessage } from "@/lib/tutors/approval";
+import { CHANGE_REASON_KEYS, formatApprovalNote } from "@/lib/tutors/change-reasons";
 import { requireRole } from "@/lib/auth/guards";
 import { queueEmail } from "@/lib/email";
 
@@ -16,6 +17,16 @@ const rejectSchema = z.object({
   tutorId: z.string().uuid(),
   note: z.string().trim().min(5, "A rejection note is required."),
 });
+const requestChangesSchema = z
+  .object({
+    tutorId: z.string().uuid(),
+    reasons: z.array(z.enum(CHANGE_REASON_KEYS)).default([]),
+    note: z.string().trim().max(1000, "Keep the note under 1,000 characters.").default(""),
+  })
+  .refine((v) => v.reasons.length > 0 || v.note.length >= 5, {
+    message: "Tick at least one reason or write a note.",
+    path: ["note"],
+  });
 
 /**
  * Admin approval queue actions (SPEC §6 /admin/tutors, §7.11 audit).
@@ -75,10 +86,92 @@ export async function approveTutor(input: {
     });
   });
 
-  queueEmail({ type: "tutor-approved", to: { userId: parsed.data.tutorId }, props: {} });
+  // A tutor coming back from a hold gets one line, not the welcome and the
+  // guide again (tutor-request-changes).
+  queueEmail({
+    type: before.status === "changes_requested" ? "tutor-back-live" : "tutor-approved",
+    to: { userId: parsed.data.tutorId },
+    props: {},
+  });
 
   revalidatePath("/admin/tutors");
+  revalidatePath("/admin");
   revalidatePath("/");
+  revalidatePath("/tutors");
+  return { ok: true };
+}
+
+/**
+ * Put a tutor on hold with a reason (tutor-request-changes, 2026-10-13). The
+ * middle button between Approve and Reject: the tutor leaves the site (every
+ * live check keys on approval_status = 'approved'), keeps /tutor/profile, and
+ * is emailed what to fix. Works from pending, approved or an earlier hold;
+ * not from rejected (approve first, then hold, so the audit trail reads
+ * right).
+ *
+ * profile_reviewed_at is stamped here as the hold moment: a save by the tutor
+ * afterwards stamps profile_changed_at (trigger for material fields, the
+ * profile action for the rest), and `getResubmittedTutors` is the comparison
+ * of the two.
+ */
+export async function requestTutorChanges(input: {
+  tutorId: string;
+  reasons: string[];
+  note: string;
+}): Promise<AdminActionResult> {
+  const { user } = await requireRole("admin");
+  const parsed = requestChangesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Tick at least one reason or write a note." };
+  }
+
+  const [before] = await db
+    .select({ status: tutorProfiles.approvalStatus, avatarUrl: profiles.avatarUrl })
+    .from(tutorProfiles)
+    .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
+    .where(eq(tutorProfiles.userId, parsed.data.tutorId))
+    .limit(1);
+  if (!before) return { error: "Tutor not found." };
+  if (before.status === "rejected") {
+    return { error: "This application was rejected. Approve it first if you want to put it on hold." };
+  }
+
+  const now = new Date();
+  const note = formatApprovalNote(parsed.data.reasons, parsed.data.note);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tutorProfiles)
+      .set({
+        approvalStatus: "changes_requested",
+        approvalNote: note,
+        approvedAt: null,
+        profileReviewedAt: now,
+      })
+      .where(eq(tutorProfiles.userId, parsed.data.tutorId));
+    await tx.insert(auditLog).values({
+      actorId: user.id,
+      action: "tutor.request_changes",
+      targetType: "tutor_profile",
+      targetId: parsed.data.tutorId,
+      payload: {
+        from: before.status,
+        to: "changes_requested",
+        reasons: parsed.data.reasons,
+        note: parsed.data.note || null,
+      },
+    });
+  });
+
+  queueEmail({
+    type: "tutor-changes-requested",
+    to: { userId: parsed.data.tutorId },
+    props: { reasons: parsed.data.reasons, note: parsed.data.note || null },
+  });
+
+  revalidatePath("/admin/tutors");
+  revalidatePath("/admin");
+  revalidatePath("/");
+  revalidatePath("/tutors");
   return { ok: true };
 }
 

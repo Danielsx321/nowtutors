@@ -45,12 +45,15 @@ export function TutorProfileEditor({
   subjects,
   defaults,
   isApproved,
+  onHold = false,
   preview,
 }: {
   userId: string;
   subjects: SubjectOption[];
   defaults: TutorProfileEditValues;
   isApproved: boolean;
+  /** On hold with a reason (tutor-request-changes): a save asks for another look. */
+  onHold?: boolean;
   /** What the card needs that the form doesn't edit (live-globe Part F preview). */
   preview?: { slug: string; country: string | null; completedSessions: number };
 }) {
@@ -120,7 +123,9 @@ export function TutorProfileEditor({
       {formError && <Alert variant="danger">{formError}</Alert>}
       {saved && (
         <Alert variant="success" title="Profile saved">
-          {isApproved ? (
+          {onHold ? (
+            <p>Saved. Our team will take another look, usually within a day.</p>
+          ) : isApproved ? (
             <p>
               Your changes are live now. Edits to your headline, about, subjects,
               rate or intro video are re-checked by our team — you stay visible
@@ -305,7 +310,11 @@ export function TutorProfileEditor({
           />
         </div>
         <p className="mt-2 text-caption text-text-muted">
-          Saved changes show on your public page straight away.
+          {onHold
+            ? "Your page is paused until our team approves your changes."
+            : isApproved
+              ? "Saved changes show on your public page straight away."
+              : "This is how your card will look once you're approved."}
         </p>
       </aside>
     </div>

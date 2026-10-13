@@ -6,6 +6,7 @@
 const LABELS: Record<string, string> = {
   "tutor.approve": "Approved a tutor",
   "tutor.reject": "Rejected a tutor application",
+  "tutor.request_changes": "Asked a tutor for changes",
   "tutor.mark_reviewed": "Re-reviewed a changed tutor profile",
   "withdrawal.request": "A tutor requested a withdrawal",
   "withdrawal.approve": "Approved a withdrawal",

@@ -5420,3 +5420,28 @@ from a section of the app, and the tutors already approved get it too.
    preference flags fits, and opting out of a one-off guide is not a thing a tutor needs.
 7. **The PDF is committed and tested for presence, not built in CI or at `next build`.** CI has no chromium
    and a deploy shouldn't run one for a file that changes a few times a year.
+
+## Request changes: a tutor on hold with a reason (`tutor-request-changes`, 2026-10-13)
+
+Noora's first ask after launch: two live tutors with photos that don't look professional, "ask them to pick
+and adjust their photos". The queue had Approve and Reject, and Reject is final: a dead-end page, no way
+into the editor, the admin fixing the photo by email. Plan: workspace `plans/2026-10-13-nowtutors-request-changes-hold.md`.
+
+1. **A fourth status, not a flag.** SPEC §4.1 keeps re-review out of `approval_status` because an edited
+   tutor must stay live. A hold is the opposite: the tutor must leave the site, and every live check already
+   reads `approval_status = 'approved'`. One enum value (`drizzle/0025`) and nothing else to touch.
+2. **Resubmit = `profile_changed_at > profile_reviewed_at`.** The hold stamps the admin's timestamp; the
+   tutor's save stamps the other (triggers for material fields, now for `changes_requested` too; the
+   profile action for a photo-only fix, which lives on `profiles`). No new column, and "Edited since
+   review" keeps its meaning.
+3. **Tick boxes plus a note, one text column.** Six reasons with one line of guidance each
+   (`lib/tutors/change-reasons.ts`), formatted into `approval_note` as `reasons: a,b` plus the note, parsed
+   back on the tutor's pages and in the email. Two clicks for Noora; a rejection note still reads as before.
+4. **Approve from a hold sends "You're live again"**, one line, no guide: they have it.
+5. **Reject stays**, including from a hold that was never answered. Rejected tutors can't be put on hold
+   (approve first) so the audit trail reads in order.
+6. **Booked sessions run.** The room checks participants, not approval; a hold blocks new bookings,
+   go-live, broadcasts and new-student messages only. The On hold card says so and points at Bookings.
+7. **No admin email on resubmit** in this PR. The overview counts it ("2 tutors resubmitted") and the
+   Resubmitted tab holds it; Noora checks the panel daily.
+

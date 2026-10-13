@@ -6,10 +6,13 @@ import { pgEnum } from "drizzle-orm/pg-core";
 // (docs/DECISIONS.md, Phase 6 pre-build).
 export const userRole = pgEnum("user_role", ["student", "tutor", "admin"]);
 
+// changes_requested (drizzle/0025): on hold with a reason; off the site like
+// pending, but the tutor keeps their editor and comes back as "Resubmitted".
 export const tutorApprovalStatus = pgEnum("tutor_approval_status", [
   "pending",
   "approved",
   "rejected",
+  "changes_requested",
 ]);
 
 export const tutorLiveMode = pgEnum("tutor_live_mode", ["instant", "broadcast"]);

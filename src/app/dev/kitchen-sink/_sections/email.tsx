@@ -9,6 +9,8 @@ const ORDER: EmailType[] = [
   "tutor-welcome",
   "tutor-approved",
   "tutor-rejected",
+  "tutor-changes-requested",
+  "tutor-back-live",
   "tutor-guide",
   "withdrawal-requested",
   "withdrawal-paid",

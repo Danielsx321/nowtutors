@@ -7,6 +7,7 @@ import { TutorProfileEditor } from "@/components/features/tutor/profile-editor";
 import { Alert } from "@/components/ui/alert";
 import type { TutorProfileEditValues } from "@/lib/auth/schemas";
 import type { Language } from "@/lib/geo/languages";
+import { changeReason, parseApprovalNote } from "@/lib/tutors/change-reasons";
 
 export const metadata = { title: "Your profile · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -66,6 +67,8 @@ export default async function TutorProfileEditPage() {
   };
 
   const isApproved = tp.approvalStatus === "approved";
+  const onHold = tp.approvalStatus === "changes_requested";
+  const asked = onHold ? parseApprovalNote(tp.approvalNote) : null;
 
   return (
     <div className="w-full py-2">
@@ -75,6 +78,27 @@ export default async function TutorProfileEditPage() {
           This is what students see on your public page.
         </p>
       </div>
+
+      {asked && (
+        <div className="mb-6">
+          <Alert variant="warning" title="Changes requested">
+            <p>Your profile is paused while you make these changes. Save when you&rsquo;re done and we&rsquo;ll take another look.</p>
+            {asked.reasons.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {asked.reasons.map((k) => {
+                  const r = changeReason(k);
+                  return (
+                    <li key={k}>
+                      <span className="font-medium">{r.label}.</span> {r.guidance}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {asked.note && <p className="mt-2 whitespace-pre-line">{asked.note}</p>}
+          </Alert>
+        </div>
+      )}
 
       {isApproved && (
         <div className="mb-6">
@@ -91,6 +115,7 @@ export default async function TutorProfileEditPage() {
         subjects={subjectRows}
         defaults={defaults}
         isApproved={isApproved}
+        onHold={onHold}
         preview={{ slug: tp.slug, country: me?.country ?? null, completedSessions: tp.completedSessions }}
       />
     </div>
