@@ -120,6 +120,7 @@ export function TutorForm({
       <div className="space-y-1.5">
         <Label required>Profile photo</Label>
         <AvatarUpload
+          shape="card"
           userId={userId}
           name={fullName}
           value={avatarUrl || undefined}

@@ -800,3 +800,13 @@ The audit log records every step (`tutor.request_changes` carries the reasons). 
 added the `changes_requested` value; **production: apply with `CONFIRM_PROD=1 pnpm db:migrate:prod` from
 `~/nowtutors` on `main` after the PR merges** (applied 2026-10-13, 25 then 26 rows in `drizzle.__drizzle_migrations`; PR #144 merged the same day).
 
+## Photos: the crop step (2026-10-13)
+
+Every photo upload (tutor onboarding, tutor profile, student onboarding) opens "Fit your photo" first.
+Tutors fit the photo to the 16:10 card frame and see the card and the round avatar before saving;
+students fit a square. The stored file is always a JPEG at 1200×750 (tutors) or 600×600 (students)
+under `avatars/{uid}/avatar-{ts}.jpg`; originals are never stored. Tutors who uploaded before this
+date keep their old photo and the old fixed crop until they press Change photo. The admin queue cards
+show the same 16:10 crop ("As students see it"), so a "Profile photo" request is judged on what
+students see.
+

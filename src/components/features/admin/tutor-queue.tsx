@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Check, X, ExternalLink, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar } from "@/components/ui/avatar";
+import { TutorPhoto } from "@/components/features/tutor-photo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -149,7 +150,18 @@ function AskedFor({ note }: { note: string | null }) {
 function Detail({ tutor }: { tutor: QueueTutor }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-3">
+      {/* The card crop first: it is what students see, and what a photo request is judged on (avatar-crop). */}
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="space-y-1">
+          <TutorPhoto
+            src={tutor.avatarUrl}
+            name={tutor.displayName ?? "Tutor"}
+            sizes="220px"
+            className="aspect-[16/10] w-[220px] rounded-photo"
+            initialsClassName="text-h2"
+          />
+          <p className="text-caption text-text-muted">As students see it</p>
+        </div>
         <Avatar src={tutor.avatarUrl} name={tutor.displayName ?? "Tutor"} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="text-body-lg font-bold text-text">
