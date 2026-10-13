@@ -113,7 +113,13 @@ export interface AdminUserDetail {
   onboardingCompletedAt: Date | null;
   lastSeenAt: Date | null;
   walletBalance: number;
-  tutor: { slug: string; approvalStatus: TutorApprovalStatus; isLive: boolean } | null;
+  tutor: {
+    slug: string;
+    approvalStatus: TutorApprovalStatus;
+    approvalNote: string | null;
+    avatarUrl: string | null;
+    isLive: boolean;
+  } | null;
   /** Bookings where the user is student or tutor, counted by status. */
   bookingsByStatus: Record<string, number>;
   earnings: { held: number; available: number; withdrawn: number; reversed: number };
@@ -145,9 +151,12 @@ export async function getAdminUserDetail(userId: string): Promise<AdminUserDetai
       .select({
         slug: tutorProfiles.slug,
         approvalStatus: tutorProfiles.approvalStatus,
+        approvalNote: tutorProfiles.approvalNote,
+        avatarUrl: profiles.avatarUrl,
         isLive: tutorProfiles.isLive,
       })
       .from(tutorProfiles)
+      .innerJoin(profiles, eq(profiles.id, tutorProfiles.userId))
       .where(eq(tutorProfiles.userId, userId))
       .limit(1),
     db

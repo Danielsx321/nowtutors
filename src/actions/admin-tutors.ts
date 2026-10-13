@@ -95,6 +95,7 @@ export async function approveTutor(input: {
   });
 
   revalidatePath("/admin/tutors");
+  revalidatePath("/admin/users/[id]", "page");
   revalidatePath("/admin");
   revalidatePath("/");
   revalidatePath("/tutors");
@@ -169,6 +170,7 @@ export async function requestTutorChanges(input: {
   });
 
   revalidatePath("/admin/tutors");
+  revalidatePath("/admin/users/[id]", "page");
   revalidatePath("/admin");
   revalidatePath("/");
   revalidatePath("/tutors");
@@ -223,6 +225,7 @@ export async function rejectTutor(input: {
   });
 
   revalidatePath("/admin/tutors");
+  revalidatePath("/admin/users/[id]", "page");
   revalidatePath("/");
   return { ok: true };
 }
@@ -264,5 +267,6 @@ export async function markTutorReviewed(input: {
   });
 
   revalidatePath("/admin/tutors");
+  revalidatePath("/admin/users/[id]", "page");
   return { ok: true };
 }

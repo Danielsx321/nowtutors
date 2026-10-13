@@ -411,6 +411,132 @@ export function OnHoldCard({ tutor }: { tutor: QueueTutor }) {
   );
 }
 
+/**
+ * The approval controls on `/admin/users/[id]` (tutor-request-changes). The
+ * queue tabs only list tutors who need attention; an approved tutor who has
+ * not edited anything is in none of them, and that is exactly who an admin
+ * wants to put on hold for a better photo. Same actions, same server checks.
+ */
+export function TutorApprovalCard({
+  tutor,
+}: {
+  tutor: {
+    userId: string;
+    slug: string;
+    approvalStatus: "pending" | "approved" | "rejected" | "changes_requested";
+    approvalNote: string | null;
+    avatarUrl: string | null;
+  };
+}) {
+  const [note, setNote] = React.useState("");
+  const [mode, setMode] = React.useState<"idle" | "changes" | "reject">("idle");
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, start] = React.useTransition();
+  const blocker = approvalBlocker(tutor);
+  const status = tutor.approvalStatus;
+  const label =
+    status === "approved"
+      ? "Approved and on the site"
+      : status === "changes_requested"
+        ? "On hold, waiting on the tutor"
+        : status === "pending"
+          ? "Waiting for a first decision"
+          : "Rejected";
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div className="space-y-1">
+          <p className="text-body-lg font-bold text-text">Tutor approval</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={status === "approved" ? "success" : status === "rejected" ? "danger" : "warning"}>
+              {status.replace("_", " ")}
+            </Badge>
+            <span className="text-small text-text-muted">{label}</span>
+          </div>
+        </div>
+        {status !== "approved" && <AskedFor note={tutor.approvalNote} />}
+        {error && <Alert variant="danger">{error}</Alert>}
+
+        {mode === "changes" && (
+          <RequestChangesForm tutorId={tutor.userId} onCancel={() => setMode("idle")} onError={setError} />
+        )}
+        {mode === "reject" && (
+          <div className="space-y-1.5">
+            <Label htmlFor={`note-${tutor.userId}`} required>
+              Reason for rejection (emailed to the tutor)
+            </Label>
+            <Textarea id={`note-${tutor.userId}`} rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        )}
+
+        {blocker && status !== "approved" && (
+          <p className="text-small font-medium text-spark-text">{approvalBlockerMessage(blocker)}</p>
+        )}
+        {mode !== "changes" && (
+          <div className="flex flex-wrap gap-2">
+            {status !== "approved" && status !== "rejected" && mode === "idle" && (
+              <Button
+                loading={pending}
+                disabled={!!blocker}
+                onClick={() =>
+                  start(async () => {
+                    setError(null);
+                    const res = await approveTutor({ tutorId: tutor.userId });
+                    if ("error" in res) setError(res.error);
+                  })
+                }
+              >
+                <Check aria-hidden />
+                Approve
+              </Button>
+            )}
+            {status !== "rejected" && mode === "idle" && (
+              <Button variant="outline" onClick={() => setMode("changes")}>
+                <Pencil aria-hidden />
+                Request changes
+              </Button>
+            )}
+            {status !== "rejected" && mode === "reject" && (
+              <Button
+                variant="danger"
+                loading={pending}
+                onClick={() =>
+                  start(async () => {
+                    setError(null);
+                    const res = await rejectTutor({ tutorId: tutor.userId, note });
+                    if ("error" in res) setError(res.error);
+                  })
+                }
+              >
+                Confirm rejection
+              </Button>
+            )}
+            {status !== "rejected" && mode === "idle" && (
+              <Button variant="outline" onClick={() => setMode("reject")}>
+                <X aria-hidden />
+                Reject
+              </Button>
+            )}
+            {mode === "reject" && (
+              <Button variant="outline" onClick={() => setMode("idle")}>
+                Cancel
+              </Button>
+            )}
+            {status === "approved" && (
+              <Button asChild variant="outline">
+                <Link href={`/tutors/${tutor.slug}`} target="_blank">
+                  View public page
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function QueueEmpty({ label }: { label: string }) {
   return <EmptyState title={label} description="Nothing needs your attention here." />;
 }
