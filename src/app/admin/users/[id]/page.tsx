@@ -13,6 +13,7 @@ import { CreditBalance } from "@/components/ui/credit-balance";
 import { TransactionHistory } from "@/components/features/wallet/transaction-history";
 import { WalletPager } from "@/components/features/wallet/wallet-pager";
 import { UserAdminActions } from "@/components/features/admin/user-admin-actions";
+import { TutorApprovalCard } from "@/components/features/admin/tutor-queue";
 
 export const metadata = { title: "User · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -95,6 +96,18 @@ export default async function AdminUserPage({
         isSuspended={detail.isSuspended}
         isSelf={detail.id === user.id}
       />
+
+      {detail.tutor && (
+        <TutorApprovalCard
+          tutor={{
+            userId: detail.id,
+            slug: detail.tutor.slug,
+            approvalStatus: detail.tutor.approvalStatus,
+            approvalNote: detail.tutor.approvalNote,
+            avatarUrl: detail.tutor.avatarUrl,
+          }}
+        />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
