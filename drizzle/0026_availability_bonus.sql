@@ -48,7 +48,7 @@ CREATE TABLE "availability_bonus_awards" (
 );
 --> statement-breakpoint
 ALTER TABLE "availability_bonus_awards" ADD CONSTRAINT "availability_bonus_awards_tutor_id_profiles_id_fk" FOREIGN KEY ("tutor_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "availability_bonus_awards" ADD CONSTRAINT "availability_bonus_awards_transaction_id_credit_transactions_id_fk" FOREIGN KEY ("transaction_id") REFERENCES "public"."credit_transactions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "availability_bonus_awards" ADD CONSTRAINT "availability_bonus_awards_transaction_id_credit_transactions_id" FOREIGN KEY ("transaction_id") REFERENCES "public"."credit_transactions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "availability_bonus_awards_week_unique" ON "availability_bonus_awards" USING btree ("tutor_id","week_start");--> statement-breakpoint
 CREATE INDEX "availability_bonus_awards_week_idx" ON "availability_bonus_awards" USING btree ("week_start" DESC NULLS LAST);--> statement-breakpoint
 
