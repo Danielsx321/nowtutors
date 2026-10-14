@@ -829,7 +829,7 @@ three knobs: `availability_bonus_enabled` (false pauses the Monday job, hours ke
    the `availability_bonus` ledger type, `tutor_online_time`, `availability_bonus_awards`, RLS).
 2. `CONFIRM_PROD=1 pnpm db:seed:prod-settings` inserts the three settings keys and changes nothing
    else (`ignoreDuplicates`).
-3. `pnpm db:verify-rls:prod`.
+3. `CONFIRM_PROD=1 pnpm db:verify-rls:prod`.
 4. Wait for the Vercel production deploy of the merge commit (the cron route must exist).
 5. In the Supabase SQL editor on the production project, as `postgres`, run
    `drizzle/snippets/pg_cron_availability_bonus.sql`. Verify with
