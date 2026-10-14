@@ -159,3 +159,38 @@ export async function getWithdrawalSettings(): Promise<WithdrawalSettings> {
     payoutUsdPerCredit: parsePayoutRate(s.payout_usd_per_credit),
   };
 }
+
+export interface AvailabilityBonusSettings {
+  enabled: boolean;
+  minHours: number;
+  credits: number;
+}
+
+/**
+ * The weekly availability bonus tunables (SPEC §7.5, §12; availability-bonus,
+ * 2026-10-14). Coerced and defaulted to the seeded values like the rest, so a
+ * garbage edit pauses nothing and pays nothing odd: a non-boolean `enabled`
+ * reads as the seed, a non-positive threshold or amount reads as the seed.
+ */
+export async function getAvailabilityBonusSettings(): Promise<AvailabilityBonusSettings> {
+  const s = await getSettings();
+  const minHours = asNumber(
+    s.availability_bonus_min_hours,
+    seededSetting<number>("availability_bonus_min_hours"),
+  );
+  const credits = asNumber(
+    s.availability_bonus_credits,
+    seededSetting<number>("availability_bonus_credits"),
+  );
+  return {
+    enabled:
+      typeof s.availability_bonus_enabled === "boolean"
+        ? s.availability_bonus_enabled
+        : seededSetting<boolean>("availability_bonus_enabled"),
+    minHours: minHours > 0 ? minHours : seededSetting<number>("availability_bonus_min_hours"),
+    credits:
+      Number.isInteger(credits) && credits > 0
+        ? credits
+        : seededSetting<number>("availability_bonus_credits"),
+  };
+}

@@ -30,6 +30,13 @@ export const PLATFORM_SETTINGS: PlatformSetting[] = [
   { key: "max_booking_days_ahead", value: 7, description: "how far ahead students can book (§18)" },
   { key: "session_durations", value: [30, 60, 90, 120], description: "fixed duration menu, not tutor-configurable (§18, amended Phase 6 pre-build)" },
   { key: "cancellation_enabled", value: false, description: "no user cancel path; admin force-cancel only (§7.3, §18)" },
+  // availability-bonus (2026-10-14): Noora's tutor ad promise, "$40 a week if
+  // you are online 5 hours". Paid as credits at the $1 payout rate, by the
+  // Monday job (SPEC §12), for live time only (SPEC §7.5). On by default
+  // because the promise is already public; the switch is for pausing it.
+  { key: "availability_bonus_enabled", value: true, description: "pay the weekly availability bonus (tutor ad promise, Oct 2026)" },
+  { key: "availability_bonus_min_hours", value: 5, description: "live hours in a Monday-to-Sunday UTC week needed for the bonus" },
+  { key: "availability_bonus_credits", value: 40, description: "credits paid per qualifying week; $40 at the $1 payout rate" },
   {
     // Real Bubble tiers. No "minutes" column: credits are a purchased currency, not a
     // unit of time (credits-are-money amendment) — see docs/DECISIONS.md.

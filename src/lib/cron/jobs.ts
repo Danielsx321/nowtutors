@@ -19,6 +19,10 @@ import { readWalletDrift } from "@/db/queries/reconcile-wallets";
 import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
 import { runReleaseEarningsSweep } from "@/lib/earnings/release-earnings";
 import { summarizeWalletDrift } from "@/lib/wallets/reconcile";
+import { availabilityBonusPort } from "@/db/queries/availability-bonus";
+import { runAvailabilityBonus } from "@/lib/availability-bonus/award";
+import { availabilityBonusEmails } from "@/lib/email/availability-bonus-emails";
+import { getAvailabilityBonusSettings } from "@/lib/settings";
 import type { CronJobName } from "./job-names";
 
 /**
@@ -256,6 +260,54 @@ async function bookingReminders(): Promise<CronSummary> {
   return summary;
 }
 
+/**
+ * The weekly availability bonus (SPEC §12, §7.5; availability-bonus,
+ * 2026-10-14). Pays every approved tutor who was live for the threshold in
+ * any of the last four complete weeks not yet paid, then emails each one.
+ * Idempotent per tutor per week by two unique indexes, so "run now" on a
+ * Tuesday pays nobody twice.
+ */
+async function availabilityBonus(): Promise<CronSummary> {
+  const startedAt = Date.now();
+  const settings = await getAvailabilityBonusSettings();
+  const result = await runAvailabilityBonus(availabilityBonusPort, settings);
+
+  let emailsSent = 0;
+  let emailsFailed = 0;
+  if (result.awarded.length > 0) {
+    try {
+      for (const request of await availabilityBonusEmails(result.awarded)) {
+        const outcome = await sendEmailNow(request);
+        if (outcome.sent) emailsSent++;
+        else if (outcome.reason !== "preference_off" && outcome.reason !== "not_configured") emailsFailed++;
+      }
+    } catch (err) {
+      console.error("[cron/availability-bonus] emails failed", err);
+      emailsFailed += result.awarded.length - emailsSent;
+    }
+  }
+
+  const summary = {
+    ok: true as const,
+    job: "availability-bonus" as const,
+    disabled: result.disabled,
+    weeksChecked: result.weeksChecked,
+    awarded: result.awarded.length,
+    creditsAwarded: result.creditsAwarded,
+    creditsEach: settings.credits,
+    minHours: settings.minHours,
+    alreadyAwarded: result.alreadyAwarded,
+    duplicateLedger: result.duplicateLedger,
+    failed: result.failed,
+    emailsSent,
+    emailsFailed,
+    awardedTutorIds: result.awarded.map((a) => a.tutorId),
+    durationMs: Date.now() - startedAt,
+  };
+  console.info("[cron/availability-bonus]", JSON.stringify(summary));
+  return summary;
+}
+
 const JOBS: Record<CronJobName, { run: () => Promise<CronSummary>; failureMessage: string }> = {
   "sweep-presence": { run: sweepPresence, failureMessage: "Sweep failed." },
   "expire-requests": { run: expireRequests, failureMessage: "Expiry sweep failed." },
@@ -264,6 +316,7 @@ const JOBS: Record<CronJobName, { run: () => Promise<CronSummary>; failureMessag
   "release-earnings": { run: releaseEarnings, failureMessage: "Earnings release failed." },
   "reconcile-wallets": { run: reconcileWallets, failureMessage: "Wallet reconciliation failed." },
   "booking-reminders": { run: bookingReminders, failureMessage: "Reminder sweep failed." },
+  "availability-bonus": { run: availabilityBonus, failureMessage: "Availability bonus run failed." },
 };
 
 export function runCronJob(job: CronJobName): Promise<CronSummary> {

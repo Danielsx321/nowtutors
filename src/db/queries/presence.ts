@@ -2,6 +2,9 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { profiles, tutorProfiles } from "@/db/schema";
+import { accrueOnlineSeconds } from "@/db/queries/availability-bonus";
+import { secondsToAccrue } from "@/lib/availability-bonus/accrual";
+import { utcDayOf } from "@/lib/availability-bonus/week";
 
 /**
  * Presence writes (SPEC §7.5). Every function here takes an already-authorized
@@ -18,25 +21,47 @@ import { profiles, tutorProfiles } from "@/db/schema";
  *
  * Deliberately does NOT touch `is_live`: a heartbeat says "this tab is open",
  * not "make me live". Going live is its own explicit action.
+ *
+ * For a tutor who IS live, the beat also records how long they were live since
+ * the previous beat (availability-bonus, 2026-10-14; SPEC §7.5): the gap
+ * between the old `last_seen_at` and now, capped at the presence staleness
+ * window, goes into `tutor_online_time` for today (UTC). Read, accrue and
+ * bump happen in one transaction with the tutor row locked, so two tabs of
+ * the same tutor beating at once cannot count the same seconds twice.
  */
 export async function touchPresence(
   userId: string,
   role: "student" | "tutor" | "admin" | null,
-): Promise<{ tutorTouched: boolean }> {
+): Promise<{ tutorTouched: boolean; accruedSeconds: number }> {
   await db
     .update(profiles)
     .set({ lastSeenAt: new Date() })
     .where(eq(profiles.id, userId));
 
-  if (role !== "tutor") return { tutorTouched: false };
+  if (role !== "tutor") return { tutorTouched: false, accruedSeconds: 0 };
 
-  const touched = await db
-    .update(tutorProfiles)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(tutorProfiles.userId, userId))
-    .returning({ userId: tutorProfiles.userId });
+  return db.transaction(async (tx) => {
+    const [prev] = await tx
+      .select({ isLive: tutorProfiles.isLive, lastSeenAt: tutorProfiles.lastSeenAt })
+      .from(tutorProfiles)
+      .where(eq(tutorProfiles.userId, userId))
+      .for("update")
+      .limit(1);
+    if (!prev) return { tutorTouched: false, accruedSeconds: 0 };
 
-  return { tutorTouched: touched.length > 0 };
+    const now = new Date();
+    const accruedSeconds = prev.isLive ? secondsToAccrue(prev.lastSeenAt, now) : 0;
+    if (accruedSeconds > 0) {
+      await accrueOnlineSeconds(tx, userId, utcDayOf(now), accruedSeconds);
+    }
+
+    await tx
+      .update(tutorProfiles)
+      .set({ lastSeenAt: now })
+      .where(eq(tutorProfiles.userId, userId));
+
+    return { tutorTouched: true, accruedSeconds };
+  });
 }
 
 /**

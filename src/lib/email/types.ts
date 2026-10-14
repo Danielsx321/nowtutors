@@ -33,7 +33,8 @@ export type EmailType =
   | "reminder-24h"
   | "reminder-1h-student"
   | "reminder-1h-tutor"
-  | "new-message";
+  | "new-message"
+  | "availability-bonus-paid";
 
 /** What every booking email knows about the session. Times are ISO strings. */
 export interface BookingFacts {
@@ -104,6 +105,16 @@ export interface EmailPropsByType {
   "reminder-24h": BookingFacts;
   "reminder-1h-student": BookingFacts;
   "reminder-1h-tutor": BookingFacts;
+  /** The weekly availability bonus landed in the wallet (availability-bonus, 2026-10-14). */
+  "availability-bonus-paid": {
+    credits: number;
+    /** `numeric(10,2)` text at the payout rate, or null when no rate is set. */
+    amountUsd: string | null;
+    /** "6 to 12 Oct", the UTC week that was paid. */
+    weekLabel: string;
+    /** "6h 10m", what they were live for. */
+    hoursLabel: string;
+  };
   "new-message": {
     senderName: string;
     /** The first 140 characters, or null for an attachment-only message. */

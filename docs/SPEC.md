@@ -410,7 +410,7 @@ could be production, that is the bug, not the carve-out.
 | user_id | uuid FK |  |
 | delta | integer not null | signed; `check (delta <> 0)` |
 | balance_after | integer not null |  |
-| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `earning_reversal`, `purchase_reversal`. The last two were added in `drizzle/0017` (Phase 8 Part 6): `earning_reversal` takes back a tutor's released earnings when an admin force-cancels (debit, reference = the booking), and `purchase_reversal` takes back the credits a PayPal-refunded payment minted (debit, reference = the payment). The old instant-session hold's `instant_hold` / `instant_release` / `instant_capture` (Decision #3) were **removed in migration `0014`** — §18 made instant billing a single flat `booking_debit` (§7.4) and no hold model exists in the live Bubble app. Postgres has no `ALTER TYPE ... DROP VALUE`, so `0014` does the rename-create-alter-drop dance by hand, guarded by a check that no row still uses the three values (none did — the ledger is append-only, so rows of a dropped type could not have been rewritten). |
+| type | enum | `purchase`, `booking_debit`, `booking_refund`, `session_earning`, `withdrawal_hold`, `withdrawal_paid`, `withdrawal_reversed`, `admin_adjustment`, `earning_reversal`, `purchase_reversal`, `availability_bonus`. `availability_bonus` was added in `drizzle/0026` (availability-bonus, 2026-10-14): the weekly credit for being live the threshold hours (§7.5, §7.11, §12), reference = the `availability_bonus_awards` row, so the unique index pays a week once. The two before it were added in `drizzle/0017` (Phase 8 Part 6): `earning_reversal` takes back a tutor's released earnings when an admin force-cancels (debit, reference = the booking), and `purchase_reversal` takes back the credits a PayPal-refunded payment minted (debit, reference = the payment). The old instant-session hold's `instant_hold` / `instant_release` / `instant_capture` (Decision #3) were **removed in migration `0014`** — §18 made instant billing a single flat `booking_debit` (§7.4) and no hold model exists in the live Bubble app. Postgres has no `ALTER TYPE ... DROP VALUE`, so `0014` does the rename-create-alter-drop dance by hand, guarded by a check that no row still uses the three values (none did — the ledger is append-only, so rows of a dropped type could not have been rewritten). |
 | reference_type | text | `booking`, `payment`, `withdrawal_request` |
 | reference_id | uuid |  |
 | description | text | human readable, shown in wallet history |
@@ -469,6 +469,10 @@ Index `(user_id, created_at desc)`. Unique index on `(type, reference_id)` where
 > payout_usd_per_credit` (§4.7) rounded half-up to the cent in integer arithmetic
 > (`lib/withdrawals/payout-rate.ts`), and is a snapshot, as is `payout_destination`.
 > `withdrawal_paid` stays in the `credit_transaction_type` enum but is **not written** (§7.11).
+
+**`tutor_online_time`** (availability-bonus, 2026-10-14, `drizzle/0026`) — `tutor_id uuid FK → profiles.id, day date, seconds integer not null default 0 check (seconds >= 0), updated_at`. PK `(tutor_id, day)`, index on `(day)`. Seconds a tutor was **live** per UTC calendar day, written by the heartbeat (§7.5) on the trusted connection only: each beat adds the gap since the previous beat, capped at the presence staleness window, when `is_live` is true. The presence history the heartbeat never kept; `last_seen_at` alone cannot answer "hours this week". RLS: owner and admins read; no client writes.
+
+**`availability_bonus_awards`** (availability-bonus, 2026-10-14, `drizzle/0026`) — `tutor_id uuid FK → profiles.id, week_start date, live_seconds integer, credits integer check (credits > 0), transaction_id uuid FK → credit_transactions.id, created_at`. Unique `(tutor_id, week_start)`, index `(week_start desc)`. One row per tutor per paid week (§12 `availability-bonus`). The award id is the ledger row's `reference_id`, so between this table's unique week and the ledger's `(type, reference_id)` a week can never be credited twice. RLS: owner and admins read; no client writes.
 
 ### 4.5 Communication
 
@@ -531,6 +535,10 @@ cancellation_enabled         # false — no user cancel path (§7.3)
 credit_packages              # jsonb array of buyable packages: credits + USD price, no minutes column
                              #   one entry carries is_direct_pay_basis: true — the direct-pay
                              #   pricing basis (§7.6). Exactly one, or ordering throws.
+availability_bonus_enabled   # true — pay the weekly availability bonus (availability-bonus, 2026-10-14, §7.5, §12).
+                             #   false pauses the Monday job; hours keep counting.
+availability_bonus_min_hours # 5 — live hours in a Monday-to-Sunday UTC week needed for the bonus (0.5 to 168, 1 decimal)
+availability_bonus_credits   # 40 — credits paid per qualifying week; $40 at the $1 payout rate (1 to 1000)
 ```
 
 > **§18 resolution (2026-08-20)** removed the keys tied to now-deleted models:
@@ -704,6 +712,8 @@ ADMIN  (role = admin)
 /admin/bookings                    All bookings, filters, force-complete/cancel
 /admin/payments                    PayPal records, reconciliation view
 /admin/withdrawals                 Queue: approve → pay → mark paid with reference
+/admin/availability                Weekly availability bonus: live hours this week per tutor against the
+                                   threshold, weeks paid, "run now" for the Monday job (2026-10-14)
 /admin/subjects                    CRUD
 /admin/settings                    platform_settings editor + "run now" for every §12 job
 /admin/audit                       Audit log: newest first, filter by action prefix and actor
@@ -991,6 +1001,8 @@ Rules:
 ### 7.5 Presence and going live
 
 **Heartbeat.** A `usePresence()` hook mounted in the authenticated layout `POST`s to `/api/presence/heartbeat` every 30 seconds while the tab is visible, and once immediately on mount. The route sets `profiles.last_seen_at = now()`, and for tutors also `tutor_profiles.last_seen_at = now()`. Pause on `document.hidden`, resume and fire immediately on visible.
+
+**Live time is recorded on the heartbeat (availability-bonus, 2026-10-14).** For a tutor whose row has `is_live = true`, the heartbeat also adds the gap between the previous `last_seen_at` and now, **capped at the presence staleness window** (`PRESENCE_STALE_SECONDS`, the view's 2 minutes), to `tutor_online_time` for the current UTC day (§4.4). Read, accrue and bump run in one transaction with the tutor row locked (`FOR UPDATE`), so two tabs beating at once cannot count the same seconds twice. The cap is what makes this honest: a gap longer than the window means the view had already hidden the tutor and the sweep had taken them offline, so none of it is paid for. A hidden tab pauses the heartbeat, so backgrounded time stops counting within two minutes. Only live time counts, not signed-in time: a tutor on the dashboard without Go live earns nothing toward the bonus, which is the point of paying it (DECISIONS). The first beat after going live adds at most 30 seconds, since `setTutorLive` writes `last_seen_at` itself. These rows feed the weekly availability bonus (§7.11, §12) and are the only presence history the system keeps.
 
 **Going live.** Tutor toggles "Available for instant sessions" on `/tutor`. Sets `is_live = true`, `live_mode = 'instant'`, `last_seen_at = now()`. **Toggling off sets `is_live = false` immediately, and is the only thing that does.** Amended in Phase 6 Part 1: this line previously also promised "or navigating away cleanly". Nothing now clears presence on navigation — see the staleness note below for why the `pagehide` beacon that would have implemented it was removed. Leaving the page simply stops the heartbeat, and the tutor ages out of the view within the staleness window like any other departure.
 
@@ -1407,6 +1419,8 @@ Both run inside a transaction, take a row lock (`SELECT ... FOR UPDATE`) on the 
 
 - **Reversed earnings (Phase 8 Part 6).** `earning_status` gains `reversed` (`drizzle/0017`): an admin force-cancel sets it on a `held` row, or on an `available` row whose credit it took back with an `earning_reversal` debit. `release-earnings` only claims `held`, so a reversed row is never paid. Released earnings that a withdrawal already holds, or that were withdrawn, aren't clawed back; the platform absorbs the cost (§7.3).
 
+- **Weekly availability bonus (availability-bonus, 2026-10-14).** Noora's tutor ad promises $40 a week to a tutor who is online 5 hours in the week. The platform pays it as **40 credits** (`availability_bonus_credits`, $40 at the $1 payout rate) to every approved, unsuspended tutor whose `tutor_online_time` rows (§7.5) sum to at least `availability_bonus_min_hours` (5) in a Monday-to-Sunday **UTC** week, by the `availability-bonus` job every Monday at 00:20 UTC (§12). The credit is an `availability_bonus` ledger row through `lib/credits/ledger.ts`, reference = the `availability_bonus_awards` row (§4.4); it is **not** a `tutor_earnings` row, so it does not appear in the held / available / withdrawn breakdown, and it has no hold: it is in the wallet at once. Withdrawal is unchanged: `requestWithdrawal` withdraws the whole wallet balance, so the bonus goes out with the next request at the payout rate, subject to `min_withdrawal_usd`. The tutor sees hours so far, the target and the weeks paid on `/tutor/earnings`; the admin sees every tutor's hours and the awards on `/admin/availability`, and tunes amount, threshold or the on/off switch on `/admin/settings` (§4.7). The email `availability-bonus-paid` (§11) goes out per award. One `audit_log` row per run, `bonus.award_run`, actor null.
+
 `payout_method` is an enum with one value today. Adding Wise, Payoneer, Alipay, or WeChat Pay later means adding enum values and a destination-field schema per method — **not in scope for v1** (Section 14).
 
 ---
@@ -1664,7 +1678,7 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
 Student: booking confirmed (with `.ics`) **(built)**, reminder 24h **(built)**, reminder 1h **(built)**, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**, new message while away **(built, Part 3)**.
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, changes requested and back live **(built 2026-10-13, `tutor-changes-requested` with the ticked reasons and note, `tutor-back-live` on approval from a hold; both `always`)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**.
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, changes requested and back live **(built 2026-10-13, `tutor-changes-requested` with the ticked reasons and note, `tutor-back-live` on approval from a hold; both `always`)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**, availability bonus paid **(built 2026-10-14, `availability-bonus-paid`, sent by the `availability-bonus` cron per award with the week, the live hours and the amount at the payout rate; `always`)**.
 
 **The tutor guide PDF (2026-10-12).** `public/tutor-guide.pdf` is built from `content/tutor-guide.ts` by `pnpm guide:pdf` (Playwright chromium, `scripts/build-tutor-guide-pdf.ts`) and committed. The approval email and the `tutor-guide` email attach it **by URL** (`EmailAttachment.path`, which Resend fetches from the site) and link `/tutor/guide`; `/tutor/pending-approval` links the PDF for applicants. Attachments are therefore `content` (base64, the `.ics` files) or `path` (a URL), never both.
 Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.
@@ -1709,6 +1723,7 @@ secrets, and `vault.create_secret` raises on a duplicate name); per-environment 
 | `/api/cron/release-earnings` | `0 * * * *` | **built** (Phase 8 Part 1) |
 | `/api/cron/booking-reminders` | `*/15 * * * *` | **built** (Phase 10 Part 3; snippet `pg_cron_booking_reminders.sql`) |
 | `/api/cron/reconcile-wallets` | `0 3 * * *` | **built** (Phase 8 Part 3) |
+| `/api/cron/availability-bonus` | `20 0 * * 1` | **built** (availability-bonus, 2026-10-14; snippet `pg_cron_availability_bonus.sql`) |
 
 Every handler: verify `Authorization: Bearer ${CRON_SECRET}` — and **fail closed with 503 when the
 variable is unset**, so a missing secret can never degrade into "no auth required" — be idempotent,
@@ -1815,6 +1830,19 @@ never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or th
   know which of the three numbers is wrong, and `credit_transactions` is append-only (§4.4), so a
   wrong credit cannot be edited away afterwards.
 - **booking-reminders** — 24h and 1h emails, marked sent so they don't repeat.
+- **availability-bonus** — Mondays at 00:20 UTC, after the last Sunday heartbeats and the 00:00 sweep. For each of the
+  last **four complete** Monday-to-Sunday UTC weeks (`lib/availability-bonus/week.ts`), lists approved, unsuspended tutors
+  whose `tutor_online_time` sum meets `availability_bonus_min_hours` and who have no award row for that week, then per
+  tutor in one transaction inserts the `availability_bonus_awards` row (`ON CONFLICT DO NOTHING`, the claim) and the
+  `availability_bonus` ledger credit of `availability_bonus_credits` with the award id as reference
+  (`db/queries/availability-bonus.ts`, `lib/availability-bonus/award.ts`). Four weeks, not one, so a missed Monday is
+  paid on the next run rather than needing a person. Idempotent per tutor per week by the two unique indexes; a lost
+  race is counted as `alreadyAwarded`, a ledger duplicate rolls the award row back and is counted. Per-tutor failures
+  are caught and counted so one bad row never costs the others their money. Then one `availability-bonus-paid` email
+  per award (awaited, counted), and one `bonus.award_run` audit row. `availability_bonus_enabled = false` answers
+  `disabled: true` and pays nothing. Summary: `weeksChecked, awarded, creditsAwarded, creditsEach, minHours,
+  alreadyAwarded, duplicateLedger, failed, emailsSent, emailsFailed, awardedTutorIds`. "Run now" on `/admin/settings`
+  and `/admin/availability`.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.
   Built in Phase 8 Part 3 (`db/queries/reconcile-wallets.ts`, `lib/wallets/reconcile.ts`). **A FULL
   OUTER JOIN** of wallets against per-user ledger sums, so both shapes of drift are found: a cached

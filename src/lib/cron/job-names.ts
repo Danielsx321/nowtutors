@@ -13,6 +13,7 @@ export const CRON_JOB_NAMES = [
   "release-earnings",
   "reconcile-wallets",
   "booking-reminders",
+  "availability-bonus",
 ] as const;
 
 export type CronJobName = (typeof CRON_JOB_NAMES)[number];
@@ -46,6 +47,10 @@ export const CRON_JOB_INFO: Record<CronJobName, { schedule: string; what: string
   "reconcile-wallets": {
     schedule: "Daily at 03:00 UTC",
     what: "Checks every wallet against its ledger. Reports drift, never repairs it.",
+  },
+  "availability-bonus": {
+    schedule: "Mondays at 00:20 UTC",
+    what: "Credits the weekly availability bonus to approved tutors who were live for the threshold in each of the last four complete weeks not yet paid.",
   },
   "booking-reminders": {
     schedule: "Every 15 minutes",

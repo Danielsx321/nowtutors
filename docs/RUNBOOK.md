@@ -810,3 +810,46 @@ date keep their old photo and the old fixed crop until they press Change photo. 
 show the same 16:10 crop ("As students see it"), so a "Profile photo" request is judged on what
 students see.
 
+## Weekly availability bonus (2026-10-14)
+
+Noora's ad promise, on a rule: an approved tutor who is **live** (Go live on the dashboard, or
+broadcasting) for 5 hours between Monday 00:00 and Sunday 23:59 UTC gets 40 credits ($40 at the $1
+payout rate) in their wallet on Monday at 00:20 UTC, once per week, and an email. They withdraw it
+like any other credit. Time counts only while live; a tab left open on the dashboard counts nothing.
+
+**Where to look.** `/admin/availability`: every tutor's live hours this week against the threshold,
+and every week paid. `/admin/users/[id]` shows "Live this week" for a tutor. `/admin/settings` has the
+three knobs: `availability_bonus_enabled` (false pauses the Monday job, hours keep counting),
+`availability_bonus_min_hours` (5), `availability_bonus_credits` (40). The audit log shows one
+`bonus.award_run` row per run with the counts.
+
+**Setting it up on a project** (done on dev 2026-10-14; production after the PR merges):
+
+1. `CONFIRM_PROD=1 pnpm db:migrate:prod` from `~/nowtutors` on `main` (migration `drizzle/0026`:
+   the `availability_bonus` ledger type, `tutor_online_time`, `availability_bonus_awards`, RLS).
+2. `CONFIRM_PROD=1 pnpm db:seed:prod-settings` inserts the three settings keys and changes nothing
+   else (`ignoreDuplicates`).
+3. `pnpm db:verify-rls:prod`.
+4. Wait for the Vercel production deploy of the merge commit (the cron route must exist).
+5. In the Supabase SQL editor on the production project, as `postgres`, run
+   `drizzle/snippets/pg_cron_availability_bonus.sql`. Verify with
+   `select jobname, schedule, active from cron.job;` — `availability-bonus | 20 0 * * 1 | t`.
+
+**If a tutor says they were not paid.** In order: (a) `/admin/availability` or
+`select day, seconds from tutor_online_time where tutor_id = '<id>' and day between '<monday>' and
+'<sunday>' order by day;` — did the week's seconds reach `min_hours × 3600`? Live time only, UTC days.
+(b) Were they `approved` and not suspended when the job ran (Monday 00:20 UTC)? A tutor on hold that
+Monday is not paid that week. (c) `select * from availability_bonus_awards where tutor_id = '<id>'
+order by week_start desc;` — if the row exists, the credit exists (`transaction_id` points at it) and
+the question is the wallet or the email, not the bonus. (d) `select * from cron.job_run_details where
+command like '%availability-bonus%' order by start_time desc limit 5;` — did the job run? If not,
+press "Run now" on `/admin/availability`: it pays any of the last four complete weeks not yet paid and
+never pays a week twice, so it is always safe.
+
+**If the job stopped for more than four weeks**, the older weeks are not paid automatically. Run the
+numbers by hand with the first query above and credit through Adjust credits on the user's admin page
+with the week in the note, or ask Daniels to widen `WEEKS_TO_CHECK` for one run.
+
+**Changing the week to Qatar time** is a code change: `weekStartUtc` takes a zone and the schedule
+becomes `20 21 * * 0` (Sunday 21:20 UTC = Monday 00:20 in Doha). The daily buckets stay valid.
+

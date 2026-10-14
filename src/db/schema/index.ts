@@ -1,6 +1,7 @@
 export * from "./enums";
 export * from "./identity";
 export * from "./availability";
+export * from "./availability-bonus";
 export * from "./booking";
 export * from "./money";
 export * from "./communication";
