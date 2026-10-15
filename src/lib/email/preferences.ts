@@ -64,6 +64,8 @@ export const PREFERENCE_BY_TYPE: Record<EmailType, PreferenceKey | "always"> = {
   "new-message": "messages",
   // Money moved.
   "availability-bonus-paid": "always",
+  "availability-bonus-launch": "always",
+  "availability-bonus-launch-applicant": "always",
 };
 
 export function allowsEmail(prefs: NotificationPreferences, type: EmailType): boolean {

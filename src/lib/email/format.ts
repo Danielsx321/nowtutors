@@ -42,6 +42,16 @@ export function usdLine(amountUsd: string): string {
   return `$${amountUsd}`;
 }
 
+/**
+ * The next Monday after `now`'s UTC day, when the availability-bonus cron pays:
+ * "Monday 19 October". On a Monday it is the Monday after.
+ */
+export function nextMondayLabel(now: Date): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() + ((8 - d.getUTCDay()) % 7 || 7));
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(d);
+}
+
 /** The first word of a name, for greetings; "there" when nothing is known. */
 export function firstNameOf(fullName: string | null | undefined, displayName?: string | null): string {
   const source = (displayName ?? fullName ?? "").trim();

@@ -76,6 +76,10 @@ const A = ({ href, children }: { href: string; children: React.ReactNode }) => (
   </a>
 );
 
+/** "$40" for the bonus announcements; the credits when no payout rate is set. */
+const bonusAmount = (p: { credits: number; amountUsd: string | null }) =>
+  p.amountUsd ? usdLine(p.amountUsd).replace(/\.00$/, "") : creditsLine(p.credits);
+
 const replyLine = (ctx: TemplateContext) =>
   ctx.replyTo ? `Reply to this email and it reaches ${ctx.replyTo}.` : "Reply to this email if anything looks wrong.";
 
@@ -677,6 +681,83 @@ export const templates: { [T in EmailType]: Template<T> } = {
       </Shell>
     ),
   },
+
+  "availability-bonus-launch": {
+    subject: (p) => `Earn ${bonusAmount(p)} every week on NowTutors, just by being online`,
+    body: (p, ctx) => (
+      <Shell
+        preview={`${bonusAmount(p)} a week for ${p.minHours} hours live, whether a student books you or not.`}
+        heading={`Get paid ${bonusAmount(p)} a week for being online, ${ctx.firstName}.`}
+        cta={{ label: "Go live now", href: ctx.url("/tutor") }}
+        footerNote={replyLine(ctx)}
+      >
+        <P>
+          From this week, NowTutors pays you {bonusAmount(p)} every week for being available, whether a
+          student books you or not.
+        </P>
+        <P>Here is how it works:</P>
+        <P>1. Press Go live on your tutor dashboard.</P>
+        <P>2. Stay live for {p.minHours} hours in total during the week, Monday to Sunday.</P>
+        <P>
+          3. Every Monday, {creditsLine(p.credits)}
+          {p.amountUsd ? ` (${bonusAmount(p)})` : ""} land in your wallet automatically.
+        </P>
+        <P>
+          The hours do not have to be in one go. An hour a day across {p.minHours} days counts. You can watch
+          them add up on your <A href={ctx.url("/tutor/earnings")}>Earnings</A> page.
+        </P>
+        <P>
+          The bonus is yours to withdraw straight away. Request a withdrawal and it goes to the PayPal email
+          on your profile.
+        </P>
+        <P>
+          Your first bonus is paid on {p.firstPayoutLabel} for the time you are live from today. Will you go
+          live for your first hour today?
+        </P>
+      </Shell>
+    ),
+  },
+
+  "availability-bonus-launch-applicant": {
+    subject: (p) => `Get approved on NowTutors and earn ${bonusAmount(p)} a week`,
+    body: (p, ctx) => {
+      const fix = p.status === "changes_requested";
+      return (
+        <Shell
+          preview={`Approved tutors now get ${bonusAmount(p)} a week for ${p.minHours} hours online.`}
+          heading={`Approved tutors now earn ${bonusAmount(p)} a week, ${ctx.firstName}.`}
+          cta={
+            fix
+              ? { label: "Edit your profile", href: ctx.url("/tutor/profile") }
+              : { label: "Check your application", href: ctx.url("/tutor/pending-approval") }
+          }
+          footerNote={replyLine(ctx)}
+        >
+          <P>
+            Every approved tutor on NowTutors now gets {bonusAmount(p)} a week just for being online{" "}
+            {p.minHours} hours, on top of what they earn from lessons. It lands in their wallet every Monday
+            and they can withdraw it to PayPal straight away.
+          </P>
+          {fix ? (
+            <P>
+              Your profile is paused for a couple of changes. Make them and save, and we take another look,
+              usually within a day. Once you are approved, press Go live and your hours start counting.
+            </P>
+          ) : (
+            <P>
+              Your application is with us. Check your profile reads well, with a clear photo and your subjects,
+              so we can approve it quickly. Once you are approved, press Go live and your hours start counting.
+            </P>
+          )}
+          <P>
+            {fix
+              ? "Can you make the changes today so you are approved in time for next Monday's payout?"
+              : "Can you check your profile today so you are approved in time for next Monday's payout?"}
+          </P>
+        </Shell>
+      );
+    },
+  },
 };
 
 const SAMPLE_BOOKING: BookingFacts = {
@@ -752,6 +833,8 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
     weekLabel: "6 to 12 Oct",
     hoursLabel: "6h 10m",
   },
+  "availability-bonus-launch": { credits: 40, amountUsd: "40.00", minHours: 5, firstPayoutLabel: "Monday 19 October" },
+  "availability-bonus-launch-applicant": { credits: 40, amountUsd: "40.00", minHours: 5, status: "pending" },
 };
 
 export const SAMPLE_CONTEXT: TemplateContext = {

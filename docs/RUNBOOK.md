@@ -781,6 +781,34 @@ One line per tutor with the Resend id, 700 ms apart, a count at the end, exit 1 
 value and stops. `--only someone@example.com` sends to that one tutor. `pnpm email:tutor-guide -- --dry-run`
 (dev) and `:test` never reach Resend: they print envelopes through the log transport.
 
+## Bonus announcement: the one-off send (2026-10-15)
+
+Tells every tutor already on the site about the weekly availability bonus. Approved tutors get
+`availability-bonus-launch` (how to qualify, first payout date); applicants who are pending or on hold get
+`availability-bonus-launch-applicant` (get approved first). Rejected and suspended accounts get nothing. The
+amount and hours come from `platform_settings`, and the script stops if `availability_bonus_enabled` is off.
+
+```bash
+cd ~/nowtutors
+CONFIRM_PROD=1 pnpm email:bonus-announcement:prod -- --dry-run
+```
+
+Lists who gets which email, masked, and the count of each. Then a preview of both emails to one inbox:
+
+```bash
+CONFIRM_PROD=1 pnpm email:bonus-announcement:prod -- --to you@example.com
+```
+
+Then the real send:
+
+```bash
+CONFIRM_PROD=1 pnpm email:bonus-announcement:prod
+```
+
+`--audience approved` or `--audience applicants` sends to one group only; `--only someone@example.com` to one
+tutor. Same env file and pacing as the tutor guide send above. Resend's free plan caps a day at 100 emails
+including the site's own, so a list near that size is split across two days with `--audience`.
+
 ## Tutor approvals: Approve, Request changes, Reject (2026-10-13)
 
 `/admin/tutors` has four tabs. **Pending** is new applications. **Resubmitted** is tutors who were put on

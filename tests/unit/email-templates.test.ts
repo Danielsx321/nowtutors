@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderEmail } from "@emails/render";
 import { SAMPLE_PROPS, templates } from "@emails/templates";
 import type { EmailPropsByType, EmailType, Recipient } from "@/lib/email/types";
-import { absoluteWhen, creditsLine, firstNameOf, slugToWords, usdLine } from "@/lib/email/format";
+import { absoluteWhen, creditsLine, firstNameOf, nextMondayLabel, slugToWords, usdLine } from "@/lib/email/format";
 
 /**
  * Every template renders to HTML and plain text with a subject, a link into
@@ -49,6 +49,8 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "reminder-1h-tutor": "/tutor/bookings/3f0c1b7e-0000-4000-8000-000000000001",
   "new-message": "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
   "availability-bonus-paid": "/tutor/earnings",
+  "availability-bonus-launch": "/tutor",
+  "availability-bonus-launch-applicant": "/tutor/pending-approval",
 };
 
 describe("email templates", () => {
@@ -219,5 +221,49 @@ describe("format helpers", () => {
   it("turns a subject slug into words", () => {
     expect(slugToWords("sat-act-test-prep")).toBe("Sat act test prep");
     expect(slugToWords("spanish")).toBe("Spanish");
+  });
+});
+
+describe("bonus announcement (2026-10-15)", () => {
+  it("tells approved tutors the amount, the hours and the first payout", async () => {
+    const out = await renderEmail("availability-bonus-launch", SAMPLE_PROPS["availability-bonus-launch"], { recipient, appUrl });
+    expect(out.subject).toBe("Earn $40 every week on NowTutors, just by being online");
+    expect(out.text).toContain("5 hours");
+    expect(out.text).toContain("40 credits ($40)");
+    expect(out.text).toContain("Monday 19 October");
+    expect(out.text).toContain("https://nowtutors.test/tutor/earnings");
+  });
+
+  it("falls back to credits when no payout rate is set", async () => {
+    const out = await renderEmail(
+      "availability-bonus-launch",
+      { ...SAMPLE_PROPS["availability-bonus-launch"], amountUsd: null },
+      { recipient, appUrl },
+    );
+    expect(out.subject).toBe("Earn 40 credits every week on NowTutors, just by being online");
+    expect(out.text).not.toContain("$");
+  });
+
+  it("sends applicants on hold to their profile editor, pending ones to their application", async () => {
+    const pending = await renderEmail(
+      "availability-bonus-launch-applicant",
+      SAMPLE_PROPS["availability-bonus-launch-applicant"],
+      { recipient, appUrl },
+    );
+    expect(pending.text).toContain("Your application is with us.");
+    const held = await renderEmail(
+      "availability-bonus-launch-applicant",
+      { ...SAMPLE_PROPS["availability-bonus-launch-applicant"], status: "changes_requested" },
+      { recipient, appUrl },
+    );
+    expect(held.html).toContain("https://nowtutors.test/tutor/profile");
+    expect(held.text).toContain("Your profile is paused");
+    expect(held.text).not.toContain("https://nowtutors.test/tutor/pending-approval");
+  });
+
+  it("names the next Monday after today, never today", () => {
+    expect(nextMondayLabel(new Date("2026-10-15T09:00:00Z"))).toBe("Monday 19 October");
+    expect(nextMondayLabel(new Date("2026-10-18T23:59:00Z"))).toBe("Monday 19 October");
+    expect(nextMondayLabel(new Date("2026-10-19T00:01:00Z"))).toBe("Monday 26 October");
   });
 });

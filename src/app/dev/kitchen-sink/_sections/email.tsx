@@ -31,6 +31,8 @@ const ORDER: EmailType[] = [
   "reminder-1h-tutor",
   "new-message",
   "availability-bonus-paid",
+  "availability-bonus-launch",
+  "availability-bonus-launch-applicant",
 ];
 
 /**
