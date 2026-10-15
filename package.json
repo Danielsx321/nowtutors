@@ -36,7 +36,9 @@
     "guide:pdf": "tsx scripts/build-tutor-guide-pdf.ts",
     "email:tutor-guide": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=dev",
     "email:tutor-guide:test": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=test",
-    "email:tutor-guide:prod": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=prod"
+    "email:tutor-guide:prod": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=prod",
+    "email:bonus-announcement": "node scripts/with-ca-certs.mjs tsx src/db/send-bonus-announcement.ts --env=dev",
+    "email:bonus-announcement:prod": "node scripts/with-ca-certs.mjs tsx src/db/send-bonus-announcement.ts --env=prod"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

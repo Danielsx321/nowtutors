@@ -34,7 +34,9 @@ export type EmailType =
   | "reminder-1h-student"
   | "reminder-1h-tutor"
   | "new-message"
-  | "availability-bonus-paid";
+  | "availability-bonus-paid"
+  | "availability-bonus-launch"
+  | "availability-bonus-launch-applicant";
 
 /** What every booking email knows about the session. Times are ISO strings. */
 export interface BookingFacts {
@@ -114,6 +116,25 @@ export interface EmailPropsByType {
     weekLabel: string;
     /** "6h 10m", what they were live for. */
     hoursLabel: string;
+  };
+  /**
+   * The one-off announcement of the weekly bonus (`db/send-bonus-announcement.ts`,
+   * 2026-10-15). Amounts come from platform_settings at send time.
+   */
+  "availability-bonus-launch": {
+    credits: number;
+    /** `numeric(10,2)` text at the payout rate, or null when no rate is set. */
+    amountUsd: string | null;
+    minHours: number;
+    /** "Monday 19 October", the first Monday the cron pays. */
+    firstPayoutLabel: string;
+  };
+  /** The same announcement for applicants not approved yet; the copy depends on where they stand. */
+  "availability-bonus-launch-applicant": {
+    credits: number;
+    amountUsd: string | null;
+    minHours: number;
+    status: "pending" | "changes_requested";
   };
   "new-message": {
     senderName: string;
