@@ -95,6 +95,7 @@ export const adminNav: NavItem[] = [
   { label: "Bookings", href: "/admin/bookings", icon: CalendarDays },
   { label: "Payments", href: "/admin/payments", icon: CreditCard },
   { label: "Withdrawals", href: "/admin/withdrawals", icon: Banknote },
+  { label: "Availability", href: "/admin/availability", icon: Clock },
   { label: "Subjects", href: "/admin/subjects", icon: BookOpen },
   { label: "Settings", href: "/admin/settings", icon: Settings },
   { label: "Audit log", href: "/admin/audit", icon: ScrollText },

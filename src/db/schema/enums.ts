@@ -66,6 +66,9 @@ export const creditTransactionType = pgEnum("credit_transaction_type", [
   // released earnings, and a PayPal refund taking back the credits it minted.
   "earning_reversal",
   "purchase_reversal",
+  // availability-bonus (drizzle/0026): the weekly $40-for-5-live-hours credit.
+  // Its own type so admin_adjustment stays a manual fix (DECISIONS).
+  "availability_bonus",
 ]);
 
 export const paymentProvider = pgEnum("payment_provider", ["paypal"]);

@@ -5464,3 +5464,50 @@ low in the frame comes out as chest and background. Plan: workspace `plans/2026-
 4. **Found on the way:** `Avatar` and `TutorPhoto` kept a `failed` flag across `src` changes, so a tutor
    replacing a broken photo saw initials until a reload. Both reset on a new `src`.
 
+## Weekly availability bonus: pay the ad's promise on a rule (`availability-bonus`, 2026-10-14)
+
+Noora's r/QatarCareers tutor ad promises "$40 a week whether you tutor or not, if you log in 5 hours a
+week". Nothing on the site could measure or pay that: the heartbeat overwrote `last_seen_at` and no
+presence history existed. Agreed with Daniels 14 Oct as part of the rebuild extras. Plan: workspace
+`plans/2026-10-14-nowtutors-weekly-availability-bonus.md`.
+
+1. **Live time counts, not signed-in time.** Hours accrue only while `is_live = true` (instant or
+   broadcast). Her ad says "logged in and online"; Daniels asked for "conditions that make them
+   active". Live means a student can reach them, so the $40 buys supply. A dashboard tab left open
+   earns nothing. Switching to signed-in time is one condition in `touchPresence`, if she ever asks.
+2. **Accrue on the heartbeat, capped at the staleness window.** Each tutor beat adds
+   `min(now - previous last_seen_at, 120 s)` to a per-day bucket (`tutor_online_time`). The cap is
+   `PRESENCE_STALE_SECONDS`, not a second constant, so a gap the view would have called "gone" is never
+   paid. No new timers, one small upsert per beat, two tabs serialised by `FOR UPDATE` on the tutor row.
+   Alternative rejected: go-live / go-offline events. Ungraceful exits never write the offline event,
+   so sessions would run until the sweep and over-count.
+3. **Weeks are Monday 00:00 to Sunday 23:59:59 UTC, buckets are UTC days.** The app stores UTC, every
+   cron schedule is UTC, tutors are spread across zones. The week is labelled with its UTC dates
+   everywhere rather than shifted per viewer, because no instant falls on the same calendar day from
+   UTC-12 to UTC+14 and a label that moved by a day for some viewers would misstate which days count.
+   Daily buckets keep the week rule changeable (a Qatar-time week later is a schedule and a boundary
+   change, not a re-log).
+4. **Own ledger type `availability_bonus`, own award table.** `admin_adjustment` stays for manual fixes
+   (see "New ledger types instead of admin_adjustment"). The award row's id is the ledger reference, so
+   the table's unique `(tutor, week)` and the ledger's unique `(type, reference_id)` together make a
+   double credit impossible however many times the job runs.
+5. **Paid into the wallet, withdrawn through the existing flow.** No `tutor_earnings` row and no hold:
+   it is not a session and the breakdown is for sessions. `requestWithdrawal` already withdraws the
+   whole balance, so nothing in withdrawals changed. Alternative rejected: a PayPal mass-pay from the
+   job; the admin queue already exists and keeps a person on each PayPal send.
+6. **The job checks the last four complete weeks, not just last week.** A missed Monday (scheduler
+   down, deploy mid-run) is paid on the next run. The plan had a `?week=` parameter instead; the
+   look-back is simpler, needs no change to the pinned route shape, and heals on its own.
+7. **Settings, not constants, and on by default.** `availability_bonus_enabled` (true),
+   `availability_bonus_min_hours` (5, one decimal allowed), `availability_bonus_credits` (40). On by
+   default because the promise is already public; the switch is for pausing. Editable on
+   `/admin/settings` with the same strict editor as every other key.
+8. **Who qualifies at award time:** `approval_status = 'approved'`, `is_suspended = false`, sum of the
+   week's seconds at or above the threshold. A tutor on hold (0025) is not approved and is not paid that
+   week; hours they logged still count if they are approved again before the job runs.
+9. **One audit row per run** (`bonus.award_run`, actor null, counts in the payload), not one per award:
+   the award row plus the ledger row are the per-tutor record and `/admin/availability` lists them.
+10. **Email per award, `always`.** Money moved; same class as `withdrawal-paid`. Sent from the cron
+    after each transaction commits, counted in the summary, never thrown.
+11. **Scheduled by a pg_cron snippet run by hand** like the other seven (SPEC §3.5), Mondays 00:20 UTC.
+

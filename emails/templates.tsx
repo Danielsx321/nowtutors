@@ -652,6 +652,31 @@ export const templates: { [T in EmailType]: Template<T> } = {
       </Shell>
     ),
   },
+
+  "availability-bonus-paid": {
+    subject: (p) =>
+      p.amountUsd ? `Your ${usdLine(p.amountUsd)} availability bonus is in your wallet` : "Your availability bonus is in your wallet",
+    body: (p, ctx) => (
+      <Shell
+        preview={`${creditsLine(p.credits)} for being live ${p.hoursLabel} last week.`}
+        heading="Your weekly availability bonus has landed."
+        cta={{ label: "View your earnings", href: ctx.url("/tutor/earnings") }}
+        footerNote={replyLine(ctx)}
+      >
+        <Facts
+          rows={[
+            ["Week", p.weekLabel],
+            ["Live for", p.hoursLabel],
+            ["Added to your wallet", p.amountUsd ? `${creditsLine(p.credits)} (${usdLine(p.amountUsd)})` : creditsLine(p.credits)],
+          ]}
+        />
+        <P>
+          Thank you for being there for students. The credits are in your wallet now and you can withdraw them
+          with the rest of your earnings.
+        </P>
+      </Shell>
+    ),
+  },
 };
 
 const SAMPLE_BOOKING: BookingFacts = {
@@ -720,6 +745,12 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
     preview: "Hi Tina, could we go over the subjunctive on Thursday? I have a test on Friday.",
     hasAttachment: false,
     threadPath: "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
+  },
+  "availability-bonus-paid": {
+    credits: 40,
+    amountUsd: "40.00",
+    weekLabel: "6 to 12 Oct",
+    hoursLabel: "6h 10m",
   },
 };
 

@@ -171,3 +171,27 @@ describe("credit_packages", () => {
     expect(requireDirectPayBasisPackage(parsed).id).toBe("pro");
   });
 });
+
+describe("availability bonus keys (availability-bonus, 2026-10-14)", () => {
+  it("enabled is a boolean, nothing else", () => {
+    expect(ok("availability_bonus_enabled", true)).toEqual({ ok: true, value: true });
+    expect(ok("availability_bonus_enabled", false)).toEqual({ ok: true, value: false });
+    expect(refusal("availability_bonus_enabled", '"yes"').reason).toBe("invalid");
+    expect(refusal("availability_bonus_enabled", "1").reason).toBe("invalid");
+  });
+
+  it("threshold is 0.5 to 168 hours with at most one decimal", () => {
+    expect(ok("availability_bonus_min_hours", 5)).toEqual({ ok: true, value: 5 });
+    expect(ok("availability_bonus_min_hours", 2.5)).toEqual({ ok: true, value: 2.5 });
+    expect(refusal("availability_bonus_min_hours", "0").reason).toBe("invalid");
+    expect(refusal("availability_bonus_min_hours", "169").reason).toBe("invalid");
+    expect(refusal("availability_bonus_min_hours", "5.25").reason).toBe("invalid");
+  });
+
+  it("credits is a whole number from 1 to 1000", () => {
+    expect(ok("availability_bonus_credits", 40)).toEqual({ ok: true, value: 40 });
+    expect(refusal("availability_bonus_credits", "0").reason).toBe("invalid");
+    expect(refusal("availability_bonus_credits", "40.5").reason).toBe("invalid");
+    expect(refusal("availability_bonus_credits", "1001").reason).toBe("invalid");
+  });
+});

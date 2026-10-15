@@ -48,6 +48,7 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "reminder-1h-student": "/dashboard/bookings/3f0c1b7e-0000-4000-8000-000000000001",
   "reminder-1h-tutor": "/tutor/bookings/3f0c1b7e-0000-4000-8000-000000000001",
   "new-message": "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
+  "availability-bonus-paid": "/tutor/earnings",
 };
 
 describe("email templates", () => {

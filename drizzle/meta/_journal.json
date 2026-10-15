@@ -183,6 +183,13 @@
       "when": 1791856606677,
       "tag": "0025_tutor_changes_requested",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791989624400,
+      "tag": "0026_availability_bonus",
+      "breakpoints": true
     }
   ]
 }

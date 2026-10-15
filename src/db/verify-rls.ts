@@ -41,6 +41,13 @@ async function main() {
     const { data, error } = await rows(anon.from(table).select("*"));
     assert(!error && data.length === 0, `anon reads 0 from ${table}`);
   }
+  // Tables created after 0005's blanket grants carry no anon grant at all
+  // (0008 favourites, 0026 bonus tables), so anon is refused outright rather
+  // than filtered to nothing. Either answer is a deny.
+  for (const table of ["tutor_online_time", "availability_bonus_awards"]) {
+    const { data, error } = await rows(anon.from(table).select("*"));
+    assert(!!error || data.length === 0, `anon is denied ${table} (${error ? "refused" : "0 rows"})`);
+  }
 
   console.log("anon — must be ALLOWED (public reads):");
   for (const table of ["tutor_profiles", "subjects", "platform_settings", "public_profiles"]) {
@@ -276,6 +283,41 @@ async function main() {
   // (drizzle/0015). A request row without its withdrawal_hold debit would be a
   // payout of credits nobody set aside, so the only write path is the server
   // action that takes the hold in the same transaction (SPEC §5, §7.11).
+  // availability-bonus (drizzle/0026): a tutor reads only their own live-time
+  // and award rows, and cannot write either (the heartbeat and the Monday job
+  // are the only writers, on the service role).
+  console.log("tutor_online_time + availability_bonus_awards — owner reads, no client writes (0026):");
+  {
+    const { data, error } = await rows(tutor.from("tutor_online_time").select("tutor_id"));
+    const onlyMine = data.every((r) => (r as { tutor_id: string }).tutor_id === tid);
+    assert(!error && onlyMine, `tutor reads only own tutor_online_time rows (${data.length})`);
+  }
+  {
+    const { error } = await tutor
+      .from("tutor_online_time")
+      .insert({ tutor_id: tid, day: "2026-01-05", seconds: 999_999 });
+    assert(!!error, "tutor cannot INSERT tutor_online_time (no self-reported hours)");
+  }
+  {
+    const { data, error } = await tutor
+      .from("tutor_online_time")
+      .update({ seconds: 999_999 })
+      .eq("tutor_id", tid)
+      .select("tutor_id");
+    assert(!!error || (data ?? []).length === 0, "tutor cannot UPDATE tutor_online_time");
+  }
+  {
+    const { data, error } = await rows(tutor.from("availability_bonus_awards").select("tutor_id"));
+    const onlyMine = data.every((r) => (r as { tutor_id: string }).tutor_id === tid);
+    assert(!error && onlyMine, `tutor reads only own availability_bonus_awards (${data.length})`);
+  }
+  {
+    const { error } = await tutor
+      .from("availability_bonus_awards")
+      .insert({ tutor_id: tid, week_start: "2026-01-05", live_seconds: 18000, credits: 40 });
+    assert(!!error, "tutor cannot INSERT availability_bonus_awards (no self-award)");
+  }
+
   console.log("withdrawal_requests — tutor writes must be DENIED (0015):");
   {
     const { error } = await tutor.from("withdrawal_requests").insert({

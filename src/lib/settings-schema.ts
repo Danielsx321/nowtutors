@@ -155,6 +155,31 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     schema: z.literal(false),
   },
   {
+    key: "availability_bonus_enabled",
+    label: "Weekly availability bonus",
+    help: "true pays the bonus every Monday for the week just ended; false pauses it. Hours keep counting either way.",
+    input: "json",
+    schema: z.boolean({ error: "Enter true or false." }),
+  },
+  {
+    key: "availability_bonus_min_hours",
+    label: "Availability bonus threshold (live hours a week)",
+    help: "Hours a tutor must be live between Monday and Sunday (UTC) to earn the bonus. Applies to the next Monday run.",
+    input: "number",
+    schema: z
+      .number({ error: "Enter a number." })
+      .min(0.5, "Must be at least 0.5 hours.")
+      .max(168, "Must be at most 168 hours.")
+      .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-6, "At most 1 decimal."),
+  },
+  {
+    key: "availability_bonus_credits",
+    label: "Availability bonus (credits a week)",
+    help: "Credits paid per qualifying week. Tutors withdraw them at the payout rate like any other credit.",
+    input: "number",
+    schema: wholeNumber(1, 1000, "credits"),
+  },
+  {
     key: "credit_packages",
     label: "Credit packages",
     help: "JSON list of { id, name, credits, price_usd } with exactly one is_direct_pay_basis: true. Orders already created keep their own price.",
