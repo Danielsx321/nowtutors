@@ -16,10 +16,15 @@ const m = vi.hoisted(() => ({
   storedPrefs: {} as unknown,
   signIn: vi.fn(),
   updateUser: vi.fn(),
+  rateLimit: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/security/rate-limit", () => ({
+  checkRateLimit: (...a: unknown[]) => m.rateLimit(...a),
+  RATE_LIMIT_MESSAGE: "Too many attempts. Try again in a few minutes.",
+}));
 vi.mock("@/lib/auth/guards", () => ({
   requireUser: async () => {
     if (!m.user) throw new Error("NEXT_REDIRECT");
@@ -58,6 +63,7 @@ beforeEach(() => {
   m.writes = [];
   m.storedPrefs = {};
   m.authUser = { email: "sam@example.com", app_metadata: { providers: ["email"] } };
+  m.rateLimit.mockResolvedValue({ ok: true });
 });
 
 describe("timezones", () => {
@@ -153,6 +159,14 @@ describe("changePassword", () => {
   it("refuses a wrong current password without touching the new one", async () => {
     m.signIn.mockResolvedValue({ error: { message: "Invalid login credentials" } });
     expect(await changePassword(input)).toEqual({ error: "Your current password isn't right." });
+    expect(m.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("is rate limited per user, before the current password is tried (Security C)", async () => {
+    m.rateLimit.mockResolvedValue({ ok: false, retryAfterSeconds: 300 });
+    expect(await changePassword(input)).toEqual({ error: "Too many attempts. Try again in a few minutes." });
+    expect(m.rateLimit).toHaveBeenCalledWith({ action: "changePassword", userId: "u1" });
+    expect(m.signIn).not.toHaveBeenCalled();
     expect(m.updateUser).not.toHaveBeenCalled();
   });
 

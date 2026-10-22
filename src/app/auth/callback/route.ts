@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import { homeFor } from "@/lib/auth/guards";
+import { safeNext } from "@/lib/auth/safe-next";
 
 /**
  * The single OAuth / email-link handler (SPEC §6). Supabase redirects here with
@@ -22,10 +23,8 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const nextRaw = searchParams.get("next");
-  const next =
-    nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//")
-      ? nextRaw
-      : null;
+  // The same in-app check the auth actions use (lib/auth/safe-next.ts).
+  const next = safeNext(nextRaw);
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`);

@@ -44,7 +44,7 @@ async function main() {
   // Tables created after 0005's blanket grants carry no anon grant at all
   // (0008 favourites, 0026 bonus tables), so anon is refused outright rather
   // than filtered to nothing. Either answer is a deny.
-  for (const table of ["tutor_online_time", "availability_bonus_awards"]) {
+  for (const table of ["tutor_online_time", "availability_bonus_awards", "rate_limits"]) {
     const { data, error } = await rows(anon.from(table).select("*"));
     assert(!!error || data.length === 0, `anon is denied ${table} (${error ? "refused" : "0 rows"})`);
   }
@@ -427,6 +427,45 @@ async function main() {
       .from("availability_bonus_awards")
       .insert({ tutor_id: tid, week_start: "2026-01-05", live_seconds: 18000, credits: 40 });
     assert(!!error, "tutor cannot INSERT availability_bonus_awards (no self-award)");
+  }
+
+  // rate_limits (drizzle/0028, Security C): server-only. No client may read the
+  // counters, reset its own, or call the counter function to burn someone
+  // else's budget.
+  console.log("rate_limits — no client access at all (0028):");
+  {
+    const { data, error } = await rows(tutor.from("rate_limits").select("*"));
+    assert(!!error || data.length === 0, `tutor cannot read rate_limits (${error ? "refused" : "0 rows"})`);
+  }
+  {
+    const { error } = await tutor
+      .from("rate_limits")
+      .insert({ key: "signIn:email:victim@example.com", window_start: new Date().toISOString(), count: 999 });
+    assert(!!error, "tutor cannot INSERT rate_limits (no locking out someone else)");
+  }
+  {
+    const { data, error } = await tutor
+      .from("rate_limits")
+      .delete()
+      .like("key", "%")
+      .select("key");
+    assert(!!error || (data ?? []).length === 0, "tutor cannot DELETE rate_limits (no resetting a limit)");
+  }
+  {
+    const { error } = await tutor.rpc("hit_rate_limit", {
+      p_key: "signIn:email:victim@example.com",
+      p_limit: 1,
+      p_window_seconds: 900,
+    });
+    assert(!!error, "tutor cannot call hit_rate_limit()");
+  }
+  {
+    const { error } = await anon.rpc("hit_rate_limit", {
+      p_key: "signIn:email:victim@example.com",
+      p_limit: 1,
+      p_window_seconds: 900,
+    });
+    assert(!!error, "anon cannot call hit_rate_limit()");
   }
 
   console.log("withdrawal_requests — tutor writes must be DENIED (0015):");

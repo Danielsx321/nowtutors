@@ -34,7 +34,8 @@ export type EmailType =
   | "reminder-1h-student"
   | "reminder-1h-tutor"
   | "new-message"
-  | "availability-bonus-paid";
+  | "availability-bonus-paid"
+  | "payout-email-changed";
 
 /** What every booking email knows about the session. Times are ISO strings. */
 export interface BookingFacts {
@@ -114,6 +115,16 @@ export interface EmailPropsByType {
     weekLabel: string;
     /** "6h 10m", what they were live for. */
     hoursLabel: string;
+  };
+  /**
+   * The PayPal payout address was changed (Security C, 2026-10-22). Sent to the
+   * account email, never the new PayPal one. Full addresses; the template masks them.
+   */
+  "payout-email-changed": {
+    from: string;
+    to: string;
+    /** ISO string, printed in the tutor's timezone. */
+    changedAt: string;
   };
   "new-message": {
     senderName: string;

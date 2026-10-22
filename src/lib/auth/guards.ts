@@ -119,9 +119,21 @@ export const getViewer = cache(async () => {
   return p ? { userId: p.id, role: p.role } : null;
 });
 
+/**
+ * A signed-in, NOT suspended user (SPEC §5). Suspension is checked here, not
+ * only in `requireRole`, so the actions that need no role (settings, change
+ * password, messaging, the session room, onboarding) refuse a suspended
+ * account too (Security C, 2026-10-22). It goes to `/suspended`, the same place
+ * `requireRole` sends it. That page and `signOut` call no guard, so there is no
+ * redirect loop and a suspended person can still log out. The profile read is
+ * `getSessionProfile`, memoized per request, so `requireRole` (which calls
+ * this and then reads the profile itself) still costs one query.
+ */
 export async function requireUser() {
   const user = await getUser();
   if (!user) redirect("/login");
+  const p = await getSessionProfile();
+  if (p?.isSuspended) redirect("/suspended");
   return user;
 }
 

@@ -1,3 +1,4 @@
+import "server-only";
 import { sql, type SQL } from "drizzle-orm";
 
 /**

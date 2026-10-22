@@ -677,6 +677,35 @@ export const templates: { [T in EmailType]: Template<T> } = {
       </Shell>
     ),
   },
+
+  // Security C (2026-10-22): sent to the account email, never the new PayPal one.
+  "payout-email-changed": {
+    subject: () => "Your PayPal payout email was changed",
+    body: (p, ctx) => (
+      <Shell
+        preview={`Payouts now go to ${maskEmail(p.to)}.`}
+        heading="Your payout email was changed."
+        cta={{ label: "Check your payout settings", href: ctx.url("/tutor/settings") }}
+        footerNote={replyLine(ctx)}
+      >
+        <Facts
+          rows={[
+            ["Was", maskEmail(p.from)],
+            ["Now", maskEmail(p.to)],
+            ["Changed", absoluteWhen(new Date(p.changedAt), ctx.timezone)],
+          ]}
+        />
+        <P>
+          Your next withdrawal will be paid to the new address. If you made this change, there&rsquo;s nothing
+          else to do.
+        </P>
+        <P>
+          If you didn&rsquo;t, change your password now, put your own PayPal email back in your settings, and
+          reply to this email so we can hold any payout.
+        </P>
+      </Shell>
+    ),
+  },
 };
 
 const SAMPLE_BOOKING: BookingFacts = {
@@ -751,6 +780,11 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
     amountUsd: "40.00",
     weekLabel: "6 to 12 Oct",
     hoursLabel: "6h 10m",
+  },
+  "payout-email-changed": {
+    from: "tina.reyes@example.com",
+    to: "tina.payouts@example.com",
+    changedAt: "2026-10-22T09:15:00.000Z",
   },
 };
 

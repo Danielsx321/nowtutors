@@ -10,12 +10,15 @@ import {
   tutorSubjects,
   tutorPayoutDetails,
   studentSubjects,
+  auditLog,
 } from "@/db/schema";
 import { requireUser, getSessionProfile, homeFor } from "@/lib/auth/guards";
 import { queueEmail } from "@/lib/email";
+import { getClientIp } from "@/lib/security/client-ip";
+import { payoutEmailAuditRow } from "@/lib/withdrawals/payout-email-audit";
 import {
-  studentOnboardingSchema,
-  tutorOnboardingSchema,
+  studentOnboardingSchemaFor,
+  tutorOnboardingSchemaFor,
   type StudentOnboardingValues,
   type TutorOnboardingValues,
 } from "@/lib/auth/schemas";
@@ -55,7 +58,7 @@ export async function completeStudentOnboarding(
 ): Promise<OnboardingResult> {
   const user = await requireUnonboarded();
 
-  const parsed = studentOnboardingSchema.safeParse(values); // server re-validates
+  const parsed = studentOnboardingSchemaFor(user.id).safeParse(values); // server re-validates, own avatar only
   if (!parsed.success) return { error: "Please check the form and try again." };
   const v = parsed.data;
 
@@ -116,7 +119,7 @@ export async function completeTutorOnboarding(
 ): Promise<OnboardingResult> {
   const user = await requireUnonboarded();
 
-  const parsed = tutorOnboardingSchema.safeParse(values); // server re-validates
+  const parsed = tutorOnboardingSchemaFor(user.id).safeParse(values); // server re-validates, own avatar only
   if (!parsed.success) return { error: "Please check the form and try again." };
   const v = parsed.data;
 
@@ -125,6 +128,7 @@ export async function completeTutorOnboarding(
     return { error: "Select at least one subject you teach." };
   }
   const slug = await uniqueTutorSlug(v.fullName);
+  const ip = await getClientIp();
 
   await db.transaction(async (tx) => {
     await tx
@@ -169,6 +173,11 @@ export async function completeTutorOnboarding(
       payoutMethod: "paypal",
       paypalEmail: v.paypalEmail,
     });
+    // The first set is logged like any change (Security C), with no "before"
+    // and no notice email: the tutor is typing it in right now.
+    await tx
+      .insert(auditLog)
+      .values(payoutEmailAuditRow({ tutorId: user.id, from: null, to: v.paypalEmail, ip }));
   });
 
   // The welcome and the admin alert (SPEC §11). `after()` still runs past the

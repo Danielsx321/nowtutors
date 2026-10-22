@@ -573,7 +573,9 @@ availability_bonus_credits   # 40 — credits paid per qualifying week; $40 at t
 > lock). A real change writes `audit_log` (`setting.update`, payload `{key, from, to}`); a save that
 > changes nothing writes nothing.
 
-**`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here. Targets without a uuid (a settings key, a cron job) leave `target_id` null and name the target in `payload`.
+**`audit_log`** — `actor_id, action text, target_type text, target_id uuid, payload jsonb, ip text`. Every admin mutation writes here. Targets without a uuid (a settings key, a cron job) leave `target_id` null and name the target in `payload`. **One non-admin action is logged too (Security C, 2026-10-22):** `payout_email_changed`, written by the tutor's own save of their PayPal payout email (`actions/tutor-payout.ts`, and the first set in `completeTutorOnboarding`) in the same transaction as the write. `actor_id` and `target_id` are the tutor, `target_type` `tutor_payout_details`, `ip` the visitor IP, payload `{from, to, first_set}` with both addresses masked by `maskEmail` (`d•••a@gmail.com`; `from` is null on the first set). Saving the same address again writes nothing.
+
+**`rate_limits`** (Security C, 2026-10-22; `drizzle/0028`) — `key text, window_start timestamptz, count int`, primary key `(key, window_start)`, index on `window_start`. One row per key per fixed window. The key is `<action>:<ip|email|user>:<value>` (`lib/security/rate-limit.ts`). Written only by `public.hit_rate_limit(p_key text, p_limit int, p_window_seconds int) returns boolean`: one `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` on the window `floor(epoch(now()) / window) * window`, true while the count is within the limit, so simultaneous hits cannot both read the same count. Server-only: RLS on with no policies, every privilege revoked from `anon` and `authenticated` (table and function). Rows older than a day are deleted by the daily `reconcile-wallets` job (§12).
 
 ### 4.8 Favourites
 
@@ -618,6 +620,7 @@ Policy summary:
 | broadcast_viewers | own rows; the host reads their broadcast's | **server only** (`drizzle/0018`) |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
 | audit_log | admin only | service role only |
+| rate_limits | nobody but the trusted server | trusted server only (`hit_rate_limit()`, `drizzle/0028`); no `anon`/`authenticated` privilege on the table or the function |
 | favourites | owning student only | owning student inserts/deletes own (no update) |
 | student_subjects | owning student only (no public read) | owning student inserts/deletes own (no update) |
 
@@ -636,6 +639,23 @@ Policy summary:
 > **How identity is established (2026-09-21, `perf-auth-local-claims`).** `getUser()` in the guards and the middleware read the access token's claims with `auth.getClaims()`: the ES256 signature is verified locally against the project's public key, and expiry is checked. No call to the auth server per request. A session revoked before its token expires (sign out elsewhere, deleted auth user) is therefore honoured for up to the token lifetime, one hour. Suspension and role are unaffected, since both are read from `profiles` on every request. The email-verification gate (`requireVerifiedEmail`, `requireApiVerifiedEmail`: bookings, paid requests, credit purchase, going live) still calls the auth server through `getVerifiedUser()`. The Supabase access-token lifetime must stay at one hour or less.
 
 > **An action called from a layout must guard the same way that layout does.** `requireRole('tutor')` enforces approval by default; the `(tutor)` LAYOUT passes `{ requireApproval: false }` so `/tutor/pending-approval` — which lives under it — does not redirect-loop. Any action called by a component mounted in that layout therefore has to relax approval too, or the two guards disagree and an unapproved tutor legitimately sitting under the layout gets a `redirect()` from every call. Where that call is a fire-and-forget, the `NEXT_REDIRECT` cannot navigate anything: it becomes an **unhandled promise rejection**, silent in production. This applies today to `getIncomingRequest` and `listPendingIncomingRequests`, both called by `IncomingRequests` (§7.4, §8) and both scoped to `tutor_id = me` — **ownership is what authorizes those reads, not approval**, and an unapproved tutor is not in `live_tutors` (§3.1) so no request can be addressed to them anyway. `acceptSessionRequest` / `declineSessionRequest` keep approval enforced: they create a booking and charge a student, and neither runs unawaited.
+
+> **Suspension is checked in `requireUser()` too (Security C, 2026-10-22).** It used to live in `requireRole()` only, so the actions that need no role (settings, change password, messaging, the session room, onboarding) still served a suspended account. `requireUser()` now reads `is_suspended` through the request-memoized `getSessionProfile()` and redirects to `/suspended`, as `requireRole()` does. `requireApiUser()` already answered 403. `/suspended` and `signOut` call no guard, so a suspended person sees the page and can log out, with no redirect loop.
+
+> **Rate limits (Security C, 2026-10-22; `lib/security/rate-limit.ts`, `rate_limits` §4.7).** Supabase Auth sees every call from Vercel's IP, so its own limits are one bucket for the whole site. The app counts per visitor IP (the first `x-forwarded-for` hop, `lib/security/client-ip.ts`), per lowercased email and per signed-in user, on the trusted connection, before the action does anything else:
+>
+> | Action | Limit |
+> |---|---|
+> | `login` | 10 per 15 minutes per IP, and 5 per 15 minutes per email |
+> | `signup` | 5 per hour per IP |
+> | `requestPasswordReset` | 3 per hour per email (any address, account or not, so the answer reveals nothing) |
+> | `changePassword` | 5 per 15 minutes per user |
+> | `createAttachmentUpload` | 30 per hour per user |
+> | `startConversation`, `startConversationWithStudent` | 20 per hour per user, one shared counter |
+>
+> Fixed windows, keys checked in that order; the first key over its limit answers `{ error: "Too many attempts. Try again in a few minutes." }` and later keys are not counted. A key whose subject is missing (no IP header) is skipped rather than shared. **It fails open:** if the counter cannot be reached (the migration not yet applied after a deploy, a database blip) the attempt goes through and the failure is logged and sent to Sentry. Clearing a locked-out person: RUNBOOK, "Rate limits".
+
+> **Link rules (Security C, 2026-10-22; `lib/auth/schemas.ts`).** `introVideoUrl` must be `https:` with no credentials or port, on a host in `INTRO_VIDEO_HOSTS` (`youtube.com`, `www.youtube.com`, `youtu.be`, `vimeo.com`, `player.vimeo.com`, `loom.com`, `www.loom.com`; exact match, the one list to extend). Empty still means no video. `avatarUrl` must be a file inside the caller's own folder of the public bucket, `${NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/${userId}/…`, checked on the raw string and on the parsed URL so `../` cannot leave the folder. The forms keep the plain schemas; the actions parse with `studentOnboardingSchemaFor(userId)`, `tutorOnboardingSchemaFor(userId)` and `tutorProfileEditSchemaFor(userId)`, the id from the guard. Post-auth redirects (`next`) go through `lib/auth/safe-next.ts`, shared by the auth actions and `/auth/callback`: exactly one leading `/`, no backslash raw or as `%5C`, no control character raw or percent-encoded; anything else falls back to the default destination. The Supabase auth cookies are set `secure` in production and `sameSite: "lax"` (`lib/supabase/cookie-options.ts`, used by the server client and the middleware).
 
 Admin access is by `profiles.role = 'admin'` only. There is no admin signup route; the first admin is set by SQL, subsequent ones promoted in the admin panel with an audit entry.
 
@@ -1686,7 +1706,7 @@ Templates in `emails/` (plain React with inline styles, rendered by `@react-emai
 **Verify email and password reset are Supabase Auth's own emails**, not the app's: the app calls `signUp` and `resetPasswordForEmail`, Supabase signs the links, `/auth/callback` handles them. Phase 10 Part 6 points Supabase's SMTP at Resend and restyles those three dashboard templates; nothing in `emails/` sends them.
 
 Student: booking confirmed (with `.ics`) **(built)**, reminder 24h **(built)**, reminder 1h **(built)**, booking cancelled by tutor **(built)**, refund issued **(built)**, credits purchased **(built)**, session summary **(built)**, new message while away **(built, Part 3)**.
-Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, changes requested and back live **(built 2026-10-13, `tutor-changes-requested` with the ticked reasons and note, `tutor-back-live` on approval from a hold; both `always`)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**, availability bonus paid **(built 2026-10-14, `availability-bonus-paid`, sent by the `availability-bonus` cron per award with the week, the live hours and the amount at the payout rate; `always`)**.
+Tutor: welcome **(built)**, application approved **(built)**, application rejected **(built)**, changes requested and back live **(built 2026-10-13, `tutor-changes-requested` with the ticked reasons and note, `tutor-back-live` on approval from a hold; both `always`)**, new booking (with `.ics`) **(built)**, booking cancelled **(built)**, reminder 1h **(built)**, new message while away **(built, Part 3)**, withdrawal requested (receipt) **(built)**, withdrawal paid **(built)**, withdrawal rejected **(built)**, session summary **(built, added Part 2)**, tutor guide **(built 2026-10-12; sent once by `db/send-tutor-guide.ts`, never by a hook)**, availability bonus paid **(built 2026-10-14, `availability-bonus-paid`, sent by the `availability-bonus` cron per award with the week, the live hours and the amount at the payout rate; `always`)**, payout email changed **(built 2026-10-22, Security C, `payout-email-changed`: queued by `updatePayoutEmail` when a stored address is replaced by a different one, to the account email in `profiles.email`, never the new PayPal address; old and new masked, the time in the tutor's zone, and what to do if it wasn't them; `always`. The first set at onboarding sends none)**.
 
 **The tutor guide PDF (2026-10-12).** `public/tutor-guide.pdf` is built from `content/tutor-guide.ts` by `pnpm guide:pdf` (Playwright chromium, `scripts/build-tutor-guide-pdf.ts`) and committed. The approval email and the `tutor-guide` email attach it **by URL** (`EmailAttachment.path`, which Resend fetches from the site) and link `/tutor/guide`; `/tutor/pending-approval` links the PDF for applicants. Attachments are therefore `content` (base64, the `.ics` files) or `path` (a URL), never both.
 Admin: new tutor application **(built)**, new withdrawal request **(built)**, payment capture failure **(built)**.
@@ -1852,6 +1872,10 @@ never `CRON_SECRET`. It writes a `cron.run_now` audit row with the summary or th
   alreadyAwarded, duplicateLedger, failed, emailsSent, emailsFailed, awardedTutorIds`. "Run now" on `/admin/settings`
   and `/admin/availability`.
 - **reconcile-wallets** — assert `wallets.credit_balance = sum(credit_transactions.delta)` per user; log and alert on any mismatch. This is the drift alarm.
+  **Also the daily housekeeping slot (Security C, 2026-10-22):** after the drift read it deletes
+  `rate_limits` rows whose window started more than a day ago (`db/queries/rate-limits.ts`) and
+  reports `rateLimitRowsDeleted` (null when the delete failed; the failure is logged and sent to
+  Sentry and never costs the run its drift alarm). The drift read itself stays read-only.
   Built in Phase 8 Part 3 (`db/queries/reconcile-wallets.ts`, `lib/wallets/reconcile.ts`). **A FULL
   OUTER JOIN** of wallets against per-user ledger sums, so both shapes of drift are found: a cached
   balance that disagrees, and ledger rows for a user with no wallet (a missing wallet counts as 0).

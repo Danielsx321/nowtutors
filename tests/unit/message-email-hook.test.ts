@@ -14,6 +14,8 @@ const m = vi.hoisted(() => ({
   newMessageEmails: vi.fn(),
   sendCore: vi.fn(),
   getMessageFor: vi.fn(),
+  rateLimit: vi.fn(async (input: unknown) => ({ ok: true, input }) as { ok: boolean; retryAfterSeconds?: number }),
+  startCore: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -42,11 +44,17 @@ vi.mock("@/lib/messaging/service", () => ({
   DuplicateClientKeyError: class extends Error {},
   markConversationRead: vi.fn(),
   sendMessage: (...a: unknown[]) => m.sendCore(...a),
-  startConversation: vi.fn(),
+  startConversation: (...a: unknown[]) => m.startCore(...a),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createServiceClient: vi.fn() }));
+vi.mock("@/lib/security/rate-limit", () => ({
+  checkRateLimit: (input: unknown) => m.rateLimit(input),
+  RATE_LIMIT_MESSAGE: "Too many attempts. Try again in a few minutes.",
+}));
 
-const { sendMessage } = await import("@/actions/messaging");
+const { sendMessage, startConversation, startConversationWithStudent, createAttachmentUpload } = await import(
+  "@/actions/messaging"
+);
 
 const CONV = randomUUID();
 const MSG = randomUUID();
@@ -85,5 +93,32 @@ describe("new-message email hook", () => {
     m.sendCore.mockResolvedValue({ ok: false, reason: "rate_limited" });
     await sendMessage({ conversationId: CONV, body: "Hi", clientKey: randomUUID() });
     expect(m.queueEmails).not.toHaveBeenCalled();
+  });
+});
+
+describe("messaging rate limits (Security C)", () => {
+  const limited = { ok: false, retryAfterSeconds: 120 };
+
+  it("startConversation and startConversationWithStudent share one per-user counter", async () => {
+    m.rateLimit.mockResolvedValueOnce(limited).mockResolvedValueOnce(limited);
+    await expect(startConversation({ tutorId: randomUUID() })).resolves.toEqual({
+      error: "Too many attempts. Try again in a few minutes.",
+    });
+    await expect(startConversationWithStudent({ studentId: randomUUID() })).resolves.toEqual({
+      error: "Too many attempts. Try again in a few minutes.",
+    });
+    expect(m.rateLimit.mock.calls.map((c) => c[0])).toEqual([
+      { action: "startConversation", userId: "sender-1" },
+      { action: "startConversation", userId: "sender-1" },
+    ]);
+    expect(m.startCore).not.toHaveBeenCalled();
+  });
+
+  it("createAttachmentUpload is limited per user before anything is signed", async () => {
+    m.rateLimit.mockResolvedValueOnce(limited);
+    await expect(
+      createAttachmentUpload({ conversationId: randomUUID(), name: "a.pdf", type: "application/pdf", size: 10 }),
+    ).resolves.toEqual({ error: "Too many attempts. Try again in a few minutes." });
+    expect(m.rateLimit).toHaveBeenLastCalledWith({ action: "createAttachmentUpload", userId: "sender-1" });
   });
 });

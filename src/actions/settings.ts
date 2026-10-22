@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/schemas";
 import { readPreferences } from "@/lib/email/preferences";
 import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
 
 /**
  * The viewer's own settings (SPEC §6 `/dashboard/settings`, `/tutor/settings`;
@@ -91,9 +92,14 @@ export async function updateNotificationSettings(input: NotificationSettingsValu
  * account that signs in with Google only has no password to change.
  */
 export async function changePassword(input: ChangePasswordValues): Promise<SettingsResult> {
-  await requireUser();
+  const user = await requireUser();
   const parsed = changePasswordSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Please check the form." };
+
+  // Each try checks the current password against Supabase, so a borrowed
+  // signed-in laptop must not become a password-guessing machine.
+  const limited = await checkRateLimit({ action: "changePassword", userId: user.id });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
 
   const authUser = await getVerifiedUser();
   if (!authUser?.email) return { error: "We couldn't find your account." };
