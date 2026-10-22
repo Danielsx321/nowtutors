@@ -29,6 +29,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Security PR B: fail on any high or critical advisory in production
+      # dependencies. Transitive fixes live in pnpm-workspace.yaml `overrides`.
+      - name: Audit
+        run: pnpm audit --prod --audit-level=high
+
       - name: Lint
         run: pnpm lint
 

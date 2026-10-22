@@ -77,6 +77,8 @@ Locked unless there is a specific reason to deviate.
 | Transactional email | **Resend** + **react-email** | Booking confirmations, reminders, withdrawal notices |
 | File storage | **Supabase Storage** | Avatars, intro videos, message attachments |
 | Error tracking | **Sentry** | Client + server |
+| Security headers | **`src/lib/security/headers.ts`**, applied to every path in `next.config.ts` | Enforced: HSTS (2 years, subdomains, preload), `X-Frame-Options: DENY`, `nosniff`, `strict-origin-when-cross-origin`, a `Permissions-Policy` that allows payment for self and PayPal and denies the unused features (camera, microphone, screen share and fullscreen stay at the browser default so the LessonSpace frame keeps them). The CSP is built from one host list (PayPal, Agora, LessonSpace, Supabase, Sentry, Google sign-in, Cloudflare Turnstile) and ships as `Content-Security-Policy-Report-Only` until it is enforced (DECISIONS 2026-10-22) |
+| Dependency scanning | **Dependabot** + **`pnpm audit`** | `.github/dependabot.yml`: npm weekly on Monday with minor and patch grouped, majors one PR each; GitHub Actions monthly. CI step `Audit` fails on any high or critical advisory in production dependencies (`pnpm audit --prod --audit-level=high`); transitive fixes are `overrides` in `pnpm-workspace.yaml` |
 | Testing | **Vitest** (unit + DOM), **jsdom** + **@testing-library/react** / **@testing-library/dom** (the DOM lane), **Playwright** (E2E critical paths) | Three Vitest lanes, three configs, disjoint globs — see Section 15 |
 | Timezones | **date-fns + date-fns-tz** | Store UTC, render in the viewer's timezone |
 
