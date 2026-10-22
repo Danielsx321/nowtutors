@@ -5639,8 +5639,15 @@ The app-code half of the 2026-10-22 security checklist (findings 7 to 13). Plan:
     `payout_email_changed`, as specified. The notice goes to `profiles.email` (kept equal to the
     confirmed auth email by Security A), never the new PayPal address. Onboarding's first set is logged
     with `from: null` and sends no notice.
-12. **Not done here, noted for later:** `tutor_payout_details` still has `payout_insert` /
-    `payout_update` RLS policies (0005), so a tutor's own JWT can change `paypal_email` over PostgREST
-    and skip both the log and the notice; and `profiles.avatar_url` is still writable over PostgREST, so
-    the avatar rule binds the app path only. Both want a guard trigger or the writes revoked, in the
-    shape of Security A.
+12. **Fixed in the same PR (`drizzle/0029_payout_avatar_server_only.sql`).** Two REST paths skipped the
+    app: the `payout_insert` / `payout_update` policies (0005) let a tutor's own JWT change
+    `paypal_email` with no audit row and no notice, which is exactly the hijack the log exists to catch;
+    and `profiles_update` let anyone set `avatar_url` to any link. A grep found every writer on the
+    trusted Drizzle connection (`savePayoutEmail`, `completeTutorOnboarding`; onboarding and
+    `updateTutorProfile` for the avatar; admin and withdrawal code only read; the seed uses the service
+    role), so the stronger option was taken for both: the two payout policies dropped and
+    INSERT/UPDATE/DELETE revoked from anon and authenticated (the 0021 shape), and `avatar_url` made
+    server-only in `profiles_guard`, which is the 0027 function copied unchanged plus that one check.
+    `handle_new_user` inserts the row and the guard is `BEFORE UPDATE`, so sign-up is unaffected.
+    `db:verify-rls` proves the REST writes fail and the Drizzle path (in a rolled-back transaction)
+    still works.

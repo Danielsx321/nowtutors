@@ -252,9 +252,10 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 >
 > - **Tutor stats.** `rating_avg`, `rating_count`, `completed_sessions` and `total_minutes_taught` change only on the trusted connection or an admin session (`tutor_stats_guard`, `BEFORE INSERT OR UPDATE`). A client INSERT must leave them at their defaults. Browse sorts and filters on them, so this is what stops a tutor faking a 5-star profile. `slug` may be set when the row is created and never changed by a client after that.
 > - **`profiles.email`** belongs to Supabase Auth. `profiles_guard` refuses any change except by the trusted server or to the exact address `auth.users` holds for that id. `on_auth_user_email_changed` (`AFTER UPDATE OF email ON auth.users`, `SECURITY DEFINER`, the same shape as `handle_new_user` in `0002`) copies a confirmed change into `profiles.email`, so app email keeps reaching the right inbox. The guard checks the value rather than who is calling, because GoTrue writes as `supabase_auth_admin`, which `is_trusted_server()` does not recognise. `onboarding_completed_at` is server-only, no exceptions.
+> - **`profiles.avatar_url`** is server-only too (`drizzle/0029`, Security C): `profiles_guard` refuses any change not made on the trusted connection. The onboarding and profile actions write it on Drizzle after checking the link is in the caller's own `avatars/{uid}/` folder (§5, link rules); a REST `PATCH` is refused, so the folder rule cannot be skipped.
 > - **`avatars` bucket:** `file_size_limit` 2 MB (2097152), `allowed_mime_types` `image/jpeg`, `image/png`, `image/webp`. SVG is excluded on purpose. The upload client sends the cropped JPEG (at most 1200x750, quality 0.86), so real uploads are unaffected.
 
-**`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
+**`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only. **No client writes (`drizzle/0029`, Security C):** `payout_insert` and `payout_update` are dropped and INSERT/UPDATE/DELETE revoked from `anon` and `authenticated`, as 0021 did for `bookings`. The only writers are `savePayoutEmail` (`/tutor/settings`) and `completeTutorOnboarding`, both on the trusted connection, so every change writes the masked `payout_email_changed` audit row and (for a replaced address) the notice email (§4.7, §11). The owner still reads their own row.
 
 `tutor_id uuid unique FK → profiles.id, payout_method enum('paypal') default 'paypal', paypal_email text`
 
@@ -606,7 +607,7 @@ Policy summary:
 
 | Table | Read | Write |
 |---|---|---|
-| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`); `email` only to the confirmed auth address and `onboarding_completed_at` only by the trusted server (`drizzle/0027`) |
+| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`); `email` only to the confirmed auth address and `onboarding_completed_at` only by the trusted server (`drizzle/0027`); `avatar_url` only by the trusted server (`drizzle/0029`) |
 | tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role; presence (`is_live`, `last_seen_at`, `live_mode`) only by the trusted server (`tutor_presence_guard`, `drizzle/0023`); stats (`rating_avg`, `rating_count`, `completed_sessions`, `total_minutes_taught`) and a set `slug` only by the trusted server or an admin (`tutor_stats_guard`, `drizzle/0027`) |
 | bookings | participants only (`student_id = auth.uid() or tutor_id = auth.uid()`) | **server only** (`drizzle/0021`): no `anon`/`authenticated` write. Price, slot, debit and status transitions are rules RLS can't express (Section 7) |
 | session_requests | participants only | **server actions only** (`drizzle/0021`): no `anon`/`authenticated` write; `price_credits` is never client-chosen |
@@ -619,6 +620,7 @@ Policy summary:
 | broadcasts | anyone reads live/ended | **server actions only** (`drizzle/0018`); the channel name is never client-chosen |
 | broadcast_viewers | own rows; the host reads their broadcast's | **server only** (`drizzle/0018`) |
 | platform_settings | anyone reads (needed for pricing display) | admin only |
+| tutor_payout_details | owning tutor; admin | **server only** (`drizzle/0029`): no `anon`/`authenticated` write; every change goes through `savePayoutEmail` / onboarding, which audit it |
 | audit_log | admin only | service role only |
 | rate_limits | nobody but the trusted server | trusted server only (`hit_rate_limit()`, `drizzle/0028`); no `anon`/`authenticated` privilege on the table or the function |
 | favourites | owning student only | owning student inserts/deletes own (no update) |

@@ -2,6 +2,8 @@ import { loadDbEnv } from "./load-env";
 loadDbEnv();
 
 import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
+import { sessionPoolerUrl } from "./session-url";
 
 // Phase 1 acceptance: prove RLS denies cross-user reads with the anon key (and a
 // signed-in user), and allows the intended public reads. Needs the anon key and
@@ -432,6 +434,73 @@ async function main() {
   // rate_limits (drizzle/0028, Security C): server-only. No client may read the
   // counters, reset its own, or call the counter function to burn someone
   // else's budget.
+  // tutor_payout_details and profiles.avatar_url (0029, Security C): the
+  // payout email changes only through the app, which writes the masked
+  // payout_email_changed audit row and emails the tutor; the avatar link only
+  // through the onboarding and profile actions, which pin it to the caller's
+  // own folder. Both over REST must fail. The app's own path (the Drizzle
+  // connection, session_user postgres) is proven inside a transaction that is
+  // rolled back, so nothing is left changed.
+  console.log("tutor_payout_details + profiles.avatar_url — server-only (0029):");
+  {
+    const { data, error } = await tutor
+      .from("tutor_payout_details")
+      .update({ paypal_email: "hijack@evil.example" })
+      .eq("tutor_id", tid)
+      .select("tutor_id");
+    assert(!!error || (data ?? []).length === 0, "tutor cannot UPDATE own paypal_email over REST (no unlogged payout change)");
+  }
+  {
+    const { error } = await tutor
+      .from("tutor_payout_details")
+      .upsert({ tutor_id: tid, payout_method: "paypal", paypal_email: "hijack@evil.example" }, { onConflict: "tutor_id" });
+    assert(!!error, "tutor cannot INSERT/upsert tutor_payout_details over REST");
+  }
+  {
+    const { data, error } = await tutor.from("tutor_payout_details").delete().eq("tutor_id", tid).select("tutor_id");
+    assert(!!error || (data ?? []).length === 0, "tutor cannot DELETE own tutor_payout_details over REST");
+  }
+  {
+    const { data } = await rows(tutor.from("tutor_payout_details").select("tutor_id"));
+    assert(data.length === 1, "tutor still READS own tutor_payout_details (payout_select kept)");
+  }
+  {
+    const foreign = `https://evil.example/avatar-${Date.now()}.jpg`;
+    const { error } = await tutor.from("profiles").update({ avatar_url: foreign }).eq("id", tid);
+    assert(!!error, "tutor cannot PATCH own profiles.avatar_url to a foreign URL over REST");
+    const { error: nullErr } = await tutor.from("profiles").update({ avatar_url: null }).eq("id", tid);
+    const { data: still } = await rows(tutor.from("profiles").select("avatar_url").eq("id", tid));
+    const now = (still[0] as { avatar_url: string | null } | undefined)?.avatar_url;
+    assert(!!nullErr || now === null, "avatar_url REST write to null is refused (or the row already had none)");
+  }
+  {
+    const pg = postgres(sessionPoolerUrl(), { prepare: false, max: 1 });
+    const ROLLBACK = new Error("verify-rls rollback");
+    let payoutOk = false;
+    let avatarOk = false;
+    try {
+      await pg.begin(async (tx) => {
+        await tx`
+          insert into tutor_payout_details (tutor_id, payout_method, paypal_email)
+          values (${tid}, 'paypal', 'verify-rls@example.com')
+          on conflict (tutor_id) do update set paypal_email = excluded.paypal_email`;
+        payoutOk = true;
+        await tx`
+          update profiles
+             set avatar_url = ${`${url}/storage/v1/object/public/avatars/${tid}/verify-rls.jpg`}
+           where id = ${tid}`;
+        avatarOk = true;
+        throw ROLLBACK;
+      });
+    } catch (e) {
+      if (e !== ROLLBACK) console.error("  trusted-path error:", (e as Error).message);
+    } finally {
+      await pg.end();
+    }
+    assert(payoutOk, "the app's Drizzle connection CAN save a payout email (savePayoutEmail / onboarding path)");
+    assert(avatarOk, "the app's Drizzle connection CAN set avatar_url (onboarding / profile path)");
+  }
+
   console.log("rate_limits — no client access at all (0028):");
   {
     const { data, error } = await rows(tutor.from("rate_limits").select("*"));
