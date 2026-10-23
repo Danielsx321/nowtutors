@@ -39,7 +39,7 @@
     "email:tutor-guide:prod": "node scripts/with-ca-certs.mjs tsx src/db/send-tutor-guide.ts --env=prod"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.9.1",
+    "@hookform/resolvers": "^6.0.0",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-checkbox": "^1.3.11",
     "@radix-ui/react-dialog": "^1.1.23",
