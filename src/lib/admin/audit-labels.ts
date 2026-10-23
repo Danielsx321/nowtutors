@@ -26,6 +26,7 @@ const LABELS: Record<string, string> = {
   "subject.deactivate": "Turned a subject off",
   "cron.run_now": "Ran a scheduled job by hand",
   "bonus.award_run": "Paid the weekly availability bonus",
+  payout_email_changed: "A tutor set or changed their payout email",
 };
 
 export function auditActionLabel(action: string): string {

@@ -64,6 +64,8 @@ export const PREFERENCE_BY_TYPE: Record<EmailType, PreferenceKey | "always"> = {
   "new-message": "messages",
   // Money moved.
   "availability-bonus-paid": "always",
+  // Where money goes changed: a security notice, never opt-out.
+  "payout-email-changed": "always",
 };
 
 export function allowsEmail(prefs: NotificationPreferences, type: EmailType): boolean {

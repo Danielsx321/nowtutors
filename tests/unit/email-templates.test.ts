@@ -49,6 +49,7 @@ const EXPECTED_LINK: Record<EmailType, string> = {
   "reminder-1h-tutor": "/tutor/bookings/3f0c1b7e-0000-4000-8000-000000000001",
   "new-message": "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
   "availability-bonus-paid": "/tutor/earnings",
+  "payout-email-changed": "/tutor/settings",
 };
 
 describe("email templates", () => {
@@ -219,5 +220,23 @@ describe("format helpers", () => {
   it("turns a subject slug into words", () => {
     expect(slugToWords("sat-act-test-prep")).toBe("Sat act test prep");
     expect(slugToWords("spanish")).toBe("Spanish");
+  });
+});
+
+describe("payout-email-changed (Security C)", () => {
+  it("masks both addresses, prints the time in the tutor's zone and says what to do if it wasn't them", async () => {
+    const out = await renderEmail("payout-email-changed", SAMPLE_PROPS["payout-email-changed"], {
+      recipient: { ...recipient, role: "tutor" },
+      appUrl,
+    });
+    expect(out.subject).toBe("Your PayPal payout email was changed");
+    expect(out.text).not.toContain("tina.reyes@example.com");
+    expect(out.text).not.toContain("tina.payouts@example.com");
+    expect(out.text).toMatch(/Was: t•••s@example\.com/);
+    expect(out.text).toMatch(/Now: t•••s@example\.com/);
+    // 09:15 UTC is 11:15 in Madrid on 22 Oct (summer time).
+    expect(out.text).toContain("Thu 22 Oct 2026, 11:15 AM (CEST)");
+    expect(out.text).toContain("change your password");
+    expect(out.html).toContain("https://nowtutors.test/tutor/settings");
   });
 });

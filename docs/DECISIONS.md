@@ -5587,3 +5587,67 @@ Second of four security PRs from the 20-point audit. Plan: workspace
    NowTutors; the PayPal and LessonSpace frames are ones NowTutors embeds, covered by `frame-src`.
 7. **Dependabot weekly (npm, Monday, minor and patch grouped, majors one by one) and monthly (GitHub
    Actions).** It only opens PRs; merges stay with Daniels (WORKFLOW.md).
+
+## Security C: rate limits, link checks, redirect fix, suspended users, payout change log (`security-c-app-hardening`, 2026-10-22)
+
+The app-code half of the 2026-10-22 security checklist (findings 7 to 13). Plan: workspace
+`plans/2026-10-22-nowtutors-security-fixes.md` (PR C, plan decisions 4 and 11). Migration
+`drizzle/0028_rate_limits.sql`. Stacked on Security A (#151).
+
+1. **Rate limits in Postgres, not Upstash.** No new dependency and no new paid service. `rate_limits`
+   plus `hit_rate_limit()`: one `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` on a fixed,
+   epoch-aligned window, on the database clock. Proven on dev: 3 allowed then refused at limit 3; a
+   burst of 20 simultaneous hits at limit 5 let exactly 5 through. Limits as the plan set them (SPEC §5
+   table). `startConversationWithStudent` shares `startConversation`'s counter: it is the same act from
+   the other side.
+2. **It fails open.** Production migrations run after the Vercel deploy (plan, step 10), so for a few
+   minutes the code runs before `hit_rate_limit()` exists. Failing closed would refuse every sign-in in
+   that gap, and on any later database blip. A failure is logged and sent to Sentry instead.
+3. **No shared "unknown" IP bucket.** With no `x-forwarded-for` or `x-real-ip` the per-IP key is skipped,
+   rather than counting every such request in one bucket that could lock everyone out together. On
+   Vercel the header is always set by the edge (the first hop is the client; Vercel overwrites a
+   client-sent value). The IP is normalised to hex digits, dots, colons and brackets, so a key cannot
+   carry junk.
+4. **Per-email limits accept a known trade-off.** Someone who knows an address can spend its 5 sign-in
+   tries in 15 minutes and lock the owner out for the rest of that window. The IP limit and Turnstile
+   (PR D) are what stop a bot doing that at scale; the RUNBOOK has the one-line unlock.
+5. **Cleanup rides on `reconcile-wallets`,** the only daily job, so no new cron. After the drift read,
+   caught, so a cleanup failure never hides drift.
+6. **Intro video hosts are an exact list** (`INTRO_VIDEO_HOSTS`), `https:` only, no credentials or port.
+   No wildcard subdomains, so `m.youtube.com` is refused until it is added. Daniels is checking
+   production `intro_video_url` values for other hosts before merge: a tutor whose stored link is on
+   another host cannot save their profile until they change it or the host is added.
+7. **Avatar must be the caller's own public avatar file.** Server-side factories take the user id from the
+   guard; the forms keep the plain schemas (the browser does not need the id for UX). Production launched
+   empty (LAUNCH D2) and every avatar was uploaded through `avatar-upload.tsx` to `{uid}/`, so no stored
+   value fails.
+8. **`safeNext` moved to `lib/auth/safe-next.ts`** rather than exported from `actions/auth.ts`: a
+   "use server" file may export only async functions, and a sync export there breaks the build. Both the
+   actions and `/auth/callback` import it. Percent-encoded backslash and control characters are refused
+   as well as raw ones, because the callback reads `next` decoded once and a double-encoded value would
+   otherwise survive.
+9. **Cookies: `secure` in production, `sameSite: "lax"` stated.** Lax is the library default and what
+   the Google and email-link redirects need. `httpOnly` stays off: the browser client reads the session.
+   The browser client (`lib/supabase/client.ts`) is unchanged; on `https:` pages the server and
+   middleware are what set and refresh the cookie.
+10. **`requireUser()` checks suspension** through the memoized `getSessionProfile()`, so `requireRole()`
+    still costs one profile read. A suspended account with no role now lands on `/suspended`, not
+    `/onboarding`.
+11. **The payout change log is in the action, not a trigger** (plan decision 11): the action knows the
+    actor and the IP and sends the notice. Masked with the existing `maskEmail` (`d•••a@gmail.com`,
+    the house format the withdrawal emails already use) rather than a second `j***@` format. Action name
+    `payout_email_changed`, as specified. The notice goes to `profiles.email` (kept equal to the
+    confirmed auth email by Security A), never the new PayPal address. Onboarding's first set is logged
+    with `from: null` and sends no notice.
+12. **Fixed in the same PR (`drizzle/0029_payout_avatar_server_only.sql`).** Two REST paths skipped the
+    app: the `payout_insert` / `payout_update` policies (0005) let a tutor's own JWT change
+    `paypal_email` with no audit row and no notice, which is exactly the hijack the log exists to catch;
+    and `profiles_update` let anyone set `avatar_url` to any link. A grep found every writer on the
+    trusted Drizzle connection (`savePayoutEmail`, `completeTutorOnboarding`; onboarding and
+    `updateTutorProfile` for the avatar; admin and withdrawal code only read; the seed uses the service
+    role), so the stronger option was taken for both: the two payout policies dropped and
+    INSERT/UPDATE/DELETE revoked from anon and authenticated (the 0021 shape), and `avatar_url` made
+    server-only in `profiles_guard`, which is the 0027 function copied unchanged plus that one check.
+    `handle_new_user` inserts the row and the guard is `BEFORE UPDATE`, so sign-up is unaffected.
+    `db:verify-rls` proves the REST writes fail and the Drizzle path (in a rolled-back transaction)
+    still works.

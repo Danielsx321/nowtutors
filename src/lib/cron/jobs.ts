@@ -16,6 +16,7 @@ import {
   listDueEarningIds,
 } from "@/db/queries/release-earnings";
 import { readWalletDrift } from "@/db/queries/reconcile-wallets";
+import { deleteExpiredRateLimits } from "@/db/queries/rate-limits";
 import { runCompleteSessionsSweep } from "@/lib/sessions/complete-sessions";
 import { runReleaseEarningsSweep } from "@/lib/earnings/release-earnings";
 import { summarizeWalletDrift } from "@/lib/wallets/reconcile";
@@ -208,11 +209,23 @@ async function reconcileWallets(): Promise<CronSummary> {
   const { walletsChecked, rows } = await readWalletDrift();
   const found = summarizeWalletDrift(walletsChecked, rows);
 
+  // Daily housekeeping rides on the one daily job (Security C, 2026-10-22):
+  // rate-limit counters older than a day. After the drift read, and caught, so
+  // a cleanup failure can never cost the night its drift alarm.
+  let rateLimitRowsDeleted: number | null = null;
+  try {
+    rateLimitRowsDeleted = await deleteExpiredRateLimits();
+  } catch (err) {
+    console.error("[cron/reconcile-wallets] rate_limits cleanup failed", err);
+    Sentry.captureException(err);
+  }
+
   const summary = {
     ok: true as const,
     job: "reconcile-wallets" as const,
     drift: found.mismatches > 0,
     ...found,
+    rateLimitRowsDeleted,
     durationMs: Date.now() - startedAt,
   };
 

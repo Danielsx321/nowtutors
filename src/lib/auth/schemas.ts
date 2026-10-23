@@ -71,6 +71,71 @@ const avatarUrl = z
   .optional()
   .or(z.literal("").transform(() => undefined));
 
+// ── Link rules (Security C, 2026-10-22; SPEC §5) ─────────────────────────────
+
+/**
+ * Hosts an intro video may come from. `https:` only, exact host match (no
+ * subdomain wildcard, so `youtube.com.evil.net` and `evil-youtube.com` fail).
+ * Add a host here and nowhere else.
+ */
+export const INTRO_VIDEO_HOSTS = [
+  "youtube.com",
+  "www.youtube.com",
+  "youtu.be",
+  "vimeo.com",
+  "player.vimeo.com",
+  "loom.com",
+  "www.loom.com",
+] as const;
+
+export const INTRO_VIDEO_HOST_MESSAGE = "Use a YouTube, Vimeo or Loom link.";
+
+/** True for an `https:` URL on one of {@link INTRO_VIDEO_HOSTS}. */
+export function isAllowedIntroVideoUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" || u.username || u.password || u.port) return false;
+  return (INTRO_VIDEO_HOSTS as readonly string[]).includes(u.hostname.toLowerCase());
+}
+
+/**
+ * The public URL prefix of a user's own avatar folder, exactly what
+ * `getPublicUrl` returns for `avatars/{uid}/...` (components/features/
+ * onboarding/avatar-upload.tsx). The base defaults to
+ * `NEXT_PUBLIC_SUPABASE_URL`, inlined at build time on both sides.
+ */
+export function ownAvatarPrefix(
+  userId: string,
+  supabaseUrl: string = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+): string {
+  return `${supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/public/avatars/${userId}/`;
+}
+
+/**
+ * True when `raw` is a file inside `userId`'s own folder of the public
+ * `avatars` bucket. The raw string must start with the prefix, and the parsed
+ * URL must too, so `../other-user/x.jpg` (which the URL parser resolves out of
+ * the folder) and a backslash are refused.
+ */
+export function isOwnAvatarUrl(raw: string, userId: string, supabaseUrl?: string): boolean {
+  if (!userId || (!supabaseUrl && !process.env.NEXT_PUBLIC_SUPABASE_URL)) return false;
+  const prefix = ownAvatarPrefix(userId, supabaseUrl);
+  if (!raw.startsWith(prefix) || raw.length === prefix.length || raw.includes("\\")) return false;
+  try {
+    const u = new URL(raw);
+    const p = new URL(prefix);
+    return u.origin === p.origin && u.pathname.startsWith(p.pathname) && u.pathname.length > p.pathname.length;
+  } catch {
+    return false;
+  }
+}
+
+const OWN_AVATAR_MESSAGE = "Upload your photo again.";
+
 export const studentOnboardingSchema = z.object({
   fullName,
   timezone,
@@ -138,10 +203,39 @@ export const tutorProfileEditSchema = tutorOnboardingSchema
       .string()
       .trim()
       .url("Enter a valid video URL.")
+      .refine(isAllowedIntroVideoUrl, INTRO_VIDEO_HOST_MESSAGE)
       .optional()
       .or(z.literal("").transform(() => undefined)),
   });
 export type TutorProfileEditValues = z.infer<typeof tutorProfileEditSchema>;
+
+/*
+ * Server-side variants that also pin `avatarUrl` to the caller's own avatar
+ * folder (Security C). The forms keep the plain schemas above, which run in
+ * the browser before the user id matters; the actions parse with these, the
+ * user id taken from the guard. Same optional / empty-string handling as the
+ * field each one tightens.
+ */
+export function studentOnboardingSchemaFor(userId: string) {
+  return studentOnboardingSchema.refine(
+    (v) => v.avatarUrl === undefined || isOwnAvatarUrl(v.avatarUrl, userId),
+    { message: OWN_AVATAR_MESSAGE, path: ["avatarUrl"] },
+  );
+}
+
+export function tutorOnboardingSchemaFor(userId: string) {
+  return tutorOnboardingSchema.refine((v) => isOwnAvatarUrl(v.avatarUrl, userId), {
+    message: OWN_AVATAR_MESSAGE,
+    path: ["avatarUrl"],
+  });
+}
+
+export function tutorProfileEditSchemaFor(userId: string) {
+  return tutorProfileEditSchema.refine((v) => isOwnAvatarUrl(v.avatarUrl, userId), {
+    message: OWN_AVATAR_MESSAGE,
+    path: ["avatarUrl"],
+  });
+}
 
 // ── Settings (Phase 10 Part 4) ───────────────────────────────────────────────
 

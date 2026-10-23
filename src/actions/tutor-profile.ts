@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { profiles, subjects, tutorProfiles, tutorSubjects } from "@/db/schema";
 import { requireRole } from "@/lib/auth/guards";
 import {
-  tutorProfileEditSchema,
+  tutorProfileEditSchemaFor,
   type TutorProfileEditValues,
 } from "@/lib/auth/schemas";
 
@@ -35,7 +35,7 @@ export async function updateTutorProfile(
 ): Promise<UpdateResult> {
   const { user } = await requireRole("tutor", { requireApproval: false });
 
-  const parsed = tutorProfileEditSchema.safeParse(values); // server re-validates
+  const parsed = tutorProfileEditSchemaFor(user.id).safeParse(values); // server re-validates, own avatar only
   if (!parsed.success) return { error: "Please check the form and try again." };
   const v = parsed.data;
 

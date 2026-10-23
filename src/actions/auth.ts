@@ -7,6 +7,10 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import { homeFor } from "@/lib/auth/guards";
+// Only ever redirect to an in-app path, never an attacker-supplied URL.
+import { safeNext } from "@/lib/auth/safe-next";
+import { getClientIp } from "@/lib/security/client-ip";
+import { checkRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
 import {
   loginSchema,
   signupSchema,
@@ -20,12 +24,6 @@ import {
 
 export type ActionResult = { error: string } | { ok: true; message?: string };
 
-// Only ever redirect to an in-app path — never an attacker-supplied absolute URL.
-function safeNext(next: string | undefined | null): string | null {
-  if (!next) return null;
-  if (!next.startsWith("/") || next.startsWith("//")) return null;
-  return next;
-}
 
 async function originFromHeaders(): Promise<string> {
   const h = await headers();
@@ -63,6 +61,13 @@ export async function login(
   const parsed = loginSchema.safeParse(values); // never trust the client's parse
   if (!parsed.success) return { error: "Enter a valid email and password." };
 
+  const limited = await checkRateLimit({
+    action: "signIn",
+    ip: await getClientIp(),
+    email: parsed.data.email,
+  });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
@@ -80,6 +85,9 @@ export async function signup(
 ): Promise<ActionResult> {
   const parsed = signupSchema.safeParse(values);
   if (!parsed.success) return { error: "Check the form and try again." };
+
+  const limited = await checkRateLimit({ action: "signUp", ip: await getClientIp() });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
 
   const supabase = await createClient();
   const origin = await originFromHeaders();
@@ -112,6 +120,11 @@ export async function requestPasswordReset(
   // Even on a bad email, return the same success message — never reveal whether
   // an address has an account (§7.1 safe errors).
   if (parsed.success) {
+    // Per address, whether or not it has an account, so the refusal says
+    // nothing about which addresses exist.
+    const limited = await checkRateLimit({ action: "passwordReset", email: parsed.data.email });
+    if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
+
     const supabase = await createClient();
     const origin = await originFromHeaders();
     await supabase.auth.resetPasswordForEmail(parsed.data.email, {

@@ -29,6 +29,7 @@ import {
   startConversation as startConversationCore,
 } from "@/lib/messaging/service";
 import { createServiceClient } from "@/lib/supabase/admin";
+import { checkRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
 
 /**
  * Messaging server actions (SPEC §7.9; Phase 9 Parts 1 and 2).
@@ -71,6 +72,11 @@ export async function startConversation(input: {
   const parsed = z.object({ tutorId: uuid }).safeParse(input);
   if (!parsed.success) return { error: messagingRefusalMessage("target_unavailable") };
 
+  // One shared counter for both directions (Security C): a person opening new
+  // threads, whichever side they are on.
+  const limited = await checkRateLimit({ action: "startConversation", userId: user.id });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
+
   const res = await startConversationCore(messagingRunner, {
     starterId: user.id,
     targetId: parsed.data.tutorId,
@@ -96,6 +102,11 @@ export async function startConversationWithStudent(input: {
   const user = await requireUser();
   const parsed = z.object({ studentId: uuid }).safeParse(input);
   if (!parsed.success) return { error: messagingRefusalMessage("target_unavailable") };
+
+  // One shared counter for both directions (Security C): a person opening new
+  // threads, whichever side they are on.
+  const limited = await checkRateLimit({ action: "startConversation", userId: user.id });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
 
   const res = await startConversationCore(messagingRunner, {
     starterId: user.id,
@@ -134,6 +145,9 @@ export async function createAttachmentUpload(input: {
   const user = await requireUser();
   const parsed = uploadSchema.safeParse(input);
   if (!parsed.success) return { error: attachmentRefusalMessage("attachment_type") };
+
+  const limited = await checkRateLimit({ action: "createAttachmentUpload", userId: user.id });
+  if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
 
   const file = validateAttachment(parsed.data);
   if (!file.ok) return { error: attachmentRefusalMessage(file.reason) };

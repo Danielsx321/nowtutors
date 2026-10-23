@@ -853,3 +853,49 @@ with the week in the note, or ask Daniels to widen `WEEKS_TO_CHECK` for one run.
 **Changing the week to Qatar time** is a code change: `weekStartUtc` takes a zone and the schedule
 becomes `20 21 * * 0` (Sunday 21:20 UTC = Monday 00:20 in Doha). The daily buckets stay valid.
 
+
+## Rate limits: reading and clearing them (2026-10-22, Security C)
+
+A person who sees **"Too many attempts. Try again in a few minutes."** has hit one of the limits in
+SPEC §5 (login, signup, password reset request, change password, attachment upload, new conversation).
+It clears by itself when the window ends (15 minutes or an hour). To clear it sooner, in the Supabase
+SQL editor of the right project, as `postgres` (the table is server-only; the dashboard API cannot see it):
+
+1. **See what is counting against them.** Keys are `<action>:<ip|email|user>:<value>`, email lowercased.
+
+   ```sql
+   select key, window_start, count
+     from rate_limits
+    where key like '%:email:ada@example.com'
+       or key like '%:user:<their profile id>'
+    order by window_start desc;
+   ```
+
+   Their IP, if you need it: the `ip` column of their latest `audit_log` row, or ask them. A whole office
+   behind one IP shares the `signIn:ip:` and `signUp:ip:` counters.
+
+2. **Clear them.** Deleting the rows resets the count to zero; nothing else reads them.
+
+   ```sql
+   delete from rate_limits
+    where key in ('signIn:email:ada@example.com', 'passwordReset:email:ada@example.com');
+   ```
+
+3. **Busiest keys right now** (a bot, or a limit set too low):
+
+   ```sql
+   select key, count, window_start from rate_limits
+    where window_start > now() - interval '1 hour'
+    order by count desc limit 20;
+   ```
+
+Rows older than a day are deleted by the nightly `reconcile-wallets` run (`rateLimitRowsDeleted` in its
+summary). If the counter is unreachable the app lets attempts through and logs
+`[rate-limit] counter unavailable, allowing` (Sentry too): check that `drizzle/0028` is applied
+(`select to_regprocedure('public.hit_rate_limit(text,integer,integer)');` is not null). The limits
+themselves are `RATE_LIMITS` in `src/lib/security/rate-limit.ts`; changing one is a code change.
+
+**Payout email changes** show in `/admin/audit` as "A tutor set or changed their payout email"
+(`payout_email_changed`, both addresses masked). The tutor is emailed at their account address when an
+existing address is replaced. A tutor who says they didn't make the change: suspend the account from
+`/admin/users/[id]`, hold any open withdrawal, and have them reset their password before restoring it.

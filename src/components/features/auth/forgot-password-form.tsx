@@ -17,6 +17,7 @@ import { requestPasswordReset } from "@/actions/auth";
 
 export function ForgotPasswordForm() {
   const [message, setMessage] = React.useState<string | null>(null);
+  const [formError, setFormError] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -28,8 +29,12 @@ export function ForgotPasswordForm() {
 
   const onSubmit = handleSubmit(async (values) => {
     // Always returns the same neutral message — never reveals if the email exists.
+    // The one error it can return is the rate limit, which is the same for
+    // every address.
+    setFormError(null);
     const res = await requestPasswordReset(values);
-    if ("ok" in res && res.message) setMessage(res.message);
+    if ("error" in res) setFormError(res.error);
+    else if (res.message) setMessage(res.message);
   });
 
   if (message) {
@@ -38,6 +43,7 @@ export function ForgotPasswordForm() {
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-4">
+      {formError && <Alert variant="danger">{formError}</Alert>}
       <div className="space-y-1.5">
         <Label htmlFor="email" required>
           Email
