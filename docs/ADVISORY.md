@@ -58,3 +58,27 @@ of what a file contains is a claim about the file, not a substitute for reading 
 the same risk as any other unverified claim this project has already been burned by (see #1). This
 applies to any claim about what a file says: print it, or read it, before trusting a description of
 it — your own prior description included.
+
+## 8. Session close: what it means and what it produces
+
+**Trigger:** the overseer says the session is ending, or any equivalent ("let's close out", "wrap
+up", "session end"). No other cue is required.
+
+**It produces two things, always, in the SAME advisory message:**
+
+1. **One** Claude Code prompt that updates every changed repo doc, opens one PR, and overwrites all
+   seven files in `~/Desktop/nowtutors-docs` — the six repo docs plus `HANDOFF.md`.
+2. **The handoff note itself, written out in the chat as plain text**, ready to paste into a new
+   conversation.
+
+Number 2 is authored by the advisory seat and delivered in chat. It is **not** something the
+overseer retrieves from the terminal, and **not** a step he should have to ask for twice. Telling
+him to `cat` the file is the failure, not the fix — the file is for project knowledge; the chat
+copy is what starts the next session.
+
+This session closed in three separate Claude Code runs (#41, #42, then a standalone `HANDOFF.md`
+write), each needing its own `/clear`, each leaving the overseer asking which docs had been
+covered. Splitting the close across runs is how a doc gets missed and how the record ends up
+asserting something never written — the failure #1 already names.
+
+**If a session-close message contains only a prompt, it is incomplete.**
