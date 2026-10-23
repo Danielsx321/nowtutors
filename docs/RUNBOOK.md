@@ -899,3 +899,43 @@ themselves are `RATE_LIMITS` in `src/lib/security/rate-limit.ts`; changing one i
 (`payout_email_changed`, both addresses masked). The tutor is emailed at their account address when an
 existing address is replaced. A tutor who says they didn't make the change: suspend the account from
 `/admin/users/[id]`, hold any open withdrawal, and have them reset their password before restoring it.
+
+## Bot protection: Cloudflare Turnstile (2026-10-23, Security D)
+
+Login, signup, the reset request and change password send a Turnstile token to Supabase Auth
+(`options.captchaToken`). Supabase checks it with the **secret key, which lives only in Supabase >
+Auth > Bot and Abuse Protection**, never in Vercel or `.env*`. The app only needs the public
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, inlined at build time (a change needs a redeploy).
+
+**Rollout order. Do not change it:**
+
+1. **Site key in Vercel**, Production and Preview: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` from Cloudflare >
+   Turnstile (widget in Managed mode, hostnames `nowtutors.com`, `www.nowtutors.com`, `localhost`).
+   The secret goes into Supabase > Auth > Bot and Abuse Protection, provider Turnstile, **switch still
+   OFF**.
+2. **Deploy this code** (merge, Vercel builds with the key). Check `/login`, `/signup` and
+   `/forgot-password` show the check and that the button enables once it passes. Logins still work
+   because Supabase is not checking yet.
+3. **Only then switch captcha ON in Supabase.**
+4. **Live test** on production: a real signup and a real login (and the reset request), plus a Google
+   sign-in, which Supabase does not captcha-gate.
+
+**Rollback:** switch captcha **OFF in Supabase first**; that alone restores every sign-in. Reverting the
+code or removing the env var comes after, if at all. Removing the site key while captcha is on blocks
+every password sign-in, because the forms stop sending a token.
+
+**Side effects, because production runs on the dev Supabase project** (see "Env / toolchain gotchas"
+in PROGRESS):
+
+- Local `pnpm dev` / `next start` against `.env.local` needs the **real** site key in `.env.local` once
+  captcha is on (its widget lists `localhost`). Cloudflare's test keys (`1x00000000000000000000AA`
+  always passes, `2x00000000000000000000AB` always blocks) give a dummy token that the real secret
+  refuses: good for checking the widget renders, not for signing in.
+- `db:verify-rls` and `db:verify-rls:prod` sign in with a password from a script and will get
+  `captcha_failed` while captcha is on. Run them with captcha briefly switched off, or move their
+  sign-ins to admin-created sessions (follow-up).
+- The test project (`uietkphpfqaicbndunwt`) is unaffected unless captcha is switched on there.
+
+**Symptom guide:** "Please complete the check and try again." means the token was missing, expired or
+refused (`captcha_failed`). Wrong hostname in the Cloudflare widget shows as the widget's own error and
+the line "The security check didn't load" under it.

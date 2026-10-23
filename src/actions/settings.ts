@@ -13,6 +13,7 @@ import {
   type ChangePasswordValues,
   type NotificationSettingsValues,
 } from "@/lib/auth/schemas";
+import { CAPTCHA_MESSAGE, isCaptchaError } from "@/lib/auth/captcha";
 import { readPreferences } from "@/lib/email/preferences";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
@@ -111,7 +112,10 @@ export async function changePassword(input: ChangePasswordValues): Promise<Setti
   const check = await supabase.auth.signInWithPassword({
     email: authUser.email,
     password: parsed.data.currentPassword,
+    // Supabase captcha-gates every password sign-in, this re-check included.
+    options: { captchaToken: parsed.data.captchaToken },
   });
+  if (check.error && isCaptchaError(check.error)) return { error: CAPTCHA_MESSAGE };
   if (check.error) return { error: "Your current password isn't right." };
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });

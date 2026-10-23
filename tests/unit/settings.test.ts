@@ -152,7 +152,11 @@ describe("changePassword", () => {
     m.signIn.mockResolvedValue({ error: null });
     m.updateUser.mockResolvedValue({ error: null });
     expect(await changePassword(input)).toEqual({ ok: true });
-    expect(m.signIn).toHaveBeenCalledWith({ email: "sam@example.com", password: "Oldpass123" });
+    expect(m.signIn).toHaveBeenCalledWith({
+      email: "sam@example.com",
+      password: "Oldpass123",
+      options: { captchaToken: undefined }, // Security D: no site key in tests
+    });
     expect(m.updateUser).toHaveBeenCalledWith({ password: "Newpass123" });
   });
 

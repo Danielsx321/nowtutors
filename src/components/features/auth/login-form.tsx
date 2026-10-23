@@ -13,6 +13,8 @@ import { loginSchema, type LoginValues } from "@/lib/auth/schemas";
 import { login } from "@/actions/auth";
 import { GoogleButton } from "./google-button";
 import { AuthDivider } from "./auth-divider";
+import { Turnstile, type TurnstileHandle } from "./turnstile";
+import { CAPTCHA_REQUIRED } from "@/lib/auth/captcha";
 
 export function LoginForm({
   next,
@@ -24,9 +26,12 @@ export function LoginForm({
   const [formError, setFormError] = React.useState<string | null>(
     initialError ?? null,
   );
+  const turnstile = React.useRef<TurnstileHandle>(null);
+  const [captcha, setCaptcha] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -36,6 +41,7 @@ export function LoginForm({
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
     const res = await login(values, next); // server re-validates + authenticates
+    turnstile.current?.reset(); // tokens are single-use
     if (res && "error" in res) setFormError(res.error);
     // success redirects server-side
   });
@@ -84,7 +90,21 @@ export function LoginForm({
           <FieldError id="password-error">{errors.password?.message}</FieldError>
         </div>
 
-        <Button type="submit" className="w-full" loading={isSubmitting}>
+        <Turnstile
+          ref={turnstile}
+          action="login"
+          onToken={(t) => {
+            setCaptcha(t);
+            setValue("captchaToken", t ?? undefined);
+          }}
+        />
+
+        <Button
+          type="submit"
+          className="w-full"
+          loading={isSubmitting}
+          disabled={CAPTCHA_REQUIRED && !captcha}
+        >
           Log in
         </Button>
       </form>

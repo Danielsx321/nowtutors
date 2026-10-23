@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LANGUAGES } from "@/lib/geo/languages";
 import { isValidTimeZone } from "@/lib/geo/timezones";
+import { CAPTCHA_MESSAGE, CAPTCHA_REQUIRED } from "@/lib/auth/captcha";
 
 /**
  * ONE zod schema per form, defined once and reused on BOTH sides (SPEC §5,
@@ -21,9 +22,27 @@ const strongPassword = z
   .regex(/[A-Za-z]/, "Include at least one letter.")
   .regex(/[0-9]/, "Include at least one number.");
 
+/**
+ * The Turnstile token (Security D). Required, non-empty, when
+ * `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is set; optional when it is not, so local
+ * dev and CI work without keys. Supabase verifies it; the app only carries it.
+ */
+export const captchaToken = (
+  CAPTCHA_REQUIRED
+    ? z.string({ message: CAPTCHA_MESSAGE }).trim().min(1, CAPTCHA_MESSAGE)
+    : z.string().trim().optional()
+) as z.ZodOptional<z.ZodString>; // typed optional: the forms start without one
+// (Not `.optional().refine(...)`: zod 4 skips the refine when the key is absent.)
+
+/** True when a failed parse failed (also) on the captcha token. */
+export function failedOnCaptcha(error: z.ZodError): boolean {
+  return error.issues.some((i) => i.path[0] === "captchaToken");
+}
+
 export const loginSchema = z.object({
   email,
   password: z.string().min(1, "Enter your password."),
+  captchaToken,
 });
 export type LoginValues = z.infer<typeof loginSchema>;
 
@@ -32,6 +51,7 @@ export const signupSchema = z
     email,
     password: strongPassword,
     confirmPassword: z.string(),
+    captchaToken,
   })
   .refine((v) => v.password === v.confirmPassword, {
     message: "Passwords do not match.",
@@ -39,7 +59,7 @@ export const signupSchema = z
   });
 export type SignupValues = z.infer<typeof signupSchema>;
 
-export const forgotPasswordSchema = z.object({ email });
+export const forgotPasswordSchema = z.object({ email, captchaToken });
 export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z
@@ -269,6 +289,9 @@ export const changePasswordSchema = z
     currentPassword: z.string().min(1, "Enter your current password."),
     password: strongPassword,
     confirmPassword: z.string(),
+    // The current password is re-checked with signInWithPassword, which
+    // Supabase captcha-gates like any sign-in.
+    captchaToken,
   })
   .refine((v) => v.password === v.confirmPassword, {
     message: "Passwords do not match.",

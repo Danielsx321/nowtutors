@@ -14,13 +14,18 @@ import { signupSchema, type SignupValues } from "@/lib/auth/schemas";
 import { signup } from "@/actions/auth";
 import { GoogleButton } from "./google-button";
 import { AuthDivider } from "./auth-divider";
+import { Turnstile, type TurnstileHandle } from "./turnstile";
+import { CAPTCHA_REQUIRED } from "@/lib/auth/captcha";
 
 export function SignupForm({ next }: { next?: string }) {
   const [formError, setFormError] = React.useState<string | null>(null);
   const [checkEmail, setCheckEmail] = React.useState<string | null>(null);
+  const turnstile = React.useRef<TurnstileHandle>(null);
+  const [captcha, setCaptcha] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
@@ -30,6 +35,7 @@ export function SignupForm({ next }: { next?: string }) {
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
     const res = await signup(values, next); // server re-validates + creates user
+    turnstile.current?.reset(); // tokens are single-use
     if (res && "error" in res) setFormError(res.error);
     else if (res?.ok && res.message) setCheckEmail(res.message);
     // if a session was created, signup() redirects to /onboarding server-side
@@ -99,7 +105,21 @@ export function SignupForm({ next }: { next?: string }) {
           </FieldError>
         </div>
 
-        <Button type="submit" className="w-full" loading={isSubmitting}>
+        <Turnstile
+          ref={turnstile}
+          action="signup"
+          onToken={(t) => {
+            setCaptcha(t);
+            setValue("captchaToken", t ?? undefined);
+          }}
+        />
+
+        <Button
+          type="submit"
+          className="w-full"
+          loading={isSubmitting}
+          disabled={CAPTCHA_REQUIRED && !captcha}
+        >
           Create account
         </Button>
       </form>

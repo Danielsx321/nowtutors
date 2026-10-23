@@ -11,7 +11,9 @@ import { homeFor } from "@/lib/auth/guards";
 import { safeNext } from "@/lib/auth/safe-next";
 import { getClientIp } from "@/lib/security/client-ip";
 import { checkRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
+import { CAPTCHA_MESSAGE, isCaptchaError } from "@/lib/auth/captcha";
 import {
+  failedOnCaptcha,
   loginSchema,
   signupSchema,
   forgotPasswordSchema,
@@ -59,7 +61,10 @@ export async function login(
   next?: string,
 ): Promise<ActionResult> {
   const parsed = loginSchema.safeParse(values); // never trust the client's parse
-  if (!parsed.success) return { error: "Enter a valid email and password." };
+  if (!parsed.success) {
+    if (failedOnCaptcha(parsed.error)) return { error: CAPTCHA_MESSAGE };
+    return { error: "Enter a valid email and password." };
+  }
 
   const limited = await checkRateLimit({
     action: "signIn",
@@ -72,7 +77,11 @@ export async function login(
   const { data, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
+    // Turnstile (Security D): Supabase verifies it once captcha is on.
+    options: { captchaToken: parsed.data.captchaToken },
   });
+  // A refused check says nothing about the account, so it can be named.
+  if (error && isCaptchaError(error)) return { error: CAPTCHA_MESSAGE };
   // Do NOT reveal whether the email exists — same message for both cases.
   if (error || !data.user) return { error: "Invalid email or password." };
 
@@ -84,7 +93,10 @@ export async function signup(
   next?: string,
 ): Promise<ActionResult> {
   const parsed = signupSchema.safeParse(values);
-  if (!parsed.success) return { error: "Check the form and try again." };
+  if (!parsed.success) {
+    if (failedOnCaptcha(parsed.error)) return { error: CAPTCHA_MESSAGE };
+    return { error: "Check the form and try again." };
+  }
 
   const limited = await checkRateLimit({ action: "signUp", ip: await getClientIp() });
   if (!limited.ok) return { error: RATE_LIMIT_MESSAGE };
@@ -94,9 +106,13 @@ export async function signup(
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
-    options: { emailRedirectTo: `${origin}/auth/callback?next=/onboarding` },
+    options: {
+      emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
+      captchaToken: parsed.data.captchaToken,
+    },
   });
 
+  if (error && isCaptchaError(error)) return { error: CAPTCHA_MESSAGE };
   if (error) {
     // "User already registered" is safe to surface only as a generic hint that
     // routes the user to sign in — do not confirm the address exists.
@@ -117,6 +133,9 @@ export async function requestPasswordReset(
   values: ForgotPasswordValues,
 ): Promise<ActionResult> {
   const parsed = forgotPasswordSchema.safeParse(values);
+  // A missing token is refused before anything else: it is the same for every
+  // address, so it reveals nothing.
+  if (!parsed.success && failedOnCaptcha(parsed.error)) return { error: CAPTCHA_MESSAGE };
   // Even on a bad email, return the same success message — never reveal whether
   // an address has an account (§7.1 safe errors).
   if (parsed.success) {
@@ -127,9 +146,13 @@ export async function requestPasswordReset(
 
     const supabase = await createClient();
     const origin = await originFromHeaders();
-    await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
       redirectTo: `${origin}/auth/callback?next=/reset-password`,
+      captchaToken: parsed.data.captchaToken,
     });
+    // Supabase checks the token before it looks up the address, so this
+    // refusal is the same for every email. Any other error stays silent.
+    if (error && isCaptchaError(error)) return { error: CAPTCHA_MESSAGE };
   }
   return {
     ok: true,
