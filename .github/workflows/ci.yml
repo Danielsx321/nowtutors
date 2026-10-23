@@ -21,7 +21,7 @@ jobs:
       # Node comes from .nvmrc (single source of truth with local dev). pnpm 11
       # needs Node >= 22.13 (it uses node:sqlite, absent in Node 20).
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: ".nvmrc"
           cache: pnpm
