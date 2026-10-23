@@ -192,14 +192,14 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 |---|---|---|
 | id | uuid PK | = auth.users.id |
 | role | enum `student` \| `tutor` \| `admin` **nullable** | null until onboarding sets it; immutable after except by admin (Decision #5) |
-| email | text not null | mirrored from auth for querying |
+| email | text not null | mirrored from auth for querying. **Server-only** (`profiles_guard`, `drizzle/0027`): a client may only set it to the address `auth.users` holds; a confirmed auth email change is copied in by `on_auth_user_email_changed` |
 | full_name | text |  |
 | display_name | text |  |
 | avatar_url | text | Supabase Storage path |
 | country | text (ISO 3166-1 alpha-2) |  |
 | timezone | text (IANA, e.g. `Asia/Shanghai`) | default from browser at signup |
 | bio | text |  |
-| onboarding_completed_at | timestamptz | null until onboarding done |
+| onboarding_completed_at | timestamptz | null until onboarding done. **Server-only** (`profiles_guard`, `drizzle/0027`): written by the onboarding actions on the trusted connection |
 | is_suspended | boolean default false | admin action |
 | last_seen_at | timestamptz | general presence, all roles |
 | notification_preferences | jsonb not null default `'{}'` | opt-out model; missing key = on (§11) |
@@ -209,7 +209,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | Column | Type | Notes |
 |---|---|---|
 | user_id | uuid unique FK → profiles.id |  |
-| slug | text unique | for `/tutors/[slug]` |
+| slug | text unique | for `/tutors/[slug]`. Set once at onboarding; after that only the trusted server or an admin may change it (`tutor_stats_guard`, `drizzle/0027`) |
 | headline | text | one line, shown on cards |
 | about | text | long form |
 | intro_video_url | text | optional |
@@ -224,7 +224,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | is_live | boolean default false | broadcasting or available for instant |
 | live_mode | enum `instant` \| `broadcast` \| null | what "live" currently means |
 | last_seen_at | timestamptz | heartbeat target |
-| rating_avg | numeric(3,2) default 0 | denormalized, recomputed on new review |
+| rating_avg | numeric(3,2) default 0 | denormalized, recomputed on new review. **Server-only** (`tutor_stats_guard`, `drizzle/0027`), with the next three |
 | rating_count | integer default 0 |  |
 | completed_sessions | integer default 0 | denormalized |
 | total_minutes_taught | integer default 0 |  |
@@ -245,6 +245,12 @@ Indexes: `(is_live, last_seen_at)`, `(approval_status)`, `(rating_avg desc)`, `(
 > This is deliberately **not** a new `approval_status` value: approval state and change state are orthogonal, and conflating them would make an approved-but-edited tutor indistinguishable from an unapproved one — which would drop them out of search and break earnings/withdrawal assumptions in Phase 8. Both columns are **trigger/admin managed**: `tutor_profile_change_flag` (plus `tutor_subjects_change_flag` for the child table) stamps `profile_changed_at` only when a material value actually *changed*, so a no-op save cannot flag and a tutor cannot clear the flag to dodge review; `profile_reviewed_at` is folded into the admin-only `tutor_approval_guard`.
 
 > **Request changes: a tutor on hold (added 2026-10-13, `drizzle/0025`).** The opposite case to re-review: an admin wants a tutor OFF the site until something is fixed (a photo, most often), without the finality of Reject. That IS a status, `changes_requested`, because every "is this tutor live" check already keys on `approval_status = 'approved'`; the tutor drops out of browse, `live_tutors`, bookings, messaging and broadcasts with no other change, while `/tutor/profile` (which admits any status) stays open. The admin's ticked reasons and note share `approval_note` (`lib/tutors/change-reasons.ts` formats and parses the one column; a plain rejection note parses as a note with no reasons). The **resubmit signal reuses the two timestamps**: the hold stamps `profile_reviewed_at`, a save afterwards stamps `profile_changed_at` (the change-flag triggers now fire for `changes_requested` too; a photo-only save, which lives on `profiles`, is stamped by `updateTutorProfile` itself), and "Resubmitted" is `profile_changed_at > profile_reviewed_at`. Approve from a hold clears the note, stamps `profile_reviewed_at`, and emails `tutor-back-live` instead of the approval email. Already-booked sessions are left alone (the room checks participants, not approval); the On hold card says so.
+
+> **Server-only columns and the avatar limits (`drizzle/0027`, security checklist 2026-10-22).** `tutor_profiles_update` and `profiles_update` let a signed-in user write any unguarded column of their own row over PostgREST. Three were closed, each proven by `db:verify-rls`:
+>
+> - **Tutor stats.** `rating_avg`, `rating_count`, `completed_sessions` and `total_minutes_taught` change only on the trusted connection or an admin session (`tutor_stats_guard`, `BEFORE INSERT OR UPDATE`). A client INSERT must leave them at their defaults. Browse sorts and filters on them, so this is what stops a tutor faking a 5-star profile. `slug` may be set when the row is created and never changed by a client after that.
+> - **`profiles.email`** belongs to Supabase Auth. `profiles_guard` refuses any change except by the trusted server or to the exact address `auth.users` holds for that id. `on_auth_user_email_changed` (`AFTER UPDATE OF email ON auth.users`, `SECURITY DEFINER`, the same shape as `handle_new_user` in `0002`) copies a confirmed change into `profiles.email`, so app email keeps reaching the right inbox. The guard checks the value rather than who is calling, because GoTrue writes as `supabase_auth_admin`, which `is_trusted_server()` does not recognise. `onboarding_completed_at` is server-only, no exceptions.
+> - **`avatars` bucket:** `file_size_limit` 2 MB (2097152), `allowed_mime_types` `image/jpeg`, `image/png`, `image/webp`. SVG is excluded on purpose. The upload client sends the cropped JPEG (at most 1200x750, quality 0.86), so real uploads are unaffected.
 
 **`tutor_payout_details`** — sensitive payout destination, split off `tutor_profiles` (Decision A) so "anyone reads approved tutor_profiles" cannot leak it. Owner + admin RLS only.
 
@@ -596,8 +602,8 @@ Policy summary:
 
 | Table | Read | Write |
 |---|---|---|
-| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`) |
-| tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role; presence (`is_live`, `last_seen_at`, `live_mode`) only by the trusted server (`tutor_presence_guard`, `drizzle/0023`) |
+| profiles | own row fully; other users see only `display_name, avatar_url, country, bio` via a `public_profiles` view | own row only; `role` and `is_suspended` only by an admin session or the trusted server (`profiles_guard`, `drizzle/0021`); `email` only to the confirmed auth address and `onboarding_completed_at` only by the trusted server (`drizzle/0027`) |
+| tutor_profiles | anyone may read where `approval_status = 'approved'`; owner reads own always | owner; `approval_status` and `approval_note` writable only by service role; presence (`is_live`, `last_seen_at`, `live_mode`) only by the trusted server (`tutor_presence_guard`, `drizzle/0023`); stats (`rating_avg`, `rating_count`, `completed_sessions`, `total_minutes_taught`) and a set `slug` only by the trusted server or an admin (`tutor_stats_guard`, `drizzle/0027`) |
 | bookings | participants only (`student_id = auth.uid() or tutor_id = auth.uid()`) | **server only** (`drizzle/0021`): no `anon`/`authenticated` write. Price, slot, debit and status transitions are rules RLS can't express (Section 7) |
 | session_requests | participants only | **server actions only** (`drizzle/0021`): no `anon`/`authenticated` write; `price_credits` is never client-chosen |
 | wallets, credit_transactions | owner only | **service role only** — no client writes, ever |

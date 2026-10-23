@@ -147,6 +147,29 @@ async function main() {
     const me = data[0] as { role: string; is_suspended: boolean } | undefined;
     assert(me?.role === "student" && me.is_suspended === false, "student1 is still an unsuspended student");
   }
+  // profiles_guard, widened in 0027 (security checklist 2026-10-22): every app
+  // email goes to profiles.email, so a user must not be able to point it
+  // elsewhere; it follows auth.users only. onboarding_completed_at is written
+  // by the onboarding actions on the trusted connection and nowhere else.
+  {
+    const { error } = await student
+      .from("profiles")
+      .update({ email: `hijack-${Date.now()}@attacker.dev` })
+      .eq("id", uid);
+    assert(!!error, "student cannot change own profiles.email over REST (profiles_guard, 0027)");
+  }
+  {
+    const { error } = await student
+      .from("profiles")
+      .update({ onboarding_completed_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", uid);
+    assert(!!error, "student cannot change own onboarding_completed_at over REST (profiles_guard, 0027)");
+  }
+  {
+    const { data } = await rows(student.from("profiles").select("email").eq("id", uid));
+    const me = data[0] as { email: string } | undefined;
+    assert(me?.email === "student1@nowtutors.dev", "student1's profiles.email is unchanged");
+  }
   {
     // WITH CHECK (user_id = auth.uid()) must reject a spoofed owner id.
     const { error } = await student
@@ -201,6 +224,94 @@ async function main() {
       .eq("user_id", tid)
       .select("user_id");
     assert(!error && (data ?? []).length === 1, "tutor CAN update own non-approval fields");
+  }
+  // tutor_stats_guard (0027, security checklist 2026-10-22): browse sorts and
+  // filters on rating and completed sessions, so a tutor writing their own
+  // numbers over REST is a fake 5-star profile at the top of the list. Each
+  // probe writes a value the row does not hold (a no-op update fires nothing),
+  // and anything a still-open hole lets through is put back with the service role.
+  {
+    const service = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const before = check(
+      await service
+        .from("tutor_profiles")
+        .select("slug, rating_avg, rating_count, completed_sessions, total_minutes_taught, headline, about")
+        .eq("user_id", tid)
+        .maybeSingle(),
+      "read tutor stats",
+    ) as {
+      slug: string;
+      rating_avg: string | number;
+      rating_count: number;
+      completed_sessions: number;
+      total_minutes_taught: number;
+      headline: string | null;
+      about: string | null;
+    };
+    const restore = () =>
+      service
+        .from("tutor_profiles")
+        .update({
+          slug: before.slug,
+          rating_avg: before.rating_avg,
+          rating_count: before.rating_count,
+          completed_sessions: before.completed_sessions,
+          total_minutes_taught: before.total_minutes_taught,
+        })
+        .eq("user_id", tid);
+    const fakeAvg = Number(before.rating_avg) === 5 ? 4.99 : 5;
+    const probes: [string, Record<string, unknown>][] = [
+      ["rating_avg", { rating_avg: fakeAvg }],
+      ["rating_count", { rating_count: before.rating_count + 917 }],
+      ["completed_sessions", { completed_sessions: before.completed_sessions + 917 }],
+      ["total_minutes_taught", { total_minutes_taught: before.total_minutes_taught + 917 }],
+      [
+        "rating_avg + rating_count + completed_sessions together",
+        { rating_avg: fakeAvg, rating_count: before.rating_count + 917, completed_sessions: before.completed_sessions + 917 },
+      ],
+    ];
+    for (const [label, patch] of probes) {
+      const { error } = await tutor.from("tutor_profiles").update(patch).eq("user_id", tid);
+      assert(!!error, `tutor cannot set own ${label} over REST (stats guard, 0027)`);
+      if (!error) await restore();
+    }
+    {
+      const { error } = await tutor
+        .from("tutor_profiles")
+        .update({ slug: `hijacked-${Date.now()}` })
+        .eq("user_id", tid);
+      assert(!!error, "tutor cannot change own non-null slug over REST (stats guard, 0027)");
+      if (!error) await restore();
+    }
+    {
+      const after = check(
+        await service
+          .from("tutor_profiles")
+          .select("slug, rating_count, completed_sessions")
+          .eq("user_id", tid)
+          .maybeSingle(),
+        "re-read tutor stats",
+      ) as { slug: string; rating_count: number; completed_sessions: number };
+      assert(
+        after.slug === before.slug &&
+          after.rating_count === before.rating_count &&
+          after.completed_sessions === before.completed_sessions,
+        "tutor1's slug and stats are unchanged",
+      );
+    }
+    {
+      // The legitimate edit still goes through: headline and about are the
+      // tutor's own (the editor writes them on the trusted connection, but the
+      // RLS policy allows them over REST too, and the guard must not refuse it).
+      const { data, error } = await tutor
+        .from("tutor_profiles")
+        .update({ headline: `Maths tutor ${Date.now()}`, about: before.about ?? "About me" })
+        .eq("user_id", tid)
+        .select("user_id");
+      assert(!error && (data ?? []).length === 1, "tutor CAN still edit own headline and about (stats guard, 0027)");
+    }
   }
   {
     // Presence is written by the heartbeat route and the go-live action on the
@@ -342,6 +453,49 @@ async function main() {
     );
     const onlyMine = data.every((r) => (r as { tutor_id: string }).tutor_id === tid);
     assert(!error && onlyMine, `tutor reads only own withdrawal requests (${data.length})`);
+  }
+
+  // avatars bucket limits (0027, security checklist 2026-10-22): the bucket is
+  // public, so without a type and size limit a user could host an HTML page or
+  // an arbitrarily large file on our storage domain inside their own folder.
+  console.log("avatars — only small JPEG/PNG/WebP (0027):");
+  {
+    const service = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: bucket } = await service.storage.getBucket("avatars");
+    assert(
+      bucket?.public === true &&
+        Number(bucket?.file_size_limit) === 2 * 1024 * 1024 &&
+        [...(bucket?.allowed_mime_types ?? [])].sort().join(",") === "image/jpeg,image/png,image/webp",
+      "avatars bucket is public with a 2 MB limit and JPEG/PNG/WebP only",
+    );
+    const jpegOf = (bytes: number) => {
+      const buf = new Uint8Array(bytes);
+      buf.set([0xff, 0xd8, 0xff, 0xe0]);
+      buf.set([0xff, 0xd9], bytes - 2);
+      return buf;
+    };
+    const stamp = Date.now();
+    const htmlPath = `${tid}/x-${stamp}.html`;
+    const bigPath = `${tid}/rls-big-${stamp}.jpg`;
+    const okPath = `${tid}/rls-small-${stamp}.jpg`;
+    try {
+      const html = await tutor.storage
+        .from("avatars")
+        .upload(htmlPath, new TextEncoder().encode("<script>alert(1)</script>"), { contentType: "text/html" });
+      assert(!!html.error, "tutor cannot upload a text/html file to avatars/<uid>/ (mime limit)");
+      const big = await tutor.storage
+        .from("avatars")
+        .upload(bigPath, jpegOf(3 * 1024 * 1024), { contentType: "image/jpeg" });
+      assert(!!big.error, "tutor cannot upload a 3 MB image/jpeg to avatars (2 MB limit)");
+      const ok = await tutor.storage
+        .from("avatars")
+        .upload(okPath, jpegOf(200 * 1024), { contentType: "image/jpeg" });
+      assert(!ok.error, "tutor CAN upload a 200 KB image/jpeg avatar to own folder");
+    } finally {
+      await service.storage.from("avatars").remove([htmlPath, bigPath, okPath]);
+    }
   }
   await tutor.auth.signOut();
 
@@ -664,6 +818,20 @@ async function main() {
         ) as { role: string | null } | null;
         assert(after?.role == null, "the new account's role is still NULL");
         await probe.auth.signOut();
+      }
+      // The other half of the profiles.email rule (0027): a CONFIRMED auth
+      // email change must still reach profiles.email, through the
+      // on_auth_user_email_changed trigger, past profiles_guard.
+      const newEmail = `rolecheck-moved-${Date.now()}@nowtutors.dev`;
+      const moved = await admin.auth.admin.updateUserById(probeId, { email: newEmail, email_confirm: true });
+      if (moved.error) {
+        assert(false, `could not change the probe user's auth email: ${moved.error.message}`);
+      } else {
+        const synced = check(
+          await admin.from("profiles").select("email").eq("id", probeId).maybeSingle(),
+          "read probe email",
+        ) as { email: string } | null;
+        assert(synced?.email === newEmail, "a confirmed auth email change is synced into profiles.email (0027)");
       }
       await admin.auth.admin.deleteUser(probeId);
     }
