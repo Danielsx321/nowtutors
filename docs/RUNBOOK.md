@@ -924,17 +924,16 @@ Auth > Bot and Abuse Protection**, never in Vercel or `.env*`. The app only need
 code or removing the env var comes after, if at all. Removing the site key while captcha is on blocks
 every password sign-in, because the forms stop sending a token.
 
-**Side effects, because production runs on the dev Supabase project** (see "Env / toolchain gotchas"
-in PROGRESS):
+**What captcha does and does not touch.** Production has its own Supabase project
+(`zcdhwdtvqdeaqrgxskpa`, since the 7 Oct cutover); dev (`mipnoxlhurdbaahmvhhx`) and test
+(`uietkphpfqaicbndunwt`) are separate, so switching captcha on in production gates nothing local.
 
-- Local `pnpm dev` / `next start` against `.env.local` needs the **real** site key in `.env.local` once
-  captcha is on (its widget lists `localhost`). Cloudflare's test keys (`1x00000000000000000000AA`
-  always passes, `2x00000000000000000000AB` always blocks) give a dummy token that the real secret
-  refuses: good for checking the widget renders, not for signing in.
-- `db:verify-rls` and `db:verify-rls:prod` sign in with a password from a script and will get
-  `captcha_failed` while captcha is on. Run them with captcha briefly switched off, or move their
-  sign-ins to admin-created sessions (follow-up).
-- The test project (`uietkphpfqaicbndunwt`) is unaffected unless captcha is switched on there.
+- Local `pnpm dev` / `next start` and `db:verify-rls` / `db:verify-rls:test` are unaffected unless
+  captcha is switched on in the dev or test project too. Cloudflare's test keys (`1x00000000000000000000AA`
+  always passes, `2x00000000000000000000AB` always blocks) are enough to check the widget renders.
+- `db:verify-rls:prod` is anonymous and never signs in, so captcha does not affect it.
+- A quick production check that captcha is on: `POST /auth/v1/recover` with the anon key and an
+  `@example.invalid` address returns `captcha_failed` when on, and a neutral 200 when off.
 
 **Symptom guide:** "Please complete the check and try again." means the token was missing, expired or
 refused (`captcha_failed`). Wrong hostname in the Cloudflare widget shows as the widget's own error and

@@ -5683,12 +5683,12 @@ Plan: workspace `plans/2026-10-22-nowtutors-security-fixes.md` (Step 9, plan dec
    answer is the same for every email. Wrong-password and existing-account answers are unchanged.
 5. **No app secret.** Supabase verifies the token with the secret stored in its Auth settings, so there
    is no `TURNSTILE_SECRET_KEY` in Vercel or `.env*` (the plan listed one; not needed, so not created).
-6. **Rollout order matters, and dev is production.** Code first (it sends a token whenever a site key is
-   set, harmless while captcha is off), captcha on in Supabase last. Because production runs on the dev
-   Supabase project, switching captcha on also gates local `pnpm dev` logins (which then need the real
-   site key, whose widget lists `localhost`, in `.env.local`) and the password sign-ins in
-   `db:verify-rls` / `db:verify-rls:prod` (RUNBOOK "Bot protection"). The test project is separate and
-   unaffected unless captcha is switched on there.
+6. **Rollout order matters.** Code first (it sends a token whenever a site key is set, harmless while
+   captcha is off), captcha on in Supabase last. Production has its own Supabase project
+   (`zcdhwdtvqdeaqrgxskpa`), so captcha there gates nothing on dev or test, and `db:verify-rls:prod`
+   is anonymous. Learned on rollout day: Supabase shows the provider and secret fields only after the
+   toggle is flipped, and Save switches captcha on at once; it was switched on early on 2026-10-23,
+   blocking sign-ins briefly, and switched off again within minutes.
 7. **CSP `connect-src` gets `challenges.cloudflare.com` too.** Cloudflare documents `script-src` and
    `frame-src`; it was not certain from memory that the loader never fetches from the page, and an
    unlisted host would only show once the CSP is enforced, so it is listed.
