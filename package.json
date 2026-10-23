@@ -53,7 +53,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@react-email/render": "^2.0.6",
-    "@sentry/nextjs": "^10.76.2",
+    "@sentry/nextjs": "^11.8.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "agora-rtc-sdk-ng": "^4.24.7",
