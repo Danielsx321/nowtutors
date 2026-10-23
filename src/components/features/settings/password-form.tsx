@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changePasswordSchema, type ChangePasswordValues } from "@/lib/auth/schemas";
 import { changePassword } from "@/actions/settings";
+import { CAPTCHA_REQUIRED } from "@/lib/auth/captcha";
+import { Turnstile, type TurnstileHandle } from "@/components/features/auth/turnstile";
 
 /**
  * Change password. Google-only accounts get a sentence instead of a form: they
@@ -18,10 +20,13 @@ import { changePassword } from "@/actions/settings";
 export function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
   const [saved, setSaved] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const turnstile = React.useRef<TurnstileHandle>(null);
+  const [captcha, setCaptcha] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ChangePasswordValues>({
     resolver: zodResolver(changePasswordSchema),
@@ -41,6 +46,7 @@ export function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
     setSaved(false);
     setFormError(null);
     const res = await changePassword(values);
+    turnstile.current?.reset(); // tokens are single-use
     if ("error" in res) setFormError(res.error);
     else {
       setSaved(true);
@@ -93,9 +99,17 @@ export function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
         />
         <FieldError>{errors.confirmPassword?.message}</FieldError>
       </div>
+      <Turnstile
+        ref={turnstile}
+        action="change_password"
+        onToken={(t) => {
+          setCaptcha(t);
+          setValue("captchaToken", t ?? undefined);
+        }}
+      />
       {formError ? <Alert variant="danger">{formError}</Alert> : null}
       {saved ? <Alert variant="success">Password changed.</Alert> : null}
-      <Button type="submit" loading={isSubmitting}>
+      <Button type="submit" loading={isSubmitting} disabled={CAPTCHA_REQUIRED && !captcha}>
         Change password
       </Button>
     </form>

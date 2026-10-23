@@ -106,6 +106,7 @@ describe("buildCsp", () => {
   it("Cloudflare Turnstile, ready for PR D", () => {
     expect(directive(csp, "script-src")).toContain("https://challenges.cloudflare.com");
     expect(directive(csp, "frame-src")).toContain("https://challenges.cloudflare.com");
+    expect(directive(csp, "connect-src")).toContain("https://challenges.cloudflare.com");
   });
 
   it("adds 'unsafe-eval' only for next dev", () => {

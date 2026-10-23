@@ -78,6 +78,7 @@ Locked unless there is a specific reason to deviate.
 | File storage | **Supabase Storage** | Avatars, intro videos, message attachments |
 | Error tracking | **Sentry** | Client + server |
 | Security headers | **`src/lib/security/headers.ts`**, applied to every path in `next.config.ts` | Enforced: HSTS (2 years, subdomains, preload), `X-Frame-Options: DENY`, `nosniff`, `strict-origin-when-cross-origin`, a `Permissions-Policy` that allows payment for self and PayPal and denies the unused features (camera, microphone, screen share and fullscreen stay at the browser default so the LessonSpace frame keeps them). The CSP is built from one host list (PayPal, Agora, LessonSpace, Supabase, Sentry, Google sign-in, Cloudflare Turnstile) and ships as `Content-Security-Policy-Report-Only` until it is enforced (DECISIONS 2026-10-22) |
+| Bot protection | **Cloudflare Turnstile**, loaded from its script tag (`challenges.cloudflare.com/turnstile/v0/api.js?render=explicit` through `next/script`), **no npm package** | `src/components/features/auth/turnstile.tsx` on login, signup, the reset request and change password (managed mode, light theme). The token rides to Supabase Auth as `options.captchaToken`; Supabase verifies it when "Bot and Abuse Protection" is on, so the app never holds the secret. Google OAuth is exempt. DECISIONS 2026-10-23 |
 | Dependency scanning | **Dependabot** + **`pnpm audit`** | `.github/dependabot.yml`: npm weekly on Monday with minor and patch grouped, majors one PR each; GitHub Actions monthly. CI step `Audit` fails on any high or critical advisory in production dependencies (`pnpm audit --prod --audit-level=high`); transitive fixes are `overrides` in `pnpm-workspace.yaml` |
 | Testing | **Vitest** (unit + DOM), **jsdom** + **@testing-library/react** / **@testing-library/dom** (the DOM lane), **Playwright** (E2E critical paths) | Three Vitest lanes, three configs, disjoint globs — see Section 15 |
 | Timezones | **date-fns + date-fns-tz** | Store UTC, render in the viewer's timezone |
@@ -112,6 +113,11 @@ PAYPAL_CLIENT_SECRET=
 PAYPAL_WEBHOOK_ID=
 PAYPAL_ENV=sandbox|live
 NEXT_PUBLIC_PAYPAL_CLIENT_ID=
+
+# Cloudflare Turnstile (Security D)
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=   # public; unset = no widget and no token required (local dev, CI)
+# The Turnstile SECRET key is never an app env var: it lives only in Supabase > Auth >
+# Bot and Abuse Protection, which verifies the token itself.
 
 # Email
 RESEND_API_KEY=
@@ -774,6 +780,8 @@ Prefer Server Actions over API routes for mutations initiated by our own UI. API
 4. **Tutor onboarding:** name, avatar (since 2026-10-13 through a crop step: the photo is fitted inside the tutor card's 16:10 frame with a live card and round-avatar preview, and the cropped 1200×750 JPEG is what is stored; students crop to a 600×600 square; DECISIONS `avatar-crop`), headline, about, subjects + levels, hourly rate, languages, education, experience, PayPal email. **No separate instant rate** — instant and scheduled both price off `hourly_rate_credits` (credits-are-money amendment, §7.4). Sets `approval_status = 'pending'`, creates `tutor_profiles`. → `/tutor/pending-approval`.
 5. Email verification required before booking or going live. Unverified users may browse.
 6. Admin approves in `/admin/tutors` → email to tutor → tutor can now appear in search and go live. **A tutor must have a profile photo to be approved** (amended 2026-09-19, live-globe Part G): onboarding and the profile editor require one, and `approveTutor` refuses without one on the server.
+
+**Bot check (Security D, 2026-10-23):** login, signup, the password reset request and change password (whose current-password re-check is a `signInWithPassword`) show a Cloudflare Turnstile check when `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is set. Submit stays disabled until there is a token, the token is reset after every submit (single-use), and the four Supabase calls send it as `options.captchaToken`. A missing or refused token is "Please complete the check and try again." Without a site key the field is optional and nothing renders. Google OAuth and service-role calls are exempt.
 
 Google OAuth users skip password but still complete onboarding. Handle the case where a Google email matches an existing password account: link, don't duplicate.
 

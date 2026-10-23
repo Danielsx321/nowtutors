@@ -14,13 +14,18 @@ import {
   type ForgotPasswordValues,
 } from "@/lib/auth/schemas";
 import { requestPasswordReset } from "@/actions/auth";
+import { CAPTCHA_REQUIRED } from "@/lib/auth/captcha";
+import { Turnstile, type TurnstileHandle } from "./turnstile";
 
 export function ForgotPasswordForm() {
   const [message, setMessage] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const turnstile = React.useRef<TurnstileHandle>(null);
+  const [captcha, setCaptcha] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordValues>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -33,6 +38,7 @@ export function ForgotPasswordForm() {
     // every address.
     setFormError(null);
     const res = await requestPasswordReset(values);
+    turnstile.current?.reset(); // tokens are single-use
     if ("error" in res) setFormError(res.error);
     else if (res.message) setMessage(res.message);
   });
@@ -58,7 +64,20 @@ export function ForgotPasswordForm() {
         />
         <FieldError id="email-error">{errors.email?.message}</FieldError>
       </div>
-      <Button type="submit" className="w-full" loading={isSubmitting}>
+      <Turnstile
+        ref={turnstile}
+        action="password_reset"
+        onToken={(t) => {
+          setCaptcha(t);
+          setValue("captchaToken", t ?? undefined);
+        }}
+      />
+      <Button
+        type="submit"
+        className="w-full"
+        loading={isSubmitting}
+        disabled={CAPTCHA_REQUIRED && !captcha}
+      >
         Send reset link
       </Button>
       <p className="text-center text-small text-text-muted">

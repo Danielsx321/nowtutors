@@ -26,7 +26,10 @@
  *     which CSP does not govern) sends the browser on to `accounts.google.com`.
  *     It is listed under `form-action` so a future form-posted sign-in still works.
  *   - Cloudflare Turnstile (security PR D): its script and challenge frame on
- *     `challenges.cloudflare.com`. Listed now so PR D needs no CSP change.
+ *     `challenges.cloudflare.com`. Cloudflare's CSP guidance names script-src
+ *     and frame-src; `connect-src` is added too (Security D, 2026-10-23) in case
+ *     the loader fetches from the page itself, since an unlisted host there
+ *     would only show once the CSP is enforced.
  */
 
 /** Header name for the CSP. Flip to "Content-Security-Policy" to enforce. */
@@ -66,6 +69,7 @@ export const CSP_HOSTS = {
   },
   turnstile: {
     script: ["https://challenges.cloudflare.com"],
+    connect: ["https://challenges.cloudflare.com"],
     frame: ["https://challenges.cloudflare.com"],
   },
 } as const;

@@ -5651,3 +5651,44 @@ The app-code half of the 2026-10-22 security checklist (findings 7 to 13). Plan:
     `handle_new_user` inserts the row and the guard is `BEFORE UPDATE`, so sign-up is unaffected.
     `db:verify-rls` proves the REST writes fail and the Drizzle path (in a rolled-back transaction)
     still works.
+
+## Security D: Cloudflare Turnstile on login, signup, password reset and password change (`security/d-bot-protection`, 2026-10-23)
+
+Plan: workspace `plans/2026-10-22-nowtutors-security-fixes.md` (Step 9, plan decision 5). No migration.
+
+1. **Turnstile from its script tag, no npm package** (plan decision 5). `next/script` with
+   `afterInteractive` loads `api.js?render=explicit` once per page and dedupes it across mounts;
+   `onReady` plus a mount-time check of `window.turnstile` render the widget, so a second form or a
+   return visit never waits for a load event that already happened. Managed mode, `size: flexible`,
+   `theme: light` (the site has no dark theme), 65 px reserved so the form does not jump.
+2. **Four calls, not three.** `signInWithPassword` (login), `signUp`, `resetPasswordForEmail`, and the
+   `signInWithPassword` inside `changePassword` that re-checks the current password. Supabase
+   captcha-gates every password sign-in, so without a token on the fourth, change password would break
+   the moment captcha is switched on. Google OAuth (`signInWithOAuth`) is exempt by Supabase;
+   `updateUser`, `getUser` and `signOut` are not captcha-gated; `src/db/verify-rls*.ts` are scripts,
+   not app paths (see 6).
+3. **The token reaches the action through react-hook-form, not FormData.** These forms call the server
+   action with `handleSubmit(values)`, so the widget's `onToken` does `setValue("captchaToken", …)`.
+   A hidden `captchaToken` input is rendered too (Turnstile's own `cf-turnstile-response` is switched
+   off), for any future plain form post. The submit button is disabled until there is a token, only when
+   a site key is set; expiry, timeout and error clear the token. The widget is reset after every submit:
+   tokens are single-use, and a failed login must not leave a spent token in the form.
+4. **The schema rule follows the site key.** `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is inlined at build time
+   on both sides, so `captchaToken` is `min(1)` when it is set and optional when it is not (local dev,
+   CI, tests). Built as a ternary, not `.optional().refine()`: zod 4 skips the refine when the key is
+   absent, which would let a token-less request through. A missing token and Supabase's refusal
+   (`code: "captcha_failed"`, or "captcha" in the message) both become "Please complete the check and
+   try again." in the existing `{ error }` shape. The reset request can name the refusal without
+   breaking the no-enumeration rule: Supabase checks the token before it looks the address up, so the
+   answer is the same for every email. Wrong-password and existing-account answers are unchanged.
+5. **No app secret.** Supabase verifies the token with the secret stored in its Auth settings, so there
+   is no `TURNSTILE_SECRET_KEY` in Vercel or `.env*` (the plan listed one; not needed, so not created).
+6. **Rollout order matters.** Code first (it sends a token whenever a site key is set, harmless while
+   captcha is off), captcha on in Supabase last. Production has its own Supabase project
+   (`zcdhwdtvqdeaqrgxskpa`), so captcha there gates nothing on dev or test, and `db:verify-rls:prod`
+   is anonymous. Learned on rollout day: Supabase shows the provider and secret fields only after the
+   toggle is flipped, and Save switches captcha on at once; it was switched on early on 2026-10-23,
+   blocking sign-ins briefly, and switched off again within minutes.
+7. **CSP `connect-src` gets `challenges.cloudflare.com` too.** Cloudflare documents `script-src` and
+   `frame-src`; it was not certain from memory that the loader never fetches from the page, and an
+   unlisted host would only show once the CSP is enforced, so it is listed.
