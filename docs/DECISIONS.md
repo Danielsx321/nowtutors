@@ -5512,6 +5512,42 @@ presence history existed. Agreed with Daniels 14 Oct as part of the rebuild extr
 11. **Scheduled by a pg_cron snippet run by hand** like the other seven (SPEC §3.5), Mondays 00:20 UTC.
 
 
+## Security A: server-only tutor stats, profile email, avatar limits (`security-a-db-guards`, 2026-10-22)
+
+The 20-point security checklist run against the live code on 2026-10-22 found three database holes a
+signed-in user could reach with the public key and their own JWT, skipping the app. Plan: workspace
+`plans/2026-10-22-nowtutors-security-fixes.md` (PR A). Migration `drizzle/0027_security_guards.sql`.
+
+1. **Guard triggers, not revoking UPDATE on `tutor_profiles`.** The RLS policies still allow a tutor's own
+   row, and the project already has the guard pattern (0010, 0016, 0023) with `is_trusted_server()`.
+   Adding columns to a guard is the smallest change in house style. Revoking every client write on
+   `tutor_profiles` is the cleaner end state and is noted for later.
+2. **Tutor stats and slug are server-only.** `rating_avg`, `rating_count`, `completed_sessions` and
+   `total_minutes_taught` change only on the trusted connection or an admin session. A grep on
+   2026-10-22 found no app writer of the four stats (reviews are not built; only the seed writes them,
+   over the service role) and one writer of `slug`, `completeTutorOnboarding`, which INSERTs it on the
+   Drizzle connection. `slug` is `NOT NULL`, so "a client may set it only while it is NULL" means a
+   client may choose it at INSERT and never change it. The guard is `BEFORE INSERT OR UPDATE`, one
+   step past the plan's `BEFORE UPDATE`: `tutor_profiles_insert` still lets a tutor create their own
+   row, and a fresh row with a 5.00 rating would be the same attack.
+3. **`profiles.email` follows `auth.users`, and the guard checks the value.** `profiles_guard` refuses
+   an email change unless the trusted server makes it or the new value equals `auth.users.email` for
+   that id. A new `on_auth_user_email_changed` trigger (`AFTER UPDATE OF email ON auth.users`,
+   `SECURITY DEFINER`, the shape of `handle_new_user`) copies a confirmed change in. GoTrue writes
+   `auth.users` as `supabase_auth_admin`, so inside that trigger `is_trusted_server()` is false.
+   Rejected: a session-local flag set by the sync trigger (the guard would then trust anything able
+   to set that setting) and `pg_trigger_depth() > 1` (any future trigger chain that updates `profiles`
+   would bypass the email check silently). Checking the value needs neither: a client cannot write
+   `auth.users`, and GoTrue only changes `users.email` after the confirmation link is followed.
+   `onboarding_completed_at` is server-only with no NULL-to-value exception, because both onboarding
+   paths write it on the trusted connection and no client path does.
+4. **Avatars: 2 MB, JPEG / PNG / WebP.** The upload client already sends a cropped JPEG of at most
+   1200x750 at quality 0.86, so no real upload is near the limit. SVG is excluded because it can carry
+   script on our storage domain.
+5. **Not done here:** no backfill of `profiles.email` from `auth.users`. If an auth email changed
+   before this migration, `profiles.email` still holds the old address; the read-only check is
+   `select count(*) from profiles p join auth.users u on u.id = p.id where p.email is distinct from u.email`.
+
 ## Security B: patched packages, security headers, dependency scanning (`security/b-deps-headers`, 2026-10-22)
 
 Second of four security PRs from the 20-point audit. Plan: workspace
