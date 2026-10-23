@@ -16,7 +16,7 @@ jobs:
       # action-setup reads the pinned `packageManager` (pnpm@11.22.0) from
       # package.json, so CI and local can't float to different pnpm releases.
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       # Node comes from .nvmrc (single source of truth with local dev). pnpm 11
       # needs Node >= 22.13 (it uses node:sqlite, absent in Node 20).
