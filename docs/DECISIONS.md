@@ -5547,3 +5547,43 @@ signed-in user could reach with the public key and their own JWT, skipping the a
 5. **Not done here:** no backfill of `profiles.email` from `auth.users`. If an auth email changed
    before this migration, `profiles.email` still holds the old address; the read-only check is
    `select count(*) from profiles p join auth.users u on u.id = p.id where p.email is distinct from u.email`.
+
+## Security B: patched packages, security headers, dependency scanning (`security/b-deps-headers`, 2026-10-22)
+
+Second of four security PRs from the 20-point audit. Plan: workspace
+`plans/2026-10-22-nowtutors-security-fixes.md`, steps 4 to 6 and design decisions 6 to 8.
+`pnpm audit --prod` before: 4 critical, 24 high, 11 moderate. After: none.
+
+1. **Patch releases, not majors.** `next` 15.5.23 → 15.5.28, `@sentry/nextjs` 10.70.0 → 10.76.2,
+   `drizzle-orm` 0.44.7 → 0.45.4 (0.45.2 fixed the `sql.identifier()` / `sql.as()` escaping CVE),
+   `drizzle-kit` 0.31.10 → 0.31.11, and `eslint-config-next` to 15.5.28 to stay in step with `next`.
+   Next 16 and Sentry 11 were not needed to clear the audit. The 0.45 changelog has no change that
+   touches `src/`: the `algorythm` rename is not used, and the only `.as()` calls take literal
+   aliases. `drizzle-kit check` passes; snapshots stay format 7, so no migration was generated.
+2. **Transitive fixes as scoped `overrides` in `pnpm-workspace.yaml`** (pnpm 11 reads settings there,
+   not from `package.json`): axios ≥1.20.0 and follow-redirects ≥1.16.1 (Agora SDK), fast-uri ≥3.1.8
+   (`@hookform/resolvers` > ajv), postcss ≥8.5.23 (next pins 8.4.31), sharp ≥0.35.5 (next image
+   optimisation; resize and WebP checked by hand), brace-expansion ≥5.0.12 and source-map-js ≥1.2.2
+   (Sentry's bundler plugins). Each selector names the vulnerable range so nothing crosses a major;
+   an entry comes out once its parent ships the fix.
+3. **The audit gate covers production dependencies only.** Dev-only advisories remain (vitest's
+   tinypool and vite, jsdom's undici, eslint's js-yaml and braces). They never ship to Vercel and
+   Dependabot will raise them; gating CI on them would block every PR on tooling.
+4. **CSP ships Report-Only for a week** (plan decision 6). One host list in `CSP_HOSTS`, read from the
+   code: PayPal SDK and frames (`*.paypal.com`, `*.paypalobjects.com`), Agora (`*.agora.io`,
+   `*.sd-rtn.com`, HTTPS and WSS, `blob:` workers), LessonSpace frame (`*.thelessonspace.com`),
+   Supabase (HTTPS, WSS, Storage images and media), Sentry (`*.sentry.io`), Google sign-in in
+   `form-action`, and Cloudflare Turnstile for PR D. `'unsafe-inline'` scripts stay while it is
+   Report-Only; nonces come with enforcement. Enforcing is one line: `CSP_HEADER`.
+5. **Camera, microphone, display-capture and fullscreen are left out of `Permissions-Policy`.**
+   Plan decision 7 said `camera=(self)`. That value also stops the page from delegating the camera to
+   a cross-origin frame, and the LessonSpace classroom iframe asks for exactly those four with
+   `allow=`, so every scheduled session would lose its camera. Left out, the browser default applies:
+   this origin plus frames the page delegates to. Instant sessions and broadcasts are unaffected
+   either way. Tighten to `camera=(self "<classroom origin>")` once a live launch confirms the
+   origin of LessonSpace's `client_url`. Payment is allowed for self and PayPal; geolocation, usb and
+   the other unused features are denied.
+6. **`X-Frame-Options: DENY` plus `frame-ancestors 'none'`** (plan decision 8): nothing frames
+   NowTutors; the PayPal and LessonSpace frames are ones NowTutors embeds, covered by `frame-src`.
+7. **Dependabot weekly (npm, Monday, minor and patch grouped, majors one by one) and monthly (GitHub
+   Actions).** It only opens PRs; merges stay with Daniels (WORKFLOW.md).

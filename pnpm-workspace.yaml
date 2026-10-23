@@ -8,3 +8,16 @@ allowBuilds:
   esbuild: false
   sharp: false
   unrs-resolver: false
+
+# Security PR B (2026-10-22, DECISIONS "Dependency scanning"): lift transitive
+# packages that `pnpm audit --prod` flags high or critical to their patched
+# releases. Each selector is scoped to the vulnerable range, so nothing jumps a
+# major. Drop an entry once the parent package ships the fix itself.
+overrides:
+  axios@<1.20.0: ^1.20.0                       # agora-rtc-sdk-ng > @agora-js/shared
+  follow-redirects@<1.16.1: ^1.16.1            # same chain, via axios
+  fast-uri@<3.1.8: ^3.1.8                      # @hookform/resolvers > ajv
+  postcss@<8.5.23: ^8.5.23                     # next pins 8.4.31
+  sharp@<0.35.5: ^0.35.5                       # next (image optimisation)
+  brace-expansion@>=4.0.0 <5.0.12: ^5.0.12     # @sentry/nextjs > bundler plugins > glob
+  source-map-js@<1.2.2: ^1.2.2                 # @sentry/nextjs > webpack > postcss

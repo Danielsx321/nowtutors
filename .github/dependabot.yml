@@ -1,0 +1,23 @@
+# Dependency scanning (security PR B, DECISIONS 2026-10-22). Dependabot opens
+# PRs; nothing merges without Daniels (WORKFLOW.md). Minor and patch updates
+# arrive as one grouped PR a week; majors open on their own so each gets read.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
