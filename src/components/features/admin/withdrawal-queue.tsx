@@ -10,11 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { WithdrawalStatusBadge } from "@/components/features/withdrawals/status-badge";
-import {
-  approveWithdrawal,
-  markWithdrawalPaid,
-  rejectWithdrawal,
-} from "@/actions/admin-withdrawals";
+import { markWithdrawalPaid, rejectWithdrawal } from "@/actions/admin-withdrawals";
 import type { WithdrawalStatus } from "@/lib/withdrawals/withdrawals";
 
 export interface QueueWithdrawal {
@@ -34,8 +30,9 @@ export interface QueueWithdrawal {
 
 /**
  * One withdrawal in the admin queue (SPEC §6 `/admin/withdrawals`, §7.11).
- * Requested → Approve or Reject. Approved → Mark paid (with the PayPal
- * transaction id) or Reject. The server re-checks the status under a row lock,
+ * Approve means the admin has already paid in PayPal: it marks the request
+ * paid and emails the tutor (transaction id optional). Rows left "approved" by
+ * the old two-step flow close the same way. The server re-checks the status under a row lock,
  * so a second admin acting on the same row gets a clear refusal.
  */
 function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
@@ -111,9 +108,11 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
 
         {mode === "pay" && (
           <div className="space-y-1.5">
-            <Label htmlFor={`ref-${w.id}`} required>
-              PayPal transaction ID
-            </Label>
+            <p className="text-body font-medium text-text">
+              Have you sent ${w.amountUsd} to {w.payoutDestination} in PayPal?
+              Approving marks it paid and emails the tutor.
+            </p>
+            <Label htmlFor={`ref-${w.id}`}>PayPal transaction ID (optional)</Label>
             <Input
               id={`ref-${w.id}`}
               value={reference}
@@ -121,10 +120,6 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="text-small text-text-muted">
-              Send ${w.amountUsd} to {w.payoutDestination} in PayPal first, then
-              paste the transaction ID here.
-            </p>
           </div>
         )}
         {mode === "reject" && (
@@ -147,16 +142,10 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
 
         {open && (
           <div className="flex flex-wrap gap-2">
-            {mode === "idle" && w.status === "requested" && (
-              <Button loading={pending} onClick={() => act(() => approveWithdrawal({ id: w.id }))}>
-                <Check aria-hidden />
-                Approve
-              </Button>
-            )}
-            {mode === "idle" && w.status === "approved" && (
+            {mode === "idle" && (
               <Button onClick={() => setMode("pay")}>
                 <Check aria-hidden />
-                Mark paid
+                Approve
               </Button>
             )}
             {mode === "idle" && (
@@ -172,7 +161,7 @@ function WithdrawalCard({ w }: { w: QueueWithdrawal }) {
                   act(() => markWithdrawalPaid({ id: w.id, externalReference: reference }))
                 }
               >
-                Confirm paid
+                Yes, I&apos;ve paid
               </Button>
             )}
             {mode === "reject" && (

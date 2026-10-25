@@ -131,6 +131,9 @@ async function capture(params: Promise<{ orderId: string }>) {
         { status: 504 },
       );
     } else if (err instanceof PayPalApiError) {
+      // PayPal's own reason (e.g. INSTRUMENT_DECLINED), so a failed buy can be
+      // explained from the Vercel logs.
+      console.error("[paypal/capture] declined", { orderId, status: err.status, body: err.body });
       return NextResponse.json(
         { error: "PayPal declined this payment. Please try another method." },
         { status: 502 },

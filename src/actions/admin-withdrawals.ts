@@ -16,7 +16,7 @@ import {
 export type AdminWithdrawalResult = { error: string } | { ok: true };
 
 const idSchema = z.object({ id: z.string().uuid() });
-const paidSchema = idSchema.extend({ externalReference: z.string().max(200) });
+const paidSchema = idSchema.extend({ externalReference: z.string().max(200).optional() });
 const rejectSchema = idSchema.extend({ note: z.string().max(2000) });
 
 /**
@@ -52,7 +52,7 @@ export async function approveWithdrawal(input: {
 
 export async function markWithdrawalPaid(input: {
   id: string;
-  externalReference: string;
+  externalReference?: string;
 }): Promise<AdminWithdrawalResult> {
   const { user } = await requireRole("admin");
   const parsed = paidSchema.safeParse(input);
@@ -74,7 +74,7 @@ export async function markWithdrawalPaid(input: {
           amountCredits: row.amountCredits,
           amountUsd: row.amountUsd,
           destination: row.payoutDestination,
-          externalReference,
+          externalReference: externalReference?.trim() ?? "",
         },
       };
     });
