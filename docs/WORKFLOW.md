@@ -99,3 +99,37 @@ sign the prompt itself is under-specified.
    `PROGRESS.md`, `RUNBOOK.md`, `WORKFLOW.md` — from the versions on `main` (or the open branch, per
    the rule above). This step is not optional and not implicit in "I edited the repo" — the pickup
    folder is a separate copy and has to be told about the change.
+
+## Session close
+
+Triggered when the overseer says the session is ending, or any equivalent ("let's close out",
+"wrap up", "session end"). Distinct from the end-of-phase checklist above — a session can close
+mid-phase, and a phase can span several sessions. See `ADVISORY.md` for what triggers this and why
+it has to land as one message.
+
+**One Claude Code run does all of the following:**
+
+a. Update whichever of `SPEC.md`, `DECISIONS.md`, `PROGRESS.md`, `RUNBOOK.md`, `ADVISORY.md`,
+   `WORKFLOW.md` changed this session. One branch, one PR — not one PR per file and not one PR per
+   doc-writing pass.
+b. Write `HANDOFF.md` to `~/Desktop/nowtutors-docs`. **This file is not in the repo.** It lives
+   only in the pickup directory, which is exactly why it gets missed when the close is split across
+   runs — there is no `git status` anywhere that would flag a stale or missing `HANDOFF.md`, unlike
+   every other file this procedure touches.
+c. Overwrite **all seven** files in `~/Desktop/nowtutors-docs` — the six repo docs plus
+   `HANDOFF.md` — **not only the ones that changed.** That directory is the pickup point for
+   project knowledge and has to match the repo exactly; a partial overwrite leaves some files one
+   commit behind without anything surfacing the gap (same failure mode as the doc pickup path
+   above, one folder over).
+d. End with `ls -la ~/Desktop/nowtutors-docs/`, so the seven-file listing is the last thing in the
+   run's own output — not asserted, shown.
+
+**Then, outside Claude Code:** the overseer deletes the existing files from project knowledge and
+uploads the seven fresh ones. Delete before uploading, so no stale copy survives alongside a new
+one — project knowledge has no overwrite semantics of its own to rely on here.
+
+**The handoff note's content is authored by the advisory seat, not by Claude Code.** The advisory
+seat supplies the handoff text inside the close prompt (for step b to write verbatim) **and**
+delivers the identical text in chat, ready to paste into the next conversation. Claude Code does
+not compose the handoff — it writes exactly what the prompt gave it. A session-close message that
+contains only the prompt, with no handoff text in the chat itself, is incomplete (`ADVISORY.md` #8).
