@@ -284,7 +284,7 @@ describe("approve and mark paid", () => {
     });
   });
 
-  it("refuses to mark paid before approval", async () => {
+  it("marks paid straight from requested: Approve means the admin already paid", async () => {
     const w = await requestOk();
     expect(
       await markWithdrawalPaid(f.run, {
@@ -292,21 +292,20 @@ describe("approve and mark paid", () => {
         adminId: ADMIN,
         externalReference: "PP-1",
       }),
-    ).toEqual({ ok: false, reason: "wrong_status", status: "requested" });
-    expect(f.statusOf(w.id)).toBe("requested");
+    ).toMatchObject({ ok: true });
+    expect(f.statusOf(w.id)).toBe("paid");
   });
 
-  it("requires a PayPal reference", async () => {
+  it("does not require a PayPal reference", async () => {
     const w = await requestOk();
-    await approveWithdrawal(f.run, { id: w.id, adminId: ADMIN });
     expect(
       await markWithdrawalPaid(f.run, {
         id: w.id,
         adminId: ADMIN,
         externalReference: "   ",
       }),
-    ).toEqual({ ok: false, reason: "reference_required" });
-    expect(f.statusOf(w.id)).toBe("approved");
+    ).toMatchObject({ ok: true });
+    expect(f.statusOf(w.id)).toBe("paid");
   });
 
   it("marks paid with NO ledger row, and flips exactly the rows the request claimed (M12)", async () => {

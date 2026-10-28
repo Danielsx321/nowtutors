@@ -262,16 +262,18 @@ export async function approveWithdrawal(
 
 export async function markWithdrawalPaid(
   run: WithdrawalRunner,
-  params: { id: string; adminId: string; externalReference: string },
+  params: { id: string; adminId: string; externalReference?: string },
 ): Promise<TransitionResult> {
-  const reference = params.externalReference.trim();
-  if (!reference) return { ok: false, reason: "reference_required" };
+  // Optional since 25 Oct 2026: the admin pays in PayPal first, so Approve
+  // means paid. The transaction id is kept when given.
+  const reference = params.externalReference?.trim() || undefined;
 
   return run(async (store): Promise<TransitionResult> => {
     const row = await store.lockRequest(params.id);
     if (!row) return { ok: false, reason: "not_found" };
-    // Approve first, always (SPEC §6: approve → pay → mark paid).
-    if (row.status !== "approved") {
+    // Straight from requested is the normal path now; approved rows from the
+    // old two-step flow still close here.
+    if (row.status !== "requested" && row.status !== "approved") {
       return { ok: false, reason: "wrong_status", status: row.status };
     }
     await store.setStatus(row.id, {
@@ -289,7 +291,7 @@ export async function markWithdrawalPaid(
       payload: {
         from: row.status,
         to: "paid",
-        external_reference: reference,
+        external_reference: reference ?? null,
         amount_credits: row.amountCredits,
         amount_usd: row.amountUsd,
         earnings_withdrawn: flipped,

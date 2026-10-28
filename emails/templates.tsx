@@ -252,12 +252,12 @@ export const templates: { [T in EmailType]: Template<T> } = {
           rows={[
             ["Amount", `${usdLine(p.amountUsd)} for ${creditsLine(p.amountCredits)}`],
             ["Sent to", maskEmail(p.destination)],
-            ["PayPal reference", p.externalReference || "none given"],
+            ...(p.externalReference ? [["PayPal reference", p.externalReference] as [string, string]] : []),
           ]}
         />
         <P>
           PayPal usually shows it within a few minutes. If it hasn&rsquo;t arrived in two working days, reply to
-          this email with the reference above.
+          this email and we&rsquo;ll look into it.
         </P>
       </Shell>
     ),
