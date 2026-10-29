@@ -4,6 +4,7 @@ import {
   buildSecurityHeaders,
   CSP_HEADER,
   PERMISSIONS_POLICY,
+  sentryCspReportUri,
 } from "@/lib/security/headers";
 import config from "../../next.config";
 
@@ -30,11 +31,11 @@ describe("buildSecurityHeaders (security PR B, next.config.ts)", () => {
     expect(h["Permissions-Policy"]).toBe(PERMISSIONS_POLICY);
   });
 
-  it("ships the CSP as Report-Only, not enforced", () => {
+  it("enforces the CSP (Report-Only ended 2026-10-29)", () => {
     const h = headerMap();
-    expect(CSP_HEADER).toBe("Content-Security-Policy-Report-Only");
-    expect(h["Content-Security-Policy-Report-Only"]).toBe(buildCsp());
-    expect(h["Content-Security-Policy"]).toBeUndefined();
+    expect(CSP_HEADER).toBe("Content-Security-Policy");
+    expect(h["Content-Security-Policy"]).toBe(buildCsp());
+    expect(h["Content-Security-Policy-Report-Only"]).toBeUndefined();
   });
 
   it("permissions: payment for self and PayPal, unused features denied", () => {
@@ -74,6 +75,14 @@ describe("buildCsp", () => {
     expect(directive(csp, "form-action")).toEqual(["'self'", "https://*.paypal.com", "https://accounts.google.com"]);
   });
 
+  it("PayPal: Venmo and style hosts per PayPal's CSP guidance", () => {
+    for (const d of ["script-src", "style-src", "connect-src", "img-src", "frame-src"]) {
+      expect(directive(csp, d)).toEqual(
+        expect.arrayContaining(["https://*.paypal.com", "https://*.paypalobjects.com", "https://*.venmo.com"]),
+      );
+    }
+  });
+
   it("Agora: HTTPS and WebSocket on agora.io and sd-rtn.com, blob workers and media", () => {
     expect(directive(csp, "connect-src")).toEqual(
       expect.arrayContaining([
@@ -87,8 +96,10 @@ describe("buildCsp", () => {
     expect(directive(csp, "media-src")).toEqual(expect.arrayContaining(["'self'", "blob:"]));
   });
 
-  it("LessonSpace: classroom frame", () => {
-    expect(directive(csp, "frame-src")).toContain("https://*.thelessonspace.com");
+  it("LessonSpace: classroom frame, including the room.sh client_url host", () => {
+    expect(directive(csp, "frame-src")).toEqual(
+      expect.arrayContaining(["https://*.thelessonspace.com", "https://*.room.sh"]),
+    );
   });
 
   it("Supabase: REST, Realtime, Storage images and media", () => {
@@ -114,6 +125,12 @@ describe("buildCsp", () => {
     expect(directive(buildCsp({ dev: true }), "script-src")).toContain("'unsafe-eval'");
   });
 
+  it("has no report-uri without a DSN, and Sentry's endpoint with one", () => {
+    expect(csp).not.toContain("report-uri");
+    const uri = "https://o1.ingest.de.sentry.io/api/2/security/?sentry_key=abc";
+    expect(directive(buildCsp({ reportUri: uri }), "report-uri")).toEqual([uri]);
+  });
+
   it("lists no host twice in a directive", () => {
     for (const d of csp.split(";")) {
       const values = d.trim().split(/\s+/).slice(1);
@@ -122,11 +139,28 @@ describe("buildCsp", () => {
   });
 });
 
+describe("sentryCspReportUri", () => {
+  it("turns a DSN into Sentry's security endpoint", () => {
+    expect(sentryCspReportUri("https://abc123@o456.ingest.de.sentry.io/789")).toBe(
+      "https://o456.ingest.de.sentry.io/api/789/security/?sentry_key=abc123",
+    );
+  });
+
+  it("returns undefined for a missing or malformed DSN", () => {
+    expect(sentryCspReportUri(undefined)).toBeUndefined();
+    expect(sentryCspReportUri("")).toBeUndefined();
+    expect(sentryCspReportUri("not a url")).toBeUndefined();
+    expect(sentryCspReportUri("https://o456.ingest.sentry.io/789")).toBeUndefined();
+  });
+});
+
 describe("next.config.ts headers()", () => {
   it("applies the security headers to every path and keeps the /brand cache rule", async () => {
     const rules = await config.headers!();
     const all = rules.find((r) => r.source === "/(.*)");
-    expect(all?.headers).toEqual(buildSecurityHeaders());
+    expect(all?.headers).toEqual(
+      buildSecurityHeaders({ reportUri: sentryCspReportUri(process.env.NEXT_PUBLIC_SENTRY_DSN) }),
+    );
     const brand = rules.find((r) => r.source === "/brand/:file*");
     expect(brand?.headers).toEqual([
       { key: "Cache-Control", value: "public, max-age=31536000, immutable" },

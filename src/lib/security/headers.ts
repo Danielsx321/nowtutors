@@ -2,23 +2,34 @@
  * Security headers for every response (SPEC §2, DECISIONS 2026-10-22 "Security
  * headers"). Wired into `next.config.ts` `headers()` as `source: "/(.*)"`.
  *
- * Everything is enforced from day one except the Content-Security-Policy, which
- * ships as `Content-Security-Policy-Report-Only` for a week: a wrong CSP would
- * block PayPal checkout or live video, so violations are watched in the browser
- * console first and a one-line change (`CSP_HEADER`) enforces it afterwards.
+ * Everything is enforced. The Content-Security-Policy shipped Report-Only from
+ * 2026-10-23 to 2026-10-29 so a wrong host could not block PayPal checkout or
+ * live video. The production console showed one message, an eval probe from
+ * inside Cloudflare Turnstile's frame; Cloudflare's CSP guidance needs only
+ * script-src and frame-src, so `'unsafe-eval'` stays out. Enforced from
+ * 2026-10-29 (DECISIONS 2026-10-29).
+ * When a Sentry DSN is set, violations are reported to Sentry's security
+ * endpoint (`report-uri`), so a blocked host shows up there, not only in one
+ * visitor's console.
  *
  * The CSP is built from ONE host list, `CSP_HOSTS`, so adding an integration is
  * one edit in one place. Each host was taken from the code, not from memory:
  *   - PayPal: the JS SDK script `www.paypal.com/sdk/js` (`buy-credits.tsx`), its
  *     checkout frames (`www.paypal.com`, `www.sandbox.paypal.com`), assets on
  *     `*.paypalobjects.com`. Server-side Orders calls (`api-m.*`) never run in
- *     the browser and need no entry.
+ *     the browser and need no entry. Since enforcement the list follows
+ *     PayPal's own CSP guidance (developer.paypal.com/sdk/js/best-practices):
+ *     `*.venmo.com` too, because the SDK call does not disable funding sources
+ *     and US buyers can get a Venmo button, and the same hosts in `style-src`.
  *   - Agora: `agora-rtc-sdk-ng` opens HTTPS and WebSocket connections to many
  *     `*.agora.io` and `*.sd-rtn.com` hosts (gateway, edge, stats, log, proxy),
  *     and starts workers from `blob:` URLs.
- *   - LessonSpace: the classroom iframe loads the launch call's `client_url`
- *     (`app.thelessonspace.com` in the fixtures). The launch call itself is
- *     server-side.
+ *   - LessonSpace: the classroom iframe loads the launch call's `client_url`,
+ *     which LessonSpace's launch-endpoint docs give as `https://go.room.sh/...`
+ *     ("a room.sh link rather than a Lessonspace one"), so `*.room.sh` is in
+ *     `frame-src` next to `*.thelessonspace.com`. Found 2026-10-29 before
+ *     enforcing: no scheduled classroom ran during the Report-Only week, so the
+ *     console never showed it. The launch call itself is server-side.
  *   - Supabase: REST, Auth and Storage over HTTPS, Realtime over WSS, signed
  *     Storage links rendered as plain `<img>` (attachment previews).
  *   - Sentry: the browser SDK posts to `*.ingest.*.sentry.io` when a DSN is set.
@@ -32,16 +43,22 @@
  *     would only show once the CSP is enforced.
  */
 
-/** Header name for the CSP. Flip to "Content-Security-Policy" to enforce. */
-export const CSP_HEADER = "Content-Security-Policy-Report-Only" as const;
+/** Header name for the CSP. "Content-Security-Policy-Report-Only" to watch without blocking. */
+export const CSP_HEADER = "Content-Security-Policy" as const;
 
 /** Every third-party origin the browser talks to, grouped by integration. */
 export const CSP_HOSTS = {
   paypal: {
-    script: ["https://www.paypal.com", "https://*.paypal.com", "https://*.paypalobjects.com"],
-    connect: ["https://*.paypal.com", "https://*.paypalobjects.com"],
-    img: ["https://*.paypal.com", "https://*.paypalobjects.com"],
-    frame: ["https://*.paypal.com"],
+    script: [
+      "https://www.paypal.com",
+      "https://*.paypal.com",
+      "https://*.paypalobjects.com",
+      "https://*.venmo.com",
+    ],
+    style: ["https://*.paypal.com", "https://*.paypalobjects.com", "https://*.venmo.com"],
+    connect: ["https://*.paypal.com", "https://*.paypalobjects.com", "https://*.venmo.com"],
+    img: ["https://*.paypal.com", "https://*.paypalobjects.com", "https://*.venmo.com"],
+    frame: ["https://*.paypal.com", "https://*.paypalobjects.com", "https://*.venmo.com"],
     form: ["https://*.paypal.com"],
   },
   agora: {
@@ -54,7 +71,7 @@ export const CSP_HOSTS = {
   },
   lessonspace: {
     connect: ["https://*.thelessonspace.com"],
-    frame: ["https://*.thelessonspace.com"],
+    frame: ["https://*.thelessonspace.com", "https://*.room.sh"],
   },
   supabase: {
     connect: ["https://*.supabase.co", "wss://*.supabase.co"],
@@ -74,7 +91,7 @@ export const CSP_HOSTS = {
   },
 } as const;
 
-type Kind = "script" | "connect" | "img" | "frame" | "form" | "media";
+type Kind = "script" | "style" | "connect" | "img" | "frame" | "form" | "media";
 
 function hostsFor(kind: Kind): string[] {
   const out: string[] = [];
@@ -88,21 +105,43 @@ function hostsFor(kind: Kind): string[] {
 export interface SecurityHeaderOptions {
   /** `next dev` needs `'unsafe-eval'` for React Refresh; never in a build. */
   dev?: boolean;
+  /** Where the browser posts violation reports; see `sentryCspReportUri`. */
+  reportUri?: string;
 }
 
 /**
- * The CSP string. `'unsafe-inline'` on scripts is there while the policy is
- * Report-Only (Next's inline bootstrap scripts); replacing it with nonces is a
- * follow-up before or with enforcement.
+ * Sentry's CSP report endpoint for a DSN, or undefined without one (local dev,
+ * previews). DSN `https://<key>@o1.ingest.de.sentry.io/2` becomes
+ * `https://o1.ingest.de.sentry.io/api/2/security/?sentry_key=<key>`. Report
+ * posts are not governed by `connect-src`.
  */
-export function buildCsp({ dev = false }: SecurityHeaderOptions = {}): string {
+export function sentryCspReportUri(dsn: string | undefined): string | undefined {
+  if (!dsn) return undefined;
+  try {
+    const url = new URL(dsn);
+    const project = url.pathname.replace(/^\/+|\/+$/g, "");
+    if (!url.username || !project) return undefined;
+    return `${url.protocol}//${url.host}/api/${project}/security/?sentry_key=${url.username}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The CSP string. `'unsafe-inline'` stays on scripts and styles: Next's inline
+ * bootstrap scripts need it unless every response carries a fresh nonce, and a
+ * nonce makes every page dynamic (no static or cached HTML), which costs more
+ * than it buys on a site with no user-authored HTML. The policy still blocks
+ * every script, frame, connection and form target outside `CSP_HOSTS`.
+ */
+export function buildCsp({ dev = false, reportUri }: SecurityHeaderOptions = {}): string {
   const directives: [string, string[]][] = [
     ["default-src", ["'self'"]],
     [
       "script-src",
       ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : []), ...hostsFor("script")],
     ],
-    ["style-src", ["'self'", "'unsafe-inline'"]],
+    ["style-src", ["'self'", "'unsafe-inline'", ...hostsFor("style")]],
     ["connect-src", ["'self'", ...hostsFor("connect")]],
     ["img-src", ["'self'", "data:", "blob:", ...hostsFor("img")]],
     ["font-src", ["'self'", "data:"]],
@@ -113,6 +152,7 @@ export function buildCsp({ dev = false }: SecurityHeaderOptions = {}): string {
     ["base-uri", ["'self'"]],
     ["form-action", ["'self'", ...hostsFor("form")]],
     ["object-src", ["'none'"]],
+    ...(reportUri ? ([["report-uri", [reportUri]]] as [string, string[]][]) : []),
   ];
   return directives.map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
 }

@@ -1,24 +1,26 @@
 import type { Metadata } from "next";
-import { Funnel_Display, Funnel_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { Suspense } from "react";
 import { Providers } from "@/components/providers";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { resolveSiteUrl } from "@/lib/seo/site-url";
 import "./globals.css";
 
-// Two faces, both bundled at build by next/font (no runtime request to
-// Google). Funnel Display carries titles and names, Funnel Sans everything
-// else (docs/DESIGN.md, "Type"). The wordmark is a vector, not a font.
-const funnelDisplay = Funnel_Display({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
+// Two faces, self-hosted from ./fonts (the latin variable woff2 files Google
+// Fonts serves, OFL, see ./fonts/OFL.txt). `next/font/google` fetched them at
+// build time and that fetch failed on Vercel previews, so the build no longer
+// talks to Google at all. Funnel Display carries titles and names, Funnel Sans
+// everything else (docs/DESIGN.md, "Type"). The wordmark is a vector, not a font.
+const funnelDisplay = localFont({
+  src: "./fonts/funnel-display-latin.woff2",
+  weight: "600 800",
   variable: "--font-funnel-display",
   display: "swap",
 });
 
-const funnelSans = Funnel_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const funnelSans = localFont({
+  src: "./fonts/funnel-sans-latin.woff2",
+  weight: "400 600",
   variable: "--font-funnel-sans",
   display: "swap",
 });
