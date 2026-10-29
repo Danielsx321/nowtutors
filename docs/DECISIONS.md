@@ -5692,3 +5692,42 @@ Plan: workspace `plans/2026-10-22-nowtutors-security-fixes.md` (Step 9, plan dec
 7. **CSP `connect-src` gets `challenges.cloudflare.com` too.** Cloudflare documents `script-src` and
    `frame-src`; it was not certain from memory that the loader never fetches from the page, and an
    unlisted host would only show once the CSP is enforced, so it is listed.
+
+## Security E: CSP enforced, Funnel fonts self-hosted (`security/csp-enforce-self-host-fonts`, 2026-10-29)
+
+Follows Security B item 4 (CSP Report-Only for a week) and the font note in the 2026-10-23 launch state.
+No migration.
+
+1. **Enforced after reading the Report-Only week, not on the calendar alone.** The production console on
+   every public page (home, browse, a tutor profile, live, legal, login, signup, forgot password) showed
+   one message: "Evaluating a string as JavaScript" on the three Turnstile pages. A listener on the page
+   never saw it, so it fires in a frame Turnstile creates, not in our code, and Turnstile's own `api.js`
+   has no eval. Cloudflare's CSP guidance for Turnstile names only `script-src` and `frame-src`, so
+   `'unsafe-eval'` stays out. Locally, with the policy enforced and the real site key, the widget loads
+   its challenge with no refusals.
+2. **LessonSpace frames come from `room.sh`.** LessonSpace's launch-endpoint docs say `client_url` is
+   "a room.sh link rather than a Lessonspace one" (`https://go.room.sh/...`). The list only had
+   `*.thelessonspace.com` (from the test fixture), and no scheduled classroom ran on production during
+   the Report-Only week, so the console could not show it. Enforcing without `*.room.sh` would have
+   blanked every scheduled classroom. The Permissions-Policy camera narrowing (Security B item 5) still
+   waits for a live launch to confirm the origin.
+3. **PayPal hosts follow PayPal's own guidance** (developer.paypal.com/sdk/js/best-practices):
+   `*.paypal.com`, `*.paypalobjects.com` and `*.venmo.com` in `script-src`, `style-src`, `connect-src`,
+   `img-src` and `frame-src`. The SDK URL does not disable funding sources, so a US buyer can get a
+   Venmo button, which an unlisted `*.venmo.com` would silently stop rendering.
+4. **`'unsafe-inline'` stays; no nonces.** Next's inline bootstrap scripts need either `'unsafe-inline'`
+   or a per-request nonce, and a nonce makes every page dynamic (no static or cached HTML). The site
+   renders no user-authored HTML, so the trade is not worth it now. The enforced policy still blocks
+   every script, frame, connection and form target outside `CSP_HOSTS`, plus framing, `<base>` and
+   plugins.
+5. **Violations go to Sentry.** `report-uri` is built from `NEXT_PUBLIC_SENTRY_DSN`
+   (`sentryCspReportUri`), so a blocked host on a real visitor's session shows in Sentry instead of
+   only in that visitor's console. No DSN (local, previews without one), no `report-uri`.
+6. **Funnel fonts self-hosted with `next/font/local`.** `next/font/google` downloads the files during
+   the build and failed twice on Vercel previews. The latin variable woff2 files Google Fonts serves
+   (Display 600 to 800, Sans 400 to 600, the same weights and subset as before) and their OFL licence
+   now live in `src/app/fonts/`. Same CSS variables, so nothing else changes; the build no longer
+   talks to Google.
+7. **Rollback is one line.** `CSP_HEADER = "Content-Security-Policy-Report-Only"` and redeploy. RUNBOOK
+   "Content-Security-Policy" has the after-deploy check.
+

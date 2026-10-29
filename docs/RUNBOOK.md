@@ -938,3 +938,30 @@ every password sign-in, because the forms stop sending a token.
 **Symptom guide:** "Please complete the check and try again." means the token was missing, expired or
 refused (`captcha_failed`). Wrong hostname in the Cloudflare widget shows as the widget's own error and
 the line "The security check didn't load" under it.
+
+## Content-Security-Policy (enforced 2026-10-29, Security E)
+
+The CSP is built in `src/lib/security/headers.ts` from one host list, `CSP_HOSTS`. Adding an
+integration that loads anything in the browser (a script, a frame, a fetch, an image host) means adding
+its host there first, or the browser blocks it.
+
+**After each deploy that touches the CSP, on nowtutors.com in a normal browser:**
+
+1. `/login`: the Cloudflare check passes and a real login works (Turnstile).
+2. `/dashboard/wallet` signed in as a student: the PayPal and card buttons show, and "Debit or Credit
+   Card" opens the card form. No purchase needed.
+3. An instant session or a scheduled classroom when one next happens: video connects (Agora), the
+   classroom frame loads (LessonSpace, `go.room.sh`).
+4. Sentry: no new CSP reports (they arrive through the project's security endpoint and name the
+   blocked host and directive).
+
+**A feature stops working after a deploy:** open the browser console on that page. "Refused to load
+... because it violates the following Content Security Policy directive" names the host and the
+directive; add the host to `CSP_HOSTS` under its integration. **Fast rollback:** set
+`CSP_HEADER = "Content-Security-Policy-Report-Only"` and redeploy; everything works again and the
+console keeps logging what would have been blocked.
+
+**Fonts** are files in `src/app/fonts/` (`next/font/local`), not a Google download at build time. To
+change a weight range, download the new latin woff2 from Google Fonts' CSS for that range, replace
+the file and update `weight` in `src/app/layout.tsx`.
+

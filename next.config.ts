@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 import { buildHostRedirects } from "./src/lib/seo/redirects";
-import { buildSecurityHeaders } from "./src/lib/security/headers";
+import { buildSecurityHeaders, sentryCspReportUri } from "./src/lib/security/headers";
 
 // Allow next/image to load avatars from the Supabase Storage public path. This
 // is the Next equivalent of Bubble's image-host allowlist — the fix for the
@@ -28,13 +28,17 @@ const nextConfig: NextConfig = {
   // page load (performance review P4).
   //
   // Security headers on every path (security PR B, DECISIONS 2026-10-22): HSTS,
-  // frame and sniffing guards, referrer and permissions policies, and the CSP in
-  // Report-Only. The /brand rule below still adds its Cache-Control.
+  // frame and sniffing guards, referrer and permissions policies, and the CSP,
+  // enforced since 2026-10-29 with violations reported to Sentry when a DSN is
+  // set. The /brand rule below still adds its Cache-Control.
   async headers() {
     return [
       {
         source: "/(.*)",
-        headers: buildSecurityHeaders({ dev: process.env.NODE_ENV === "development" }),
+        headers: buildSecurityHeaders({
+          dev: process.env.NODE_ENV === "development",
+          reportUri: sentryCspReportUri(process.env.NEXT_PUBLIC_SENTRY_DSN),
+        }),
       },
       {
         source: "/brand/:file*",
