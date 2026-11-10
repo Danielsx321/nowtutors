@@ -46,8 +46,8 @@ describe("SiteFooter", () => {
     const tutors = screen.getByRole("navigation", { name: "For tutors" });
     expect(within(tutors).getByRole("link", { name: "Become a tutor" }).getAttribute("href")).toBe("/signup");
     const legal = screen.getByRole("navigation", { name: "Legal" });
-    expect(within(legal).getByRole("link", { name: "Terms of service" }).getAttribute("href")).toBe("/legal/terms");
-    expect(within(legal).getByRole("link", { name: "Privacy policy" }).getAttribute("href")).toBe("/legal/privacy");
+    expect(within(legal).getByRole("link", { name: "Terms and Conditions" }).getAttribute("href")).toBe("/legal/terms");
+    expect(within(legal).getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe("/legal/privacy");
     expect(within(legal).getByRole("link", { name: "Refunds and no-shows" }).getAttribute("href")).toBe("/legal/refunds");
   });
 
