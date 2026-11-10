@@ -110,17 +110,21 @@ describe("AccountForm", () => {
 
 describe("legal pages", () => {
   const pages = [
-    { name: "terms", Page: TermsPage, h1: "Terms of service", path: "/legal/terms" },
-    { name: "privacy", Page: PrivacyPage, h1: "Privacy policy", path: "/legal/privacy" },
-    { name: "refunds", Page: RefundsPage, h1: "Refunds and no-shows", path: "/legal/refunds" },
+    // Terms and privacy are the business's own text (10 Nov 2026): no draft
+    // note and no to-confirm markers; the blanks it left are left out.
+    { name: "terms", Page: TermsPage, h1: "Terms and Conditions", path: "/legal/terms", draft: false },
+    { name: "privacy", Page: PrivacyPage, h1: "Privacy Policy", path: "/legal/privacy", draft: false },
+    { name: "refunds", Page: RefundsPage, h1: "Refunds and no-shows", path: "/legal/refunds", draft: true },
   ];
-  for (const { name, Page, h1, path } of pages) {
-    it(`${name}: one h1, the draft note, marked placeholders, a known route`, () => {
+  for (const { name, Page, h1, path, draft } of pages) {
+    it(`${name}: one h1, the draft note and markers only while a draft, a known route`, () => {
       const { container } = render(<Page />);
       expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
       expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(h1);
-      expect(screen.getByRole("note").textContent).toContain("Draft for review");
-      expect(container.querySelectorAll("[data-to-confirm]").length).toBeGreaterThan(0);
+      if (draft) expect(screen.getByRole("note").textContent).toContain("Draft for review");
+      else expect(screen.queryByRole("note")).toBeNull();
+      if (draft) expect(container.querySelectorAll("[data-to-confirm]").length).toBeGreaterThan(0);
+      else expect(container.querySelectorAll("[data-to-confirm]").length).toBe(0);
       expect(container.textContent).not.toContain("—");
       expect(isExistingRoute(path)).toBe(true);
       const legalNav = screen.getByRole("navigation", { name: "Legal" });

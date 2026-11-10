@@ -41,10 +41,10 @@ export function LegalPage({
       </div>
       <nav aria-label="Legal" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-6 text-small">
         <Link href="/legal/terms" className="focus-ring rounded-sm text-text-muted hover:text-text">
-          Terms of service
+          Terms and Conditions
         </Link>
         <Link href="/legal/privacy" className="focus-ring rounded-sm text-text-muted hover:text-text">
-          Privacy policy
+          Privacy Policy
         </Link>
         <Link href="/legal/refunds" className="focus-ring rounded-sm text-text-muted hover:text-text">
           Refunds and no-shows
