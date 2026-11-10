@@ -98,7 +98,7 @@ export function SubjectSearch({
   initialMiss = null,
   submitLabel = "Search",
   submitVariant = "primary",
-  placeholder = "Search a subject, like Maths or IELTS",
+  placeholder = "Try Algebra",
   onDark = false,
 }: {
   subjects: Subject[];

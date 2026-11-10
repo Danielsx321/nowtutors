@@ -38,7 +38,7 @@ export interface AppShellProps {
 
 /** The topbar search per role (students search tutors, admins search users; tutors have none yet). */
 const searchByRole: Record<Role, { action: string; placeholder: string } | null> = {
-  student: { action: "/tutors", placeholder: "Search tutors or subjects…" },
+  student: { action: "/tutors", placeholder: "Try Algebra" },
   tutor: null,
   // Part G: admins search people; /admin/users matches name or email.
   admin: { action: "/admin/users", placeholder: "Search users by name or email…" },
