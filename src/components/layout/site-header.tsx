@@ -83,7 +83,7 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
         type="search"
         name="q"
         aria-label="Search subjects"
-        placeholder="Search subjects, e.g. Algebra"
+        placeholder="Try Algebra"
         className="min-w-0 flex-1 bg-transparent text-small text-text placeholder:text-text-muted focus:outline-none"
       />
     </form>

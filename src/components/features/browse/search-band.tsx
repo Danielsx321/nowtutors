@@ -41,7 +41,7 @@ export function SearchBand({
             initialMiss={initialMiss}
             submitLabel="See tutors"
             submitVariant="highlight"
-            placeholder="What do you want to learn? Try 'Algebra'"
+            placeholder="Try Algebra"
             onDark
           />
         </div>
