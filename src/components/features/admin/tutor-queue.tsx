@@ -396,12 +396,18 @@ export function ChangedCard({ tutor }: { tutor: QueueTutor }) {
   );
 }
 
-/** On hold, waiting on the tutor. Read-only apart from Reject, so a hold that is never answered can be closed. */
+/**
+ * On hold, waiting on the tutor. Reject closes a hold that is never answered;
+ * "Put back live" undoes a hold the admin no longer wants, without waiting for
+ * a save. Same server path as Approve (photo rule included), so a hold over a
+ * missing photo still needs the photo first.
+ */
 export function OnHoldCard({ tutor }: { tutor: QueueTutor }) {
   const [note, setNote] = React.useState("");
-  const [showReject, setShowReject] = React.useState(false);
+  const [mode, setMode] = React.useState<"idle" | "reject" | "undo">("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, start] = React.useTransition();
+  const blocker = approvalBlocker(tutor);
 
   return (
     <Card>
@@ -419,8 +425,9 @@ export function OnHoldCard({ tutor }: { tutor: QueueTutor }) {
           Bookings if needed.
         </p>
         {error && <Alert variant="danger">{error}</Alert>}
+        {blocker && <p className="text-small font-medium text-spark-text">{approvalBlockerMessage(blocker)}</p>}
 
-        {showReject && (
+        {mode === "reject" && (
           <div className="space-y-1.5">
             <Label htmlFor={`note-${tutor.userId}`} required>
               Reason for rejection (emailed to the tutor)
@@ -428,8 +435,41 @@ export function OnHoldCard({ tutor }: { tutor: QueueTutor }) {
             <Textarea id={`note-${tutor.userId}`} rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
         )}
+        {mode === "undo" && (
+          <Alert variant="warning">
+            Undo the hold? They haven&rsquo;t changed anything. They go back on the site as they are and get the
+            &ldquo;You&rsquo;re back&rdquo; email.
+          </Alert>
+        )}
         <div className="flex flex-wrap gap-2">
-          {showReject ? (
+          {mode === "idle" && (
+            <>
+              <Button disabled={!!blocker} onClick={() => setMode("undo")}>
+                <Check aria-hidden />
+                Put back live
+              </Button>
+              <Button variant="outline" onClick={() => setMode("reject")}>
+                <X aria-hidden />
+                Reject
+              </Button>
+            </>
+          )}
+          {mode === "undo" && (
+            <Button
+              loading={pending}
+              onClick={() =>
+                start(async () => {
+                  setError(null);
+                  const res = await approveTutor({ tutorId: tutor.userId });
+                  if ("error" in res) setError(res.error);
+                  else setMode("idle");
+                })
+              }
+            >
+              Yes, put them back live
+            </Button>
+          )}
+          {mode === "reject" && (
             <Button
               variant="danger"
               loading={pending}
@@ -443,10 +483,10 @@ export function OnHoldCard({ tutor }: { tutor: QueueTutor }) {
             >
               Confirm rejection
             </Button>
-          ) : (
-            <Button variant="outline" onClick={() => setShowReject(true)}>
-              <X aria-hidden />
-              Reject
+          )}
+          {mode !== "idle" && (
+            <Button variant="outline" onClick={() => setMode("idle")}>
+              Cancel
             </Button>
           )}
         </div>
