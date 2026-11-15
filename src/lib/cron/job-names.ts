@@ -49,8 +49,8 @@ export const CRON_JOB_INFO: Record<CronJobName, { schedule: string; what: string
     what: "Checks every wallet against its ledger. Reports drift, never repairs it.",
   },
   "availability-bonus": {
-    schedule: "Mondays at 00:20 UTC",
-    what: "Credits the weekly availability bonus to approved tutors who were live for the threshold in each of the last four complete weeks not yet paid.",
+    schedule: "1st of each month at 00:20 UTC",
+    what: "Credits the monthly availability bonus to approved tutors who were live for the threshold in each of the last three complete months (from November 2026) not yet paid.",
   },
   "booking-reminders": {
     schedule: "Every 15 minutes",

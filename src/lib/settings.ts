@@ -167,8 +167,9 @@ export interface AvailabilityBonusSettings {
 }
 
 /**
- * The weekly availability bonus tunables (SPEC §7.5, §12; availability-bonus,
- * 2026-10-14). Coerced and defaulted to the seeded values like the rest, so a
+ * The availability bonus tunables (SPEC §7.5, §12; availability-bonus,
+ * 2026-10-14, monthly since 2026-11-15: threshold is live hours a month, credits
+ * are paid per month). Coerced and defaulted to the seeded values like the rest, so a
  * garbage edit pauses nothing and pays nothing odd: a non-boolean `enabled`
  * reads as the seed, a non-positive threshold or amount reads as the seed.
  */

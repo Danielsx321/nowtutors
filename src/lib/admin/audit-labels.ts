@@ -25,7 +25,7 @@ const LABELS: Record<string, string> = {
   "subject.activate": "Turned a subject on",
   "subject.deactivate": "Turned a subject off",
   "cron.run_now": "Ran a scheduled job by hand",
-  "bonus.award_run": "Paid the weekly availability bonus",
+  "bonus.award_run": "Paid the availability bonus",
   payout_email_changed: "A tutor set or changed their payout email",
 };
 

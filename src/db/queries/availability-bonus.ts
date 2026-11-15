@@ -4,6 +4,7 @@ import { db, type DbTransaction } from "@/db";
 import {
   auditLog,
   availabilityBonusAwards,
+  availabilityBonusMonthlyAwards,
   creditTransactions,
   profiles,
   tutorOnlineTime,
@@ -11,15 +12,16 @@ import {
 } from "@/db/schema";
 import { walletExecutor, type LedgerExecutor } from "@/lib/credits/ledger";
 import type { AvailabilityBonusPort, Qualifier } from "@/lib/availability-bonus/award";
-import { utcDayOf, weekEndUtc, weekStartUtc } from "@/lib/availability-bonus/week";
+import { daysLeftInMonth, monthEndUtc, monthStartUtc } from "@/lib/availability-bonus/month";
 
 /**
- * Storage for the weekly availability bonus (SPEC §4.4, §7.5, §7.11, §12;
- * availability-bonus, 2026-10-14). Two writers and four readers.
+ * Storage for the availability bonus (SPEC §4.4, §7.5, §7.11, §12;
+ * availability-bonus 2026-10-14, monthly since 2026-11-15). Two writers and
+ * the readers for the tutor and admin pages.
  *
  * Writers: {@link accrueOnlineSeconds} from the heartbeat (inside
  * `touchPresence`'s transaction) and {@link availabilityBonusPort} from the
- * Monday job. Both run as the trusted server; the tables have no client write
+ * monthly job. Both run as the trusted server; the tables have no client write
  * policy (drizzle/0026).
  */
 
@@ -43,8 +45,8 @@ export async function accrueOnlineSeconds(
     });
 }
 
-/** Live seconds per tutor for one week, approved and unsuspended only. */
-function weekSecondsQuery(weekStart: string) {
+/** Live seconds per tutor for one UTC month, approved and unsuspended only. */
+function monthSecondsQuery(monthStart: string) {
   return db
     .select({
       tutorId: tutorOnlineTime.tutorId,
@@ -55,8 +57,8 @@ function weekSecondsQuery(weekStart: string) {
     .innerJoin(profiles, eq(profiles.id, tutorOnlineTime.tutorId))
     .where(
       and(
-        gte(tutorOnlineTime.day, weekStart),
-        lte(tutorOnlineTime.day, weekEndUtc(weekStart)),
+        gte(tutorOnlineTime.day, monthStart),
+        lte(tutorOnlineTime.day, monthEndUtc(monthStart)),
         eq(tutorProfiles.approvalStatus, "approved"),
         eq(profiles.isSuspended, false),
       ),
@@ -65,41 +67,71 @@ function weekSecondsQuery(weekStart: string) {
 }
 
 export const availabilityBonusPort: AvailabilityBonusPort = {
-  async listQualifiers(weekStart, minSeconds): Promise<Qualifier[]> {
-    const rows = await weekSecondsQuery(weekStart).having(
-      and(
-        gte(sql`sum(${tutorOnlineTime.seconds})`, minSeconds),
-        sql`not exists (
-          select 1 from ${availabilityBonusAwards} a
-          where a.tutor_id = ${tutorOnlineTime.tutorId} and a.week_start = ${weekStart}
-        )`,
-      ),
-    );
-    return rows.map((r) => ({ tutorId: r.tutorId, liveSeconds: r.liveSeconds }));
+  async listQualifiers(monthStart, minSeconds): Promise<Qualifier[]> {
+    const monthEnd = monthEndUtc(monthStart);
+    const rows = await db
+      .select({
+        tutorId: tutorOnlineTime.tutorId,
+        liveSeconds: sql<number>`sum(${tutorOnlineTime.seconds})::int`,
+        // Weekly bonus credits already paid for weeks that START in this month
+        // (November 2026 transition; always 0 from December 2026 on).
+        weeklyCreditsInMonth: sql<number>`coalesce((
+          select sum(w.credits) from ${availabilityBonusAwards} w
+          where w.tutor_id = ${tutorOnlineTime.tutorId}
+            and w.week_start >= ${monthStart} and w.week_start <= ${monthEnd}
+        ), 0)::int`,
+      })
+      .from(tutorOnlineTime)
+      .innerJoin(tutorProfiles, eq(tutorProfiles.userId, tutorOnlineTime.tutorId))
+      .innerJoin(profiles, eq(profiles.id, tutorOnlineTime.tutorId))
+      .where(
+        and(
+          gte(tutorOnlineTime.day, monthStart),
+          lte(tutorOnlineTime.day, monthEnd),
+          eq(tutorProfiles.approvalStatus, "approved"),
+          eq(profiles.isSuspended, false),
+        ),
+      )
+      .groupBy(tutorOnlineTime.tutorId)
+      .having(
+        and(
+          gte(sql`sum(${tutorOnlineTime.seconds})`, minSeconds),
+          sql`not exists (
+            select 1 from ${availabilityBonusMonthlyAwards} a
+            where a.tutor_id = ${tutorOnlineTime.tutorId} and a.month_start = ${monthStart}
+          )`,
+        ),
+      );
+    return rows.map((r) => ({
+      tutorId: r.tutorId,
+      liveSeconds: Number(r.liveSeconds),
+      weeklyCreditsInMonth: Number(r.weeklyCreditsInMonth),
+    }));
   },
 
   async claimAndCredit(award, credit) {
     return db.transaction(async (tx) => {
-      // The award row first: its unique (tutor, week) is the claim. ON CONFLICT
-      // DO NOTHING returns no row when another run already holds the week.
+      // The award row first: its unique (tutor, month) is the claim. ON CONFLICT
+      // DO NOTHING returns no row when another run already holds the month.
       const [row] = await tx
-        .insert(availabilityBonusAwards)
+        .insert(availabilityBonusMonthlyAwards)
         .values({
           tutorId: award.tutorId,
-          weekStart: award.weekStart,
+          monthStart: award.monthStart,
           liveSeconds: award.liveSeconds,
           credits: award.credits,
+          weeklyCreditsDeducted: award.weeklyCreditsDeducted,
         })
         .onConflictDoNothing({
-          target: [availabilityBonusAwards.tutorId, availabilityBonusAwards.weekStart],
+          target: [availabilityBonusMonthlyAwards.tutorId, availabilityBonusMonthlyAwards.monthStart],
         })
-        .returning({ id: availabilityBonusAwards.id });
+        .returning({ id: availabilityBonusMonthlyAwards.id });
       if (!row) return null;
 
       const out = await credit(row.id, walletExecutor(tx));
 
-      // Record which ledger row paid it. The ledger's unique (type, reference_id)
-      // means there is exactly one.
+      // Record which ledger row paid it (none when the net was 0). The ledger's
+      // unique (type, reference_id) means there is at most one.
       const [ledgerRow] = await tx
         .select({ id: creditTransactions.id })
         .from(creditTransactions)
@@ -112,9 +144,9 @@ export const availabilityBonusPort: AvailabilityBonusPort = {
         .limit(1);
       if (ledgerRow) {
         await tx
-          .update(availabilityBonusAwards)
+          .update(availabilityBonusMonthlyAwards)
           .set({ transactionId: ledgerRow.id })
-          .where(eq(availabilityBonusAwards.id, row.id));
+          .where(eq(availabilityBonusMonthlyAwards.id, row.id));
       }
       return out;
     });
@@ -135,61 +167,62 @@ export type { LedgerExecutor };
 
 /* ---------- Reads for the tutor page ---------- */
 
-export interface TutorWeekProgress {
-  weekStart: string;
+export interface TutorMonthProgress {
+  monthStart: string;
   liveSeconds: number;
-  /** Seconds per UTC day of the week, Monday first; 0 for days with no row. */
-  days: { day: string; seconds: number }[];
+  /** Whole UTC days left in the month, today included. */
+  daysLeft: number;
 }
 
-export async function getTutorWeekProgress(
-  tutorId: string,
-  now: Date = new Date(),
-): Promise<TutorWeekProgress> {
-  const weekStart = weekStartUtc(now);
-  const rows = await db
-    .select({ day: tutorOnlineTime.day, seconds: tutorOnlineTime.seconds })
+/** Live seconds a tutor has so far in the UTC month containing `now`. */
+export async function getTutorMonthSeconds(tutorId: string, now: Date = new Date()): Promise<number> {
+  const monthStart = monthStartUtc(now);
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${tutorOnlineTime.seconds}), 0)::int` })
     .from(tutorOnlineTime)
     .where(
       and(
         eq(tutorOnlineTime.tutorId, tutorId),
-        gte(tutorOnlineTime.day, weekStart),
-        lte(tutorOnlineTime.day, weekEndUtc(weekStart)),
+        gte(tutorOnlineTime.day, monthStart),
+        lte(tutorOnlineTime.day, monthEndUtc(monthStart)),
       ),
     );
-  const byDay = new Map(rows.map((r) => [r.day, r.seconds]));
-  const start = new Date(`${weekStart}T00:00:00Z`).getTime();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const day = utcDayOf(new Date(start + i * 86_400_000));
-    return { day, seconds: byDay.get(day) ?? 0 };
-  });
+  return Number(row?.total ?? 0);
+}
+
+export async function getTutorMonthProgress(
+  tutorId: string,
+  now: Date = new Date(),
+): Promise<TutorMonthProgress> {
   return {
-    weekStart,
-    liveSeconds: days.reduce((sum, d) => sum + d.seconds, 0),
-    days,
+    monthStart: monthStartUtc(now),
+    liveSeconds: await getTutorMonthSeconds(tutorId, now),
+    daysLeft: daysLeftInMonth(now),
   };
 }
 
-export interface TutorAward {
+export interface TutorMonthlyAward {
   id: string;
-  weekStart: string;
+  monthStart: string;
   liveSeconds: number;
   credits: number;
+  weeklyCreditsDeducted: number;
   createdAt: Date;
 }
 
-export async function listTutorAwards(tutorId: string, limit = 12): Promise<TutorAward[]> {
+export async function listTutorMonthlyAwards(tutorId: string, limit = 12): Promise<TutorMonthlyAward[]> {
   return db
     .select({
-      id: availabilityBonusAwards.id,
-      weekStart: availabilityBonusAwards.weekStart,
-      liveSeconds: availabilityBonusAwards.liveSeconds,
-      credits: availabilityBonusAwards.credits,
-      createdAt: availabilityBonusAwards.createdAt,
+      id: availabilityBonusMonthlyAwards.id,
+      monthStart: availabilityBonusMonthlyAwards.monthStart,
+      liveSeconds: availabilityBonusMonthlyAwards.liveSeconds,
+      credits: availabilityBonusMonthlyAwards.credits,
+      weeklyCreditsDeducted: availabilityBonusMonthlyAwards.weeklyCreditsDeducted,
+      createdAt: availabilityBonusMonthlyAwards.createdAt,
     })
-    .from(availabilityBonusAwards)
-    .where(eq(availabilityBonusAwards.tutorId, tutorId))
-    .orderBy(desc(availabilityBonusAwards.weekStart))
+    .from(availabilityBonusMonthlyAwards)
+    .where(eq(availabilityBonusMonthlyAwards.tutorId, tutorId))
+    .orderBy(desc(availabilityBonusMonthlyAwards.monthStart))
     .limit(limit);
 }
 
@@ -203,9 +236,9 @@ export interface AdminTutorProgress {
   isLive: boolean;
 }
 
-/** Every approved tutor with any live time in the week, most hours first. */
-export async function listAdminWeekProgress(weekStart: string): Promise<AdminTutorProgress[]> {
-  const sums = weekSecondsQuery(weekStart).as("sums");
+/** Every approved tutor with any live time in the month, most hours first. */
+export async function listAdminMonthProgress(monthStart: string): Promise<AdminTutorProgress[]> {
+  const sums = monthSecondsQuery(monthStart).as("sums");
   return db
     .select({
       tutorId: sums.tutorId,
@@ -220,49 +253,35 @@ export async function listAdminWeekProgress(weekStart: string): Promise<AdminTut
     .orderBy(desc(sums.liveSeconds));
 }
 
-export interface AdminAwardRow {
+export interface AdminMonthlyAwardRow {
   id: string;
-  weekStart: string;
+  monthStart: string;
   tutorId: string;
   fullName: string | null;
   slug: string;
   liveSeconds: number;
   credits: number;
+  weeklyCreditsDeducted: number;
   createdAt: Date;
 }
 
-/** Awards, newest week first, for the last `weeks` weeks of awards. */
-export async function listAdminAwards(limit = 200): Promise<AdminAwardRow[]> {
+/** Monthly awards, newest month first. */
+export async function listAdminMonthlyAwards(limit = 200): Promise<AdminMonthlyAwardRow[]> {
   return db
     .select({
-      id: availabilityBonusAwards.id,
-      weekStart: availabilityBonusAwards.weekStart,
-      tutorId: availabilityBonusAwards.tutorId,
+      id: availabilityBonusMonthlyAwards.id,
+      monthStart: availabilityBonusMonthlyAwards.monthStart,
+      tutorId: availabilityBonusMonthlyAwards.tutorId,
       fullName: profiles.fullName,
       slug: tutorProfiles.slug,
-      liveSeconds: availabilityBonusAwards.liveSeconds,
-      credits: availabilityBonusAwards.credits,
-      createdAt: availabilityBonusAwards.createdAt,
+      liveSeconds: availabilityBonusMonthlyAwards.liveSeconds,
+      credits: availabilityBonusMonthlyAwards.credits,
+      weeklyCreditsDeducted: availabilityBonusMonthlyAwards.weeklyCreditsDeducted,
+      createdAt: availabilityBonusMonthlyAwards.createdAt,
     })
-    .from(availabilityBonusAwards)
-    .innerJoin(profiles, eq(profiles.id, availabilityBonusAwards.tutorId))
-    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, availabilityBonusAwards.tutorId))
-    .orderBy(desc(availabilityBonusAwards.weekStart), desc(availabilityBonusAwards.createdAt))
+    .from(availabilityBonusMonthlyAwards)
+    .innerJoin(profiles, eq(profiles.id, availabilityBonusMonthlyAwards.tutorId))
+    .innerJoin(tutorProfiles, eq(tutorProfiles.userId, availabilityBonusMonthlyAwards.tutorId))
+    .orderBy(desc(availabilityBonusMonthlyAwards.monthStart), desc(availabilityBonusMonthlyAwards.createdAt))
     .limit(limit);
-}
-
-/** This week's live seconds for one tutor, for the admin user page. */
-export async function getTutorWeekSeconds(tutorId: string, now: Date = new Date()): Promise<number> {
-  const weekStart = weekStartUtc(now);
-  const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${tutorOnlineTime.seconds}), 0)::int` })
-    .from(tutorOnlineTime)
-    .where(
-      and(
-        eq(tutorOnlineTime.tutorId, tutorId),
-        gte(tutorOnlineTime.day, weekStart),
-        lte(tutorOnlineTime.day, weekEndUtc(weekStart)),
-      ),
-    );
-  return row?.total ?? 0;
 }

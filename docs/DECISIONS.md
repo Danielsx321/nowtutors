@@ -5512,6 +5512,45 @@ presence history existed. Agreed with Daniels 14 Oct as part of the rebuild extr
 11. **Scheduled by a pg_cron snippet run by hand** like the other seven (SPEC §3.5), Mondays 00:20 UTC.
 
 
+## Monthly availability bonus: 20 live hours a month, paid after month end (`monthly-availability-bonus`, 2026-11-15)
+
+On her 15 Nov 2026 call with Daniels, Noora changed the tutor promise from $40 for 5 live hours a week to
+$100 for 20 live hours a month, with the money only requestable after the month ends. Daniels confirmed
+the amount ($100) and the scope (the bonus only; session earnings withdrawals unchanged). The weekly
+switch was turned off on production the same day, before the 16 Nov Monday run. Plan: workspace
+`plans/2026-11-15-nowtutors-monthly-availability-bonus.md`.
+
+1. **New monthly award table, weekly table kept as history.** `availability_bonus_monthly_awards`
+   (`drizzle/0030`), unique `(tutor_id, month_start)`, `month_start` must be a 1st. Rewriting the weekly
+   table (rename `week_start`, add a period column) would touch paid history and every reader for no gain,
+   and its rows are still needed for the November deduction.
+2. **Credit on the 1st is the withdrawal rule.** `requestWithdrawal` withdraws the whole wallet; the bonus
+   is not in the wallet until the month is over and the hours are met. No withdrawal code changed.
+   Alternative rejected: gating withdrawals on bonus credits, which would mean splitting the wallet by
+   source, something the ledger does not do.
+3. **Floor `FIRST_BONUS_MONTH = 2026-11-01`.** Without it the 1 Dec run's look-back would pay anyone who
+   was live 20 hours in October, a month that was under the weekly rule.
+4. **November deduction, generic rule, no clawback.** Net = `max(0, credits − weekly credits for weeks
+   starting in the month)`. For November that is the `2026-11-02` week (paid 9 Nov); the `2026-10-26` week
+   starts in October and is left alone. A tutor under 20 hours keeps any weekly credit. From December on
+   no weekly rows exist, so the deduction is 0. Alternatives rejected: starting monthly on 1 Dec (would
+   mean switching weekly back on, which back-pays the paused week) and clawing back November weekly credits
+   (tutors have seen or withdrawn that money).
+5. **A zero net still writes its award row** (`credits = 0`, no ledger row, no email), so the month is
+   settled and later runs skip it. Hence `credits >= 0` on this table, not `> 0`.
+6. **Look back three complete months**, like the weekly four-week look-back: a missed 1st heals on the
+   next run or a "Run now".
+7. **UTC calendar months**, for the reasons the week was UTC (DECISIONS, weekly entry, point 3). Labelled
+   "November 2026" for every viewer.
+8. **Same setting keys, same ledger type, same job name.** `availability_bonus_*` keep their names (new
+   labels, threshold max 744, seeds 20 / 100), the `availability_bonus` ledger type stays (award ids are
+   UUIDs, so references never collide across the two tables), and the job stays `availability-bonus`, so
+   the route, the "Run now" wiring and the Vault setup are unchanged. Only the schedule moves to
+   `20 0 1 * *`.
+9. **Weekly code deleted, not switched off.** `week.ts`, the weekly card and the four-week look-back are
+   gone, so turning `availability_bonus_enabled` back on can never back-pay a paused week.
+
+
 ## Security A: server-only tutor stats, profile email, avatar limits (`security-a-db-guards`, 2026-10-22)
 
 The 20-point security checklist run against the live code on 2026-10-22 found three database holes a

@@ -658,18 +658,24 @@ export const templates: { [T in EmailType]: Template<T> } = {
       p.amountUsd ? `Your ${usdLine(p.amountUsd)} availability bonus is in your wallet` : "Your availability bonus is in your wallet",
     body: (p, ctx) => (
       <Shell
-        preview={`${creditsLine(p.credits)} for being live ${p.hoursLabel} last week.`}
-        heading="Your weekly availability bonus has landed."
+        preview={`${creditsLine(p.credits)} for being live ${p.hoursLabel} in ${p.monthLabel}.`}
+        heading="Your monthly availability bonus has landed."
         cta={{ label: "View your earnings", href: ctx.url("/tutor/earnings") }}
         footerNote={replyLine(ctx)}
       >
         <Facts
           rows={[
-            ["Week", p.weekLabel],
+            ["Month", p.monthLabel],
             ["Live for", p.hoursLabel],
             ["Added to your wallet", p.amountUsd ? `${creditsLine(p.credits)} (${usdLine(p.amountUsd)})` : creditsLine(p.credits)],
           ]}
         />
+        {p.weeklyCreditsDeducted > 0 && (
+          <P>
+            This is the monthly bonus minus the {creditsLine(p.weeklyCreditsDeducted)} already paid to you as weekly
+            bonuses earlier in {p.monthLabel}.
+          </P>
+        )}
         <P>
           Thank you for being there for students. The credits are in your wallet now and you can withdraw them
           with the rest of your earnings.
@@ -776,10 +782,11 @@ export const SAMPLE_PROPS: { [T in EmailType]: EmailPropsByType[T] } = {
     threadPath: "/tutor/messages/9b2c0d1e-0000-4000-8000-000000000003",
   },
   "availability-bonus-paid": {
-    credits: 40,
-    amountUsd: "40.00",
-    weekLabel: "6 to 12 Oct",
-    hoursLabel: "6h 10m",
+    credits: 60,
+    amountUsd: "60.00",
+    monthLabel: "November 2026",
+    hoursLabel: "21h 10m",
+    weeklyCreditsDeducted: 40,
   },
   "payout-email-changed": {
     from: "tina.reyes@example.com",
