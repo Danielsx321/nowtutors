@@ -2,15 +2,15 @@ import * as React from "react";
 import Link from "next/link";
 import { DataTable, StatusDot } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatHours, formatWeekRange } from "@/lib/availability-bonus/week";
-import type { AdminAwardRow, AdminTutorProgress } from "@/db/queries/availability-bonus";
+import { formatHours, formatMonth } from "@/lib/availability-bonus/month";
+import type { AdminMonthlyAwardRow, AdminTutorProgress } from "@/db/queries/availability-bonus";
 
 /**
  * The two tables on `/admin/availability` (SPEC §6; availability-bonus,
- * 2026-10-14): who is on track this week, and what has been paid.
+ * monthly since 2026-11-15): who is on track this month, and what has been paid.
  */
 
-export function WeekProgressTable({
+export function MonthProgressTable({
   rows,
   minSeconds,
 }: {
@@ -19,14 +19,14 @@ export function WeekProgressTable({
 }) {
   return (
     <DataTable
-      caption="Live hours this week by tutor"
+      caption="Live hours this month by tutor"
       rows={rows}
       rowKey={(r) => r.tutorId}
       minWidth={560}
       empty={
         <EmptyState
-          title="No live time yet this week"
-          description="Hours appear here as approved tutors go live. The week runs Monday to Sunday, UTC."
+          title="No live time yet this month"
+          description="Hours appear here as approved tutors go live. The month is a calendar month, UTC."
         />
       }
       columns={[
@@ -39,7 +39,7 @@ export function WeekProgressTable({
             </Link>
           ),
         },
-        { key: "live", header: "Live this week", align: "right", cell: (r) => formatHours(r.liveSeconds) },
+        { key: "live", header: "Live this month", align: "right", cell: (r) => formatHours(r.liveSeconds) },
         {
           key: "status",
           header: "Bonus",
@@ -60,22 +60,22 @@ export function WeekProgressTable({
   );
 }
 
-export function AwardsTable({ rows, timeZone }: { rows: AdminAwardRow[]; timeZone: string }) {
+export function MonthlyAwardsTable({ rows, timeZone }: { rows: AdminMonthlyAwardRow[]; timeZone: string }) {
   const fmt = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone });
   return (
     <DataTable
-      caption="Weekly bonuses paid"
+      caption="Monthly bonuses paid"
       rows={rows}
       rowKey={(r) => r.id}
       minWidth={640}
       empty={
         <EmptyState
           title="Nothing paid yet"
-          description="The first bonuses go out the Monday after a week in which a tutor reaches the target."
+          description="Bonuses go out on the 1st for the month before, to every tutor who reached the target."
         />
       }
       columns={[
-        { key: "week", header: "Week", className: "whitespace-nowrap", cell: (r) => formatWeekRange(r.weekStart) },
+        { key: "month", header: "Month", className: "whitespace-nowrap", cell: (r) => formatMonth(r.monthStart) },
         {
           key: "tutor",
           header: "Tutor",
@@ -87,6 +87,12 @@ export function AwardsTable({ rows, timeZone }: { rows: AdminAwardRow[]; timeZon
         },
         { key: "live", header: "Live for", align: "right", cell: (r) => formatHours(r.liveSeconds) },
         { key: "credits", header: "Credits", align: "right", cell: (r) => r.credits.toLocaleString() },
+        {
+          key: "weekly",
+          header: "Weekly already paid",
+          align: "right",
+          cell: (r) => (r.weeklyCreditsDeducted > 0 ? r.weeklyCreditsDeducted.toLocaleString() : "·"),
+        },
         { key: "paid", header: "Paid", className: "whitespace-nowrap", cell: (r) => fmt.format(r.createdAt) },
       ]}
     />

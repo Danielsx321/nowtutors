@@ -9,14 +9,15 @@ import {
 } from "./helpers/test-db";
 
 /**
- * The weekly availability bonus against a real Postgres (SPEC §4.4, §7.5, §12;
- * availability-bonus, 2026-10-14).
+ * The monthly availability bonus against a real Postgres (SPEC §4.4, §7.5, §12;
+ * availability-bonus 2026-10-14, monthly since 2026-11-15).
  *
  * What only the database can prove here: the heartbeat's upsert adds to the
- * day bucket; the Monday job's claim is the `availability_bonus_awards` unique
- * index plus the ledger's unique `(type, reference_id)`, so a week is paid once
- * however many times the job runs; the qualifier query honours approval and
- * suspension; and the wallet cache moves by exactly the credit.
+ * day bucket; the monthly job's claim is the `availability_bonus_monthly_awards`
+ * unique index plus the ledger's unique `(type, reference_id)`, so a month is
+ * paid once however many times the job runs; the qualifier query sums a whole
+ * UTC month, honours approval and suspension, and reads weekly credits paid for
+ * weeks starting in the month; and the wallet cache moves by exactly the credit.
  *
  * `@/db` is mocked to forward to the current transaction, as in
  * `release-earnings.test.ts`. The shipped `touchPresence` and
@@ -46,9 +47,9 @@ const { touchPresence } = await import("@/db/queries/presence");
 const { availabilityBonusPort } = await import("@/db/queries/availability-bonus");
 const { runAvailabilityBonus } = await import("@/lib/availability-bonus/award");
 
-const MONDAY = new Date("2026-10-19T00:20:00Z");
-const LAST_WEEK = "2026-10-12";
-const SETTINGS = { enabled: true, minHours: 5, credits: 40 };
+const DEC_1 = new Date("2026-12-01T00:20:00Z");
+const NOV = "2026-11-01";
+const SETTINGS = { enabled: true, minHours: 20, credits: 100 };
 
 let alpha: TestConnection;
 let watcher: TestConnection;
@@ -116,6 +117,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await watcher.db.transaction(async (tx) => {
+    await tx.execute(sql`delete from availability_bonus_monthly_awards where tutor_id = ${tutorId}`);
     await tx.execute(sql`delete from availability_bonus_awards where tutor_id = ${tutorId}`);
     await tx.execute(
       sql`delete from credit_transactions where type = 'availability_bonus' and user_id = ${tutorId}`,
@@ -146,16 +148,37 @@ async function readDay(day: string): Promise<number | null> {
   return rows[0] ? Number(rows[0].seconds) : null;
 }
 
-async function setWeekSeconds(weekStart: string, seconds: number) {
+async function setDaySeconds(day: string, seconds: number) {
   await watcher.db.execute(sql`
-    insert into tutor_online_time (tutor_id, day, seconds) values (${tutorId}, ${weekStart}::date, ${seconds})
+    insert into tutor_online_time (tutor_id, day, seconds) values (${tutorId}, ${day}::date, ${seconds})
     on conflict (tutor_id, day) do update set seconds = excluded.seconds
   `);
 }
 
+/** Spread `hours` across two November days so the month sum is what is tested. */
+async function setNovemberHours(hours: number) {
+  const secs = Math.round(hours * 3600);
+  await setDaySeconds("2026-11-03", Math.floor(secs / 2));
+  await setDaySeconds("2026-11-29", secs - Math.floor(secs / 2));
+}
+
+/** A paid weekly award row, as the old Monday job left them. */
+async function insertWeeklyAward(weekStart: string, credits: number) {
+  await watcher.db.execute(sql`
+    insert into availability_bonus_awards (tutor_id, week_start, live_seconds, credits)
+    values (${tutorId}, ${weekStart}::date, 18000, ${credits})
+  `);
+}
+
 async function readAwards() {
-  return watcher.db.execute<{ week_start: string; credits: number; transaction_id: string | null }>(
-    sql`select week_start::text, credits, transaction_id from availability_bonus_awards where tutor_id = ${tutorId} order by week_start`,
+  return watcher.db.execute<{
+    month_start: string;
+    credits: number;
+    weekly_credits_deducted: number;
+    transaction_id: string | null;
+  }>(
+    sql`select month_start::text, credits, weekly_credits_deducted, transaction_id
+          from availability_bonus_monthly_awards where tutor_id = ${tutorId} order by month_start`,
   );
 }
 
@@ -200,44 +223,66 @@ describe("the heartbeat records live time", () => {
   });
 });
 
-describe("the Monday job pays a week once", () => {
-  it("credits 40 for 5 hours, records the award with its ledger row, and a second run pays nothing", async () => {
-    await setWeekSeconds(LAST_WEEK, 5 * 3600);
+describe("the monthly job pays a month once", () => {
+  it("credits 100 for 20 hours in November, records the award with its ledger row, and a second run pays nothing", async () => {
+    await setNovemberHours(20);
     const before = (await readWalletBalance(watcher, tutorId)) ?? 0;
 
-    const first = await inTransaction(alpha, () =>
-      runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY),
-    );
-    expect(first.awarded.map((a) => [a.tutorId, a.weekStart, a.credits])).toEqual([[tutorId, LAST_WEEK, 40]]);
-    expect(await readWalletBalance(watcher, tutorId)).toBe(before + 40);
+    const first = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
+    expect(first.awarded.map((a) => [a.tutorId, a.monthStart, a.credits])).toEqual([[tutorId, NOV, 100]]);
+    expect(await readWalletBalance(watcher, tutorId)).toBe(before + 100);
 
     const awards = await readAwards();
     expect(awards).toHaveLength(1);
-    expect(awards[0].week_start).toBe(LAST_WEEK);
+    expect(awards[0].month_start).toBe(NOV);
+    expect(Number(awards[0].weekly_credits_deducted)).toBe(0);
     const ledger = await readBonusLedger();
     expect(ledger).toHaveLength(1);
-    expect(Number(ledger[0].delta)).toBe(40);
+    expect(Number(ledger[0].delta)).toBe(100);
     expect(awards[0].transaction_id).not.toBeNull();
 
-    const again = await inTransaction(alpha, () =>
-      runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY),
-    );
+    const again = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
     expect(again.awarded).toHaveLength(0);
-    expect(await readWalletBalance(watcher, tutorId)).toBe(before + 40);
+    expect(await readWalletBalance(watcher, tutorId)).toBe(before + 100);
     expect(await readAwards()).toHaveLength(1);
     expect(await readBonusLedger()).toHaveLength(1);
   });
 
-  it("the award unique index refuses a second award row for the same week, and the ledger stays at one", async () => {
-    await setWeekSeconds(LAST_WEEK, 5 * 3600);
-    await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY));
+  it("takes weekly credits for weeks starting in November off, and ignores a week that started in October", async () => {
+    await setNovemberHours(21);
+    await insertWeeklyAward("2026-10-26", 40); // started in October: not deducted
+    await insertWeeklyAward("2026-11-02", 40); // started in November: deducted
+    const before = (await readWalletBalance(watcher, tutorId)) ?? 0;
 
-    // Try to claim the week again directly through the port: the row exists,
-    // so the claim returns null and the credit callback never runs.
+    const r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
+    expect(r.awarded.map((a) => [a.credits, a.weeklyCreditsDeducted])).toEqual([[60, 40]]);
+    expect(await readWalletBalance(watcher, tutorId)).toBe(before + 60);
+    const [award] = await readAwards();
+    expect([Number(award.credits), Number(award.weekly_credits_deducted)]).toEqual([60, 40]);
+  });
+
+  it("a zero-net month is settled with no ledger row", async () => {
+    await setNovemberHours(25);
+    await insertWeeklyAward("2026-11-02", 40);
+    await insertWeeklyAward("2026-11-09", 40);
+    await insertWeeklyAward("2026-11-16", 40);
+
+    const r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
+    expect(r.awarded).toHaveLength(0);
+    expect(r.settledZero).toBe(1);
+    const [award] = await readAwards();
+    expect([Number(award.credits), Number(award.weekly_credits_deducted), award.transaction_id]).toEqual([0, 100, null]);
+    expect(await readBonusLedger()).toHaveLength(0);
+  });
+
+  it("the award unique index refuses a second award row for the same month, and the ledger stays at one", async () => {
+    await setNovemberHours(20);
+    await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
+
     let credited = false;
     const out = await inTransaction(alpha, () =>
       availabilityBonusPort.claimAndCredit(
-        { tutorId, weekStart: LAST_WEEK, liveSeconds: 18_000, credits: 40 },
+        { tutorId, monthStart: NOV, liveSeconds: 72_000, credits: 100, weeklyCreditsDeducted: 0 },
         async () => {
           credited = true;
           return "paid";
@@ -249,19 +294,26 @@ describe("the Monday job pays a week once", () => {
     expect(await readBonusLedger()).toHaveLength(1);
   });
 
+  it("October hours are never paid", async () => {
+    await setDaySeconds("2026-10-10", 40 * 3600);
+    const r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
+    expect(r.awarded).toHaveLength(0);
+    expect(await readAwards()).toHaveLength(0);
+  });
+
   it("under the threshold, unapproved or suspended: nothing", async () => {
-    await setWeekSeconds(LAST_WEEK, 5 * 3600 - 1);
-    let r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY));
+    await setNovemberHours(20 - 1 / 3600);
+    let r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
     expect(r.awarded).toHaveLength(0);
 
-    await setWeekSeconds(LAST_WEEK, 6 * 3600);
+    await setNovemberHours(22);
     await watcher.db.execute(sql`update tutor_profiles set approval_status = 'changes_requested' where user_id = ${tutorId}`);
-    r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY));
+    r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
     expect(r.awarded).toHaveLength(0);
 
     await watcher.db.execute(sql`update tutor_profiles set approval_status = 'approved' where user_id = ${tutorId}`);
     await watcher.db.execute(sql`update profiles set is_suspended = true where id = ${tutorId}`);
-    r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, MONDAY));
+    r = await inTransaction(alpha, () => runAvailabilityBonus(availabilityBonusPort, SETTINGS, DEC_1));
     expect(r.awarded).toHaveLength(0);
 
     expect(await readAwards()).toHaveLength(0);

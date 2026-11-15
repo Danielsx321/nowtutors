@@ -184,7 +184,9 @@ describe("availability bonus keys (availability-bonus, 2026-10-14)", () => {
     expect(ok("availability_bonus_min_hours", 5)).toEqual({ ok: true, value: 5 });
     expect(ok("availability_bonus_min_hours", 2.5)).toEqual({ ok: true, value: 2.5 });
     expect(refusal("availability_bonus_min_hours", "0").reason).toBe("invalid");
-    expect(refusal("availability_bonus_min_hours", "169").reason).toBe("invalid");
+    expect(ok("availability_bonus_min_hours", 20)).toEqual({ ok: true, value: 20 });
+    expect(ok("availability_bonus_min_hours", 744)).toEqual({ ok: true, value: 744 });
+    expect(refusal("availability_bonus_min_hours", "745").reason).toBe("invalid");
     expect(refusal("availability_bonus_min_hours", "5.25").reason).toBe("invalid");
   });
 

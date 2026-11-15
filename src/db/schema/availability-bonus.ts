@@ -27,9 +27,17 @@ import { profiles } from "./identity";
  * from `db/queries/presence.ts`; a tutor reads their own rows, admins read all.
  *
  * `availability_bonus_awards` is one row per tutor per week that was paid.
- * The unique `(tutor_id, week_start)` plus the ledger's own unique
- * `(type, reference_id)` (the award id is the reference) make a double credit
- * impossible however many times the Monday job runs.
+ * HISTORY ONLY since 2026-11-15, when the rule became monthly (20 live hours a
+ * month, 100 credits, paid on the 1st after the month ends). Nothing writes it
+ * any more; the monthly job reads it once, to take weekly credits already paid
+ * for weeks starting in November 2026 off the first monthly award.
+ *
+ * `availability_bonus_monthly_awards` is one row per tutor per paid month
+ * (monthly-availability-bonus, drizzle/0030). The unique `(tutor_id,
+ * month_start)` plus the ledger's own unique `(type, reference_id)` (the award
+ * id is the reference) make a double credit impossible however many times the
+ * job runs. `credits` is the net amount paid and may be 0 when weekly credits
+ * already covered it; the row still marks the month settled.
  */
 export const tutorOnlineTime = pgTable(
   "tutor_online_time",
@@ -70,5 +78,31 @@ export const availabilityBonusAwards = pgTable(
     uniqueIndex("availability_bonus_awards_week_unique").on(t.tutorId, t.weekStart),
     index("availability_bonus_awards_week_idx").on(t.weekStart.desc()),
     check("availability_bonus_awards_credits_chk", sql`${t.credits} > 0`),
+  ],
+);
+
+export const availabilityBonusMonthlyAwards = pgTable(
+  "availability_bonus_monthly_awards",
+  {
+    id: uuidPk(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** The 1st (UTC) of the month that was paid. */
+    monthStart: date("month_start").notNull(),
+    liveSeconds: integer("live_seconds").notNull(),
+    /** Net credits paid: the monthly amount minus weekly credits already paid for weeks starting in this month. */
+    credits: integer("credits").notNull(),
+    weeklyCreditsDeducted: integer("weekly_credits_deducted").notNull().default(0),
+    /** The ledger row that paid it; null when the net was 0. */
+    transactionId: uuid("transaction_id").references(() => creditTransactions.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("availability_bonus_monthly_awards_month_unique").on(t.tutorId, t.monthStart),
+    index("availability_bonus_monthly_awards_month_idx").on(t.monthStart.desc()),
+    check("availability_bonus_monthly_awards_credits_chk", sql`${t.credits} >= 0`),
+    check("availability_bonus_monthly_awards_deducted_chk", sql`${t.weeklyCreditsDeducted} >= 0`),
+    check("availability_bonus_monthly_awards_month_chk", sql`extract(day from ${t.monthStart}) = 1`),
   ],
 );

@@ -156,26 +156,26 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
   },
   {
     key: "availability_bonus_enabled",
-    label: "Weekly availability bonus",
-    help: "true pays the bonus every Monday for the week just ended; false pauses it. Hours keep counting either way.",
+    label: "Monthly availability bonus",
+    help: "true pays the bonus on the 1st of each month for the month just ended; false pauses it. Hours keep counting either way.",
     input: "json",
     schema: z.boolean({ error: "Enter true or false." }),
   },
   {
     key: "availability_bonus_min_hours",
-    label: "Availability bonus threshold (live hours a week)",
-    help: "Hours a tutor must be live between Monday and Sunday (UTC) to earn the bonus. Applies to the next Monday run.",
+    label: "Availability bonus threshold (live hours a month)",
+    help: "Hours a tutor must be live in a calendar month (UTC) to earn the bonus. Applies to the next run on the 1st.",
     input: "number",
     schema: z
       .number({ error: "Enter a number." })
       .min(0.5, "Must be at least 0.5 hours.")
-      .max(168, "Must be at most 168 hours.")
+      .max(744, "Must be at most 744 hours.")
       .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-6, "At most 1 decimal."),
   },
   {
     key: "availability_bonus_credits",
-    label: "Availability bonus (credits a week)",
-    help: "Credits paid per qualifying week. Tutors withdraw them at the payout rate like any other credit.",
+    label: "Availability bonus (credits a month)",
+    help: "Credits paid per qualifying month, on the 1st after it ends. Tutors withdraw them at the payout rate like any other credit.",
     input: "number",
     schema: wholeNumber(1, 1000, "credits"),
   },

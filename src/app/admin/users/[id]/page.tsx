@@ -7,8 +7,8 @@ import { requireRole } from "@/lib/auth/guards";
 import { getAdminUserDetail } from "@/db/queries/admin-users";
 import { getWalletHistory, WALLET_PAGE_SIZE } from "@/db/queries/wallet";
 import { safeTimeZone } from "@/db/queries/admin-overview";
-import { getTutorWeekSeconds } from "@/db/queries/availability-bonus";
-import { formatHours } from "@/lib/availability-bonus/week";
+import { getTutorMonthSeconds } from "@/db/queries/availability-bonus";
+import { formatHours } from "@/lib/availability-bonus/month";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreditBalance } from "@/components/ui/credit-balance";
@@ -57,10 +57,10 @@ export default async function AdminUserPage({
   const { page: pageParam } = await searchParams;
   const requestedPage = Number.parseInt(pageParam ?? "1", 10);
 
-  const [detail, history, liveSecondsThisWeek, [me]] = await Promise.all([
+  const [detail, history, liveSecondsThisMonth, [me]] = await Promise.all([
     getAdminUserDetail(id),
     getWalletHistory(id, Number.isFinite(requestedPage) ? requestedPage : 1, WALLET_PAGE_SIZE),
-    getTutorWeekSeconds(id),
+    getTutorMonthSeconds(id),
     db.select({ timezone: profiles.timezone }).from(profiles).where(eq(profiles.id, user.id)).limit(1),
   ]);
   if (!detail) notFound();
@@ -130,9 +130,9 @@ export default async function AdminUserPage({
               </Fact>
               <Fact label="Last seen">{detail.lastSeenAt ? fmt.format(detail.lastSeenAt) : "Never"}</Fact>
               {detail.tutor && (
-                <Fact label="Live this week">
+                <Fact label="Live this month">
                   <Link href="/admin/availability" className="focus-ring text-accent">
-                    {formatHours(liveSecondsThisWeek)}
+                    {formatHours(liveSecondsThisMonth)}
                   </Link>
                 </Fact>
               )}

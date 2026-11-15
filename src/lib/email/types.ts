@@ -106,15 +106,18 @@ export interface EmailPropsByType {
   "reminder-24h": BookingFacts;
   "reminder-1h-student": BookingFacts;
   "reminder-1h-tutor": BookingFacts;
-  /** The weekly availability bonus landed in the wallet (availability-bonus, 2026-10-14). */
+  /** The monthly availability bonus landed in the wallet (availability-bonus, monthly since 2026-11-15). */
   "availability-bonus-paid": {
+    /** Net credits paid. */
     credits: number;
     /** `numeric(10,2)` text at the payout rate, or null when no rate is set. */
     amountUsd: string | null;
-    /** "6 to 12 Oct", the UTC week that was paid. */
-    weekLabel: string;
-    /** "6h 10m", what they were live for. */
+    /** "November 2026", the UTC month that was paid. */
+    monthLabel: string;
+    /** "21h 10m", what they were live for. */
     hoursLabel: string;
+    /** Weekly bonus credits already paid for weeks in this month (November 2026 only), else 0. */
+    weeklyCreditsDeducted: number;
   };
   /**
    * The PayPal payout address was changed (Security C, 2026-10-22). Sent to the

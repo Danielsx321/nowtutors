@@ -274,11 +274,12 @@ async function bookingReminders(): Promise<CronSummary> {
 }
 
 /**
- * The weekly availability bonus (SPEC §12, §7.5; availability-bonus,
- * 2026-10-14). Pays every approved tutor who was live for the threshold in
- * any of the last four complete weeks not yet paid, then emails each one.
- * Idempotent per tutor per week by two unique indexes, so "run now" on a
- * Tuesday pays nobody twice.
+ * The monthly availability bonus (SPEC §12, §7.5; availability-bonus,
+ * monthly since 2026-11-15). On the 1st, pays every approved tutor who was
+ * live for the threshold in any of the last three complete months (never
+ * before November 2026) not yet paid, then emails each one. Idempotent per
+ * tutor per month by two unique indexes, so "run now" mid-month pays nobody
+ * twice.
  */
 async function availabilityBonus(): Promise<CronSummary> {
   const startedAt = Date.now();
@@ -304,9 +305,11 @@ async function availabilityBonus(): Promise<CronSummary> {
     ok: true as const,
     job: "availability-bonus" as const,
     disabled: result.disabled,
-    weeksChecked: result.weeksChecked,
+    monthsChecked: result.monthsChecked,
     awarded: result.awarded.length,
     creditsAwarded: result.creditsAwarded,
+    weeklyDeducted: result.weeklyDeducted,
+    settledZero: result.settledZero,
     creditsEach: settings.credits,
     minHours: settings.minHours,
     alreadyAwarded: result.alreadyAwarded,

@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { profiles, tutorProfiles } from "@/db/schema";
 import { accrueOnlineSeconds } from "@/db/queries/availability-bonus";
 import { secondsToAccrue } from "@/lib/availability-bonus/accrual";
-import { utcDayOf } from "@/lib/availability-bonus/week";
+import { utcDayOf } from "@/lib/availability-bonus/month";
 
 /**
  * Presence writes (SPEC §7.5). Every function here takes an already-authorized
