@@ -14,7 +14,11 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 
 const pathname = vi.hoisted(() => ({ current: "/" }));
 
-vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
+const search = vi.hoisted(() => ({ current: "" }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathname.current,
+  useSearchParams: () => new URLSearchParams(search.current),
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...rest}>
@@ -38,13 +42,25 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("link", { name: "Sign up" }).getAttribute("href")).toBe("/signup");
   });
 
-  it("marks All tutors as current on browse, never the live link", () => {
+  it("marks All tutors as current on browse without the live filter", () => {
     pathname.current = "/tutors";
+    search.current = "";
     render(<SiteHeader viewer={null} />);
     const nav = screen.getByRole("navigation", { name: "Main" });
     expect(within(nav).getByRole("link", { name: "All tutors" }).getAttribute("aria-current")).toBe("page");
-    expect(within(nav).getByRole("link", { name: "Live tutors" }).getAttribute("aria-current")).toBeNull();
-    expect(within(nav).getByRole("link", { name: "Live tutors" }).getAttribute("href")).toBe("/tutors?live=1");
+    expect(within(nav).getByRole("link", { name: "Online now" }).getAttribute("aria-current")).toBeNull();
+    expect(within(nav).getByRole("link", { name: "Online now" }).getAttribute("href")).toBe("/tutors?live=1#results");
+    expect(within(nav).getByRole("link", { name: "All tutors" }).getAttribute("href")).toBe("/tutors#results");
+  });
+
+  it("moves the underline to Online now when the live filter is on (audit, 18 Nov 2026)", () => {
+    pathname.current = "/tutors";
+    search.current = "live=1";
+    render(<SiteHeader viewer={null} />);
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getByRole("link", { name: "Online now" }).getAttribute("aria-current")).toBe("page");
+    expect(within(nav).getByRole("link", { name: "All tutors" }).getAttribute("aria-current")).toBeNull();
+    search.current = "";
   });
 
   it("stays marked on a child route", () => {
@@ -84,7 +100,7 @@ describe("SiteHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
     const dialog = await screen.findByRole("dialog");
 
-    for (const label of ["Live tutors", "All tutors"]) {
+    for (const label of ["Online now", "All tutors"]) {
       expect(within(dialog).getByRole("link", { name: label })).toBeTruthy();
     }
     expect(within(dialog).getByRole("link", { name: "Log in" }).getAttribute("href")).toBe("/login");

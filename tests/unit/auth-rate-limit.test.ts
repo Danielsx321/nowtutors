@@ -64,7 +64,7 @@ describe("auth rate limits", () => {
 
   it("signup counts the visitor IP", async () => {
     await expect(
-      signup({ email: "ada@example.com", password: "Passw0rd1", confirmPassword: "Passw0rd1" }),
+      signup({ fullName: "Ada Lovelace", email: "ada@example.com", password: "Passw0rd1", confirmPassword: "Passw0rd1" }),
     ).resolves.toEqual(LIMITED);
     expect(m.rateLimit).toHaveBeenCalledWith({ action: "signUp", ip: "203.0.113.7" });
     expect(m.signUp).not.toHaveBeenCalled();

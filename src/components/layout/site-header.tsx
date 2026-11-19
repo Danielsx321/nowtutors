@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Menu, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ export interface SiteHeaderViewer {
  * The public header (DESIGN.md v3, design round 3 Part B): a 56px navy bar,
  * which is a dark island (`.theme-dark`), so every role inside it re-resolves
  * and nothing here knows the colour. Wordmark left, two text links with the
- * current one underlined, a subject search on the browse pages, and the two
+ * current one underlined (query-aware, see `NavLinks`), a subject search on the browse pages, and the two
  * actions on the right: Log in as text, Sign up as the orange act-now fill.
  * Signed in, the actions become the person's avatar and a link to their own
  * home, because a signed-in visitor on a public page is one click from being
@@ -48,28 +48,7 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
 
-  const isActive = (href: string) => {
-    // An anchor into a page is a place on a page, never the page itself.
-    if (href.includes("#")) return false;
-    const path = href.split(/[?#]/)[0] || "/";
-    if (path === "/") return pathname === "/";
-    return pathname === path || pathname.startsWith(`${path}/`);
-  };
-  // Two links share the `/tutors` path: only the one whose query matches the
-  // current view is current. The header does not read the query string, so
-  // "All tutors" is current on any browse URL and "Live tutors" never is; a
-  // student who filtered by live already sees the chip say so.
-  const current = (href: string) => isActive(href) && !href.includes("?");
-
   const showSearch = pathname === "/tutors";
-
-  const linkClass = (href: string) =>
-    cn(
-      "focus-ring rounded-sm py-[18px] text-small font-medium transition-colors",
-      current(href)
-        ? "text-text shadow-[inset_0_-2px_0_0_var(--accent)]"
-        : "text-text-muted hover:text-text",
-    );
 
   const searchForm = (
     <form
@@ -95,16 +74,9 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
         <Wordmark href="/" size="sm" tone="onDark" />
 
         <nav aria-label="Main" className="hidden items-center gap-5 md:flex">
-          {siteNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={current(item.href) ? "page" : undefined}
-              className={linkClass(item.href)}
-            >
-              {item.label}
-            </Link>
-          ))}
+          <React.Suspense fallback={<NavLinks variant="bar" pathname={pathname} live={false} />}>
+            <LiveAwareNavLinks variant="bar" pathname={pathname} />
+          </React.Suspense>
         </nav>
 
         {showSearch && <div className="hidden flex-1 md:flex">{searchForm}</div>}
@@ -144,22 +116,9 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
               </DrawerHeader>
               <DrawerBody className="flex flex-col gap-1">
                 <div className="mb-3">{searchForm}</div>
-                {siteNav.map((item) => (
-                  <DrawerClose asChild key={item.href}>
-                    <Link
-                      href={item.href}
-                      aria-current={current(item.href) ? "page" : undefined}
-                      className={cn(
-                        "focus-ring rounded-lg px-3 py-2.5 text-body font-medium",
-                        current(item.href)
-                          ? "bg-surface-raised text-text"
-                          : "text-text-muted hover:bg-surface-raised hover:text-text",
-                      )}
-                    >
-                      {item.label}
-                    </Link>
-                  </DrawerClose>
-                ))}
+                <React.Suspense fallback={<NavLinks variant="drawer" pathname={pathname} live={false} />}>
+                  <LiveAwareNavLinks variant="drawer" pathname={pathname} />
+                </React.Suspense>
                 <div className="mt-4 flex flex-col gap-2">
                   {viewer ? (
                     <DrawerClose asChild>
@@ -188,5 +147,81 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
         </div>
       </div>
     </header>
+  );
+}
+
+type NavVariant = "bar" | "drawer";
+
+/**
+ * The two browse links share the `/tutors` path, so which one is current
+ * depends on the query: `?live=1` is "Online now", anything else on `/tutors`
+ * is "All tutors". Before the audit (18 Nov 2026) the header ignored the
+ * query, so the underline never moved to the live link and a visitor could
+ * not tell the click had worked.
+ *
+ * `useSearchParams` sits in its own component behind a Suspense boundary so
+ * statically rendered pages (the legal pages) still build; the fallback is the
+ * same links with "All tutors" logic, which is right on every non-browse page.
+ */
+function LiveAwareNavLinks({ variant, pathname }: { variant: NavVariant; pathname: string }) {
+  const params = useSearchParams();
+  return <NavLinks variant={variant} pathname={pathname} live={params.get("live") === "1"} />;
+}
+
+function NavLinks({
+  variant,
+  pathname,
+  live,
+}: {
+  variant: NavVariant;
+  pathname: string;
+  live: boolean;
+}) {
+  const current = (href: string) => {
+    const path = href.split(/[?#]/)[0] || "/";
+    // A profile under /tutors keeps "All tutors" marked; only browse itself
+    // carries the live filter.
+    if (pathname.startsWith(`${path}/`)) return !href.includes("live=1");
+    if (pathname !== path) return false;
+    return href.includes("live=1") === live;
+  };
+
+  return (
+    <>
+      {siteNav.map((item) => {
+        const isCurrent = current(item.href);
+        const link = (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={isCurrent ? "page" : undefined}
+            className={
+              variant === "bar"
+                ? cn(
+                    "focus-ring rounded-sm py-[18px] text-small font-medium transition-colors",
+                    isCurrent
+                      ? "text-text shadow-[inset_0_-2px_0_0_var(--accent)]"
+                      : "text-text-muted hover:text-text",
+                  )
+                : cn(
+                    "focus-ring rounded-lg px-3 py-2.5 text-body font-medium",
+                    isCurrent
+                      ? "bg-surface-raised text-text"
+                      : "text-text-muted hover:bg-surface-raised hover:text-text",
+                  )
+            }
+          >
+            {item.label}
+          </Link>
+        );
+        return variant === "drawer" ? (
+          <DrawerClose asChild key={item.href}>
+            {link}
+          </DrawerClose>
+        ) : (
+          link
+        );
+      })}
+    </>
   );
 }

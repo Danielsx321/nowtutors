@@ -109,6 +109,9 @@ export async function signup(
     options: {
       emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
       captchaToken: parsed.data.captchaToken,
+      // Kept on the auth user only; onboarding reads it to start the name
+      // field filled, and the profile is written there as before.
+      data: { full_name: parsed.data.fullName },
     },
   });
 

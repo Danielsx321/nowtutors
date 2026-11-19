@@ -24,9 +24,11 @@ export interface SubjectOption {
 export function StudentForm({
   userId,
   subjects,
+  defaultName = "",
 }: {
   userId: string;
   subjects: SubjectOption[];
+  defaultName?: string;
 }) {
   const [formError, setFormError] = React.useState<string | null>(null);
   const {
@@ -37,7 +39,7 @@ export function StudentForm({
     formState: { errors, isSubmitting },
   } = useForm<StudentOnboardingValues>({
     resolver: zodResolver(studentOnboardingSchema),
-    defaultValues: { fullName: "", timezone: "", avatarUrl: undefined, subjects: [] },
+    defaultValues: { fullName: defaultName, timezone: "", avatarUrl: undefined, subjects: [] },
   });
 
   // Prefill timezone from the browser (SPEC §7.1) after mount to avoid SSR mismatch.

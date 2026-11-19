@@ -37,9 +37,11 @@ const LEVELS = [
 export function TutorForm({
   userId,
   subjects,
+  defaultName = "",
 }: {
   userId: string;
   subjects: SubjectOption[];
+  defaultName?: string;
 }) {
   const [formError, setFormError] = React.useState<string | null>(null);
   const {
@@ -51,7 +53,7 @@ export function TutorForm({
   } = useForm<TutorOnboardingValues>({
     resolver: zodResolver(tutorOnboardingSchema),
     defaultValues: {
-      fullName: "",
+      fullName: defaultName,
       timezone: "",
       avatarUrl: "",
       headline: "",
