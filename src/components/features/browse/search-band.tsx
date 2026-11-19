@@ -26,7 +26,7 @@ export function SearchBand({
   initialMiss?: string | null;
 }) {
   return (
-    <section aria-labelledby={id} className="bg-band px-4 py-10 text-on-primary md:px-6 md:py-14">
+    <section aria-labelledby={id} className="bg-band px-4 py-8 text-on-primary md:px-6 md:py-10">
       <div className="mx-auto max-w-[760px] text-center">
         <h1
           id={id}

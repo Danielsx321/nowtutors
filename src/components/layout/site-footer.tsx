@@ -148,7 +148,17 @@ export function SiteFooter({ liveCount, viewerHome }: SiteFooterProps) {
             <ul className="grid gap-2.5 text-body text-text-muted">
               <li className="flex items-start gap-2">
                 <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent" />
-                No-show promise
+                {/* Linked and explained since the audit (18 Nov 2026): the bare
+                    words told a visitor nothing. */}
+                <Link
+                  href="/legal/refunds#no-show"
+                  className="focus-ring rounded-sm text-text-muted hover:text-text"
+                >
+                  No-show promise
+                  <span className="block text-small text-text-muted/80">
+                    Tutor doesn&rsquo;t show? Your credits come back.
+                  </span>
+                </Link>
               </li>
               <li className="flex items-start gap-2">
                 <CreditCard aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent" />

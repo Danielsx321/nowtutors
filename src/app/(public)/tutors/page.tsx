@@ -137,8 +137,12 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
       band={
         <SearchBand
           id="browse-title"
-          heading="Browse online tutors"
-          subline="Whether you'd like a hand this minute or want to set up regular lessons, there is a tutor here for it."
+          heading={query.liveNow ? "Tutors online now" : "Browse all tutors"}
+          subline={
+            query.liveNow
+              ? "These tutors are online this minute. Start a lesson now, or book one for later."
+              : "Whether you'd like a hand this minute or want to set up regular lessons, there is a tutor here for it."
+          }
           subjects={subjectRows}
           initialMiss={searchMiss}
         />
@@ -153,10 +157,10 @@ export default async function BrowsePage({ searchParams }: { searchParams: Searc
         ))}
       />
 
-      <section aria-labelledby="browse-results-title">
+      <section id="results" aria-labelledby="browse-results-title" className="scroll-mt-20">
         <div className="mb-3.5 flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="browse-results-title" className="font-display text-h2 font-semibold text-text">
-            {query.liveNow ? "Live now" : "All tutors"}
+            {query.liveNow ? "Online now" : "All tutors"}
           </h2>
           <ResultSort resultCount={total} className="hidden lg:flex" />
         </div>

@@ -11,9 +11,12 @@ type Step = "role" | "student" | "tutor";
 export function OnboardingFlow({
   userId,
   subjects,
+  defaultName = "",
 }: {
   userId: string;
   subjects: SubjectOption[];
+  /** The name from sign-up or Google, so the name field starts filled. */
+  defaultName?: string;
 }) {
   const [step, setStep] = React.useState<Step>("role");
 
@@ -67,9 +70,9 @@ export function OnboardingFlow({
         </div>
       </div>
       {step === "student" ? (
-        <StudentForm userId={userId} subjects={subjects} />
+        <StudentForm userId={userId} subjects={subjects} defaultName={defaultName} />
       ) : (
-        <TutorForm userId={userId} subjects={subjects} />
+        <TutorForm userId={userId} subjects={subjects} defaultName={defaultName} />
       )}
     </div>
   );
