@@ -51,6 +51,7 @@ export const EXISTING_ROUTES = [
   "/admin/availability",
   "/admin/bookings",
   "/admin/payments",
+  "/admin/reviews",
   "/admin/settings",
   "/admin/subjects",
   "/admin/tutors",

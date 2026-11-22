@@ -5789,6 +5789,53 @@ No migration.
    the profile is still written at onboarding as before.
 
 
+## 2026-11-22 · Audit pass 2, home (outside reviewer's video audit, point 4)
+
+1. **The band stays the hero.** The reviewer asked for a warmer, student-first hero. A second hero over
+   the navy search band would undo the client's round 3 structure (Oranum layout, 2026-09-26), so the
+   band itself changes: heading "Stuck on it? Get a real tutor in minutes", a subline on both ways to
+   learn, and under the search a "How it works" jump and "Teach on NowTutors? Become a tutor". The band
+   takes optional children for this; `/tutors` passes none.
+2. **How it works and values follow the tutor grid, not precede it.** The same audit (point 2) wanted the
+   tutors visible without scrolling, so the sections sit after the eight cards and the band links down to
+   them. `Steps` is un-parked and restyled to the browse column's plain h2 (the parked version used a
+   tracked all-caps kicker, a banned tell); step 1 reads "Find your tutor", since booking for later is
+   the other half.
+3. **Values say only what the app does.** "Real people, not a chatbot", "Tutors checked before they
+   teach" (the admin approval every profile passes) and "Live now or booked for later". The reviewer's
+   "available 24/7" is left out: tutors set their own hours, so it can't be promised.
+4. **"Become a tutor" back in the header**, signed out only, as a quiet text link before Log in, and in
+   the mobile menu. It goes to `/signup`, which already asks learn or teach.
+
+
+## 2026-11-22 · Reviews v1 (outside reviewer's video audit, point 7; approved by Daniels)
+
+1. **Built now, against §18's "dropped for v1".** The reviewer asked for reviews on every profile;
+   Daniels approved bringing them in. The table follows the shape §4.3 already gave (`drizzle/0031`).
+2. **First-party only.** A review comes from the student of a completed booking, one per booking. The
+   reviewer also suggested "verified outside reviews"; those can't be verified in the app and would
+   break the no-invented-content rule, so they are out.
+3. **Server-only writes, with the database checking too.** No client write policy. `submitReview` reads
+   the tutor from the booking, never from the client; the BEFORE INSERT guard refuses a row that doesn't
+   match a completed booking of that student with that tutor, so even a bug in the action can't
+   attach a review to someone else's lesson.
+4. **The rating columns follow the reviews, by trigger.** `rating_avg` / `rating_count` are recomputed
+   from the published rows on every insert, hide, show or delete, so browse and cards keep reading the
+   scalars they always did and the numbers can't drift from the reviews.
+5. **Nothing shows at zero.** Cards and profiles show the rating only from the first published review.
+   No "0.0", no "New" badge dressed as a rating.
+6. **Admins hide, never delete.** `/admin/reviews` lists the newest 100 with Hide / Show; a hidden
+   review leaves the profile and the average and comes back with one click. Audited (`review.hide`,
+   `review.show`).
+7. **Reviewer shown as first name and last initial** ("Ada O."), so a review reads as a real person
+   without a student's full name on a public page.
+8. **No edit in v1.** A student sends one review per lesson; editing waits until someone asks for it.
+9. **No rating sort or `minRating` filter yet.** At launch nearly every tutor has no reviews, so sorting
+   by rating would bury them; the dormant filter stays dormant until reviews are common.
+10. **Where a student leaves one:** the completed booking's page (`/dashboard/bookings/[id]`). A nudge
+    after the lesson (an email or a dashboard prompt) is a follow-up, not in this PR.
+
+
 ## 2026-11-22 · Audit pass 2, profile quality (outside reviewer's video audit, point 8)
 
 1. **About needs 150 characters at onboarding** (`ABOUT_MIN`, about two sentences), with a live counter.

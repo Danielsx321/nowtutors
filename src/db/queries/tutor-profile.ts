@@ -29,6 +29,9 @@ export interface TutorProfileData {
   languages: string[];
   hourlyRateCredits: number;
   completedSessions: number;
+  /** Published reviews only (drizzle/0031 trigger); 0 until the first review. */
+  ratingAvg: number;
+  ratingCount: number;
   acceptsInstant: boolean;
   liveStatus: LiveStatus;
   /** Set only when `liveStatus` is `live`: the broadcast to watch (Phase 9 Part 3). */
@@ -76,6 +79,8 @@ export async function getTutorBySlug(
       languages: tutorProfiles.languages,
       hourlyRateCredits: tutorProfiles.hourlyRateCredits,
       completedSessions: tutorProfiles.completedSessions,
+      ratingAvg: tutorProfiles.ratingAvg,
+      ratingCount: tutorProfiles.ratingCount,
       acceptsInstant: tutorProfiles.acceptsInstant,
       displayName: publicProfiles.displayName,
       avatarUrl: publicProfiles.avatarUrl,
@@ -123,6 +128,8 @@ export async function getTutorBySlug(
     languages: row.languages ?? [],
     hourlyRateCredits: row.hourlyRateCredits,
     completedSessions: row.completedSessions,
+    ratingAvg: Number(row.ratingAvg),
+    ratingCount: row.ratingCount,
     acceptsInstant: row.acceptsInstant,
     liveStatus: !row.liveMemberUserId
       ? "offline"

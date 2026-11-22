@@ -18,6 +18,7 @@ import {
   Heart,
   MoreHorizontal,
   Search,
+  Star,
 } from "lucide-react";
 
 export interface NavItem {
@@ -43,9 +44,10 @@ export const publicNav: { label: string; href: string }[] = [
 
 /**
  * The site header's links (DESIGN.md v3, design round 3 Part B). Two links,
- * both into browse: the online list first, then everyone. "Teach" moved to the
- * footer ("Become a tutor"); "How it works" went with the v2 home blocks it
- * pointed at (parked in round 3 Part C).
+ * both into browse: the online list first, then everyone. "Become a tutor"
+ * sits with the signed-out actions on the right (back in the header after the
+ * audit of 18 Nov 2026), not among these links; "How it works" is a section
+ * on home (`/#how-it-works`), linked from the search band.
  *
  * "Online now", not "Live tutors" (audit, 18 Nov 2026): every tutor teaches
  * live, so "Live tutors" read as if the others don't. Both links land on the
@@ -98,6 +100,7 @@ export const adminNav: NavItem[] = [
   { label: "Tutors", href: "/admin/tutors", icon: GraduationCap },
   { label: "Bookings", href: "/admin/bookings", icon: CalendarDays },
   { label: "Payments", href: "/admin/payments", icon: CreditCard },
+  { label: "Reviews", href: "/admin/reviews", icon: Star },
   { label: "Withdrawals", href: "/admin/withdrawals", icon: Banknote },
   { label: "Availability", href: "/admin/availability", icon: Clock },
   { label: "Subjects", href: "/admin/subjects", icon: BookOpen },
