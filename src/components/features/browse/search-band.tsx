@@ -17,6 +17,7 @@ export function SearchBand({
   subline,
   subjects,
   initialMiss = null,
+  children,
 }: {
   /** The heading's id, so the page can label its section with it. */
   id: string;
@@ -24,6 +25,8 @@ export function SearchBand({
   subline: string;
   subjects: Subject[];
   initialMiss?: string | null;
+  /** Optional line under the search (home: How it works, Become a tutor). */
+  children?: React.ReactNode;
 }) {
   return (
     <section aria-labelledby={id} className="bg-band px-4 py-8 text-on-primary md:px-6 md:py-10">
@@ -45,6 +48,7 @@ export function SearchBand({
             onDark
           />
         </div>
+        {children}
       </div>
     </section>
   );

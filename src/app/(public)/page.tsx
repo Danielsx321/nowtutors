@@ -24,6 +24,8 @@ import { BrowseSidebar } from "@/components/features/browse/browse-sidebar";
 import { LiveCarousel } from "@/components/features/browse/live-carousel";
 import { SearchBand } from "@/components/features/browse/search-band";
 import { TutorGrid } from "@/components/features/browse/tutor-grid";
+import { Steps } from "@/components/features/home/steps";
+import { Values } from "@/components/features/home/values";
 
 export const dynamic = "force-dynamic"; // live counts and the viewer change per request
 
@@ -43,9 +45,12 @@ const HOME_CARDS = 8;
  * sidebar and the chip row write to this same URL, so their first click lands
  * on browse through that forward.
  *
- * The v2 home (globe hero, app-screens fan, steps, proof wall, closing block)
- * is parked, not deleted: `components/features/home/*` (DECISIONS, round 3
- * Part C).
+ * The v2 home (globe hero, app-screens fan, proof wall, closing block) is
+ * parked, not deleted: `components/features/home/*` (DECISIONS, round 3
+ * Part C). After the audit of 18 Nov 2026 the band speaks to the student,
+ * with a How it works link and a Become a tutor line under the search, and
+ * How it works (`Steps`) and `Values` follow the tutor grid, so the tutors
+ * stay high on the page.
  */
 export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
   const params = toSearchParams(await searchParams);
@@ -82,10 +87,22 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
       band={
         <SearchBand
           id="home-title"
-          heading="Your personal tutor, any time, anywhere"
-          subline="Book a lesson for later, or start one with a tutor who is live this minute."
+          heading="Stuck on it? Get a real tutor in minutes"
+          subline="Pick a tutor who is online now and start a live lesson in your browser, or book a time that suits you."
           subjects={subjectRows}
-        />
+        >
+          <p className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-small text-on-primary/85">
+            <a href="#how-it-works" className="font-semibold text-on-primary underline underline-offset-4">
+              How it works
+            </a>
+            <span>
+              Teach on NowTutors?{" "}
+              <Link href="/signup" className="font-semibold text-on-primary underline underline-offset-4">
+                Become a tutor
+              </Link>
+            </span>
+          </p>
+        </SearchBand>
       }
       sidebar={<BrowseSidebar subjects={subjectCounts} />}
       chips={<TutorFilterChips subjects={subjectRows} chipSubjects={chipSubjects} resultCount={popular.cards.length} />}
@@ -121,6 +138,9 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
           />
         )}
       </section>
+
+      <Steps />
+      <Values />
     </BrowseLayout>
   );
 }

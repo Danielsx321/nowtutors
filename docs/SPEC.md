@@ -693,6 +693,8 @@ Admin access is by `profiles.role = 'admin'` only. There is no admin signup rout
 ## 6. Routes
 
 > **Round 3 Part C (2026-09-26):** `/` (home) and `/tutors` (browse) render one shared layout, `BrowseLayout` (search band, sidebar from `lg`, live row, grid). Both routes remain; `/?<result key>` still forwards to `/tutors`. The v2 home blocks are parked (DECISIONS).
+>
+> **Audit pass 2 (2026-11-22):** home's search band speaks to the student ("Stuck on it? Get a real tutor in minutes") and carries a "How it works" jump and a "Teach on NowTutors? Become a tutor" line under the search. After the tutor grid come "How it works" (`#how-it-works`, the three steps un-parked and restyled for the browse column) and "Built for students" (three values the app already delivers; no 24/7 claim). The header shows "Become a tutor" (`/signup`) with the signed-out actions. `/tutors` keeps the plain band (DECISIONS 2026-11-22).
 
 ```
 PUBLIC
