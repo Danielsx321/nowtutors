@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { LANGUAGES } from "@/lib/geo/languages";
 import {
+  ABOUT_MIN,
   tutorOnboardingSchema,
   type TutorOnboardingValues,
 } from "@/lib/auth/schemas";
@@ -78,6 +79,7 @@ export function TutorForm({
   }, [setValue]);
 
   const fullName = watch("fullName");
+  const aboutLength = (watch("about") ?? "").trim().length;
   const avatarUrl = watch("avatarUrl");
   const selectedSubjects = watch("subjects");
   const languages = watch("languages");
@@ -170,8 +172,35 @@ export function TutorForm({
         <Label htmlFor="about" required>
           About you
         </Label>
-        <Textarea id="about" rows={5} invalid={!!errors.about} {...register("about")} />
+        <Textarea
+          id="about"
+          rows={5}
+          invalid={!!errors.about}
+          aria-describedby="about-count"
+          {...register("about")}
+        />
+        <p id="about-count" className="text-small text-text-muted">
+          {aboutLength < ABOUT_MIN
+            ? `${aboutLength} / ${ABOUT_MIN} characters minimum. Say what you teach, who you help and how.`
+            : `${aboutLength} characters.`}
+        </p>
         <FieldError>{errors.about?.message}</FieldError>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="introVideoUrl">Intro video (optional)</Label>
+        <Input
+          id="introVideoUrl"
+          type="url"
+          placeholder="https://www.youtube.com/watch?v=..."
+          invalid={!!errors.introVideoUrl}
+          aria-describedby="introVideoUrl-help"
+          {...register("introVideoUrl")}
+        />
+        <p id="introVideoUrl-help" className="text-small text-text-muted">
+          A short YouTube, Vimeo or Loom clip of you saying hello helps students pick you. You can add it later too.
+        </p>
+        <FieldError>{errors.introVideoUrl?.message}</FieldError>
       </div>
 
       <div className="space-y-2">

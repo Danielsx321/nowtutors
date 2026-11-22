@@ -154,6 +154,7 @@ export async function completeTutorOnboarding(
       languages: v.languages,
       education: v.education ?? null,
       yearsExperience: v.yearsExperience ?? null,
+      introVideoUrl: v.introVideoUrl ?? null,
     });
 
     const rows = v.subjects

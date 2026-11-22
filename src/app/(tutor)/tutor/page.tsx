@@ -30,6 +30,7 @@ import { BookingsTable } from "@/components/features/dashboard/bookings-table";
 import { DashboardColumns, RailBox } from "@/components/features/dashboard/dashboard-columns";
 import { GoLiveBanner } from "@/components/features/tutor/go-live-banner";
 import { cn } from "@/lib/utils";
+import { profileChecklist } from "@/lib/profile/checklist";
 
 export const metadata = { title: "Today · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -139,18 +140,7 @@ export default async function TutorTodayPage() {
   });
 
   const sessionsWith = new Map(students.map((s) => [s.userId, s.sessions]));
-  const checklist = [
-    { ok: profile.hasPhoto, text: profile.hasPhoto ? "Photo added" : "Add a photo" },
-    {
-      ok: profile.subjects > 0,
-      text: profile.subjects > 0 ? `${profile.subjects} ${profile.subjects === 1 ? "subject" : "subjects"} listed` : "List your subjects",
-    },
-    {
-      ok: profile.availabilityRules > 0,
-      text: profile.availabilityRules > 0 ? "Weekly availability set" : "Set your weekly availability",
-    },
-    { ok: profile.hasAbout, text: profile.hasAbout ? "About written" : "Write your About" },
-  ];
+  const checklist = profileChecklist(profile);
 
   const main = (
     <>

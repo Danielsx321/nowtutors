@@ -173,6 +173,25 @@ const subjectLevel = z.enum(["beginner", "intermediate", "advanced", "all"]);
  * Tutors must have a photo (Part G; Noora, decision 4): students choose a
  * person, and approval refuses without one. Students keep the optional one.
  */
+/**
+ * The shortest "About you" a new tutor can submit (audit, 18 Nov 2026: some
+ * profiles had a one-line bio). About two sentences. Edits keep the old floor
+ * ({@link ABOUT_MIN_LEGACY}) so a tutor approved before this can still change
+ * their rate or photo without rewriting their bio; the profile-strength card
+ * asks them to grow it instead (lib/profile/strength.ts).
+ */
+export const ABOUT_MIN = 150;
+export const ABOUT_MIN_LEGACY = 30;
+
+/** Optional intro video: https on YouTube, Vimeo or Loom only, empty allowed. */
+const introVideoUrl = z
+  .string()
+  .trim()
+  .url("Enter a valid video URL.")
+  .refine(isAllowedIntroVideoUrl, INTRO_VIDEO_HOST_MESSAGE)
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
 const tutorAvatarUrl = z
   .string({ message: "Add a profile photo." })
   .trim()
@@ -190,7 +209,12 @@ export const tutorOnboardingSchema = z.object({
     .optional(),
   avatarUrl: tutorAvatarUrl,
   headline: z.string().trim().min(10, "Write a short headline.").max(120),
-  about: z.string().trim().min(30, "Tell students about yourself.").max(2000),
+  about: z
+    .string()
+    .trim()
+    .min(ABOUT_MIN, `Write at least ${ABOUT_MIN} characters so students get to know you.`)
+    .max(2000),
+  introVideoUrl,
   // At least one subject, each with a level.
   subjects: z
     .array(z.object({ slug: z.string().trim().min(1), level: subjectLevel }))
@@ -215,20 +239,16 @@ export type TutorOnboardingValues = z.infer<typeof tutorOnboardingSchema>;
 /**
  * Tutor profile editor (/tutor/profile) — DERIVED from the onboarding schema so
  * the two can never drift: same field rules, one definition. Payout email is not
- * edited here (it lives in /tutor/settings), and the intro video is added
- * because it is offered after onboarding. Deliberately absent, and rejected
+ * edited here (it lives in /tutor/settings). The intro video is shared with
+ * onboarding since the audit pass (2026-11-22). One difference: `about` keeps
+ * the pre-audit floor ({@link ABOUT_MIN_LEGACY}), so a tutor with a short bio
+ * is never locked out of every other edit. Deliberately absent, and rejected
  * server-side if sent: approval_status, approval_note, slug, role.
  */
 export const tutorProfileEditSchema = tutorOnboardingSchema
   .omit({ paypalEmail: true })
   .extend({
-    introVideoUrl: z
-      .string()
-      .trim()
-      .url("Enter a valid video URL.")
-      .refine(isAllowedIntroVideoUrl, INTRO_VIDEO_HOST_MESSAGE)
-      .optional()
-      .or(z.literal("").transform(() => undefined)),
+    about: z.string().trim().min(ABOUT_MIN_LEGACY, "Tell students about yourself.").max(2000),
   });
 export type TutorProfileEditValues = z.infer<typeof tutorProfileEditSchema>;
 

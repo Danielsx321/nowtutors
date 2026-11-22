@@ -144,7 +144,7 @@ describe("completeTutorOnboarding", () => {
         fullName: "Tina Reyes",
         avatarUrl: "https://proj.supabase.co/storage/v1/object/public/avatars/tutor-1/avatar-1.jpg",
         headline: "Spanish tutor for all levels",
-        about: "I have taught Spanish for eight years to students of every age.",
+        about: "I have taught maths for ten years, from first algebra to final exams. I explain each idea step by step, check you have it, and build your confidence for the test.",
         subjects: [{ slug: "maths", level: "all" }],
         hourlyRateCredits: 30,
         languages: ["Spanish"],
