@@ -18,6 +18,7 @@ import {
   Heart,
   MoreHorizontal,
   Search,
+  Star,
 } from "lucide-react";
 
 export interface NavItem {
@@ -99,6 +100,7 @@ export const adminNav: NavItem[] = [
   { label: "Tutors", href: "/admin/tutors", icon: GraduationCap },
   { label: "Bookings", href: "/admin/bookings", icon: CalendarDays },
   { label: "Payments", href: "/admin/payments", icon: CreditCard },
+  { label: "Reviews", href: "/admin/reviews", icon: Star },
   { label: "Withdrawals", href: "/admin/withdrawals", icon: Banknote },
   { label: "Availability", href: "/admin/availability", icon: Clock },
   { label: "Subjects", href: "/admin/subjects", icon: BookOpen },

@@ -60,6 +60,24 @@ async function main() {
     const { error } = await rows(anon.from("live_tutors").select("*"));
     assert(!error, "anon can query live_tutors view (no error)");
   }
+  {
+    // Reviews v1 (0031): published reviews are public; hidden ones are filtered out.
+    const { data, error } = await rows(anon.from("reviews").select("is_published"));
+    assert(!error, "anon can query reviews (no error)");
+    assert(
+      data.every((r) => (r as { is_published: boolean }).is_published),
+      `anon sees only published reviews (${data.length})`,
+    );
+  }
+  {
+    const { error } = await anon.from("reviews").insert({
+      booking_id: crypto.randomUUID(),
+      student_id: crypto.randomUUID(),
+      tutor_id: crypto.randomUUID(),
+      rating: 5,
+    });
+    assert(!!error, "anon cannot INSERT into reviews (server-only writes)");
+  }
   let otherUserId: string | undefined;
   {
     const { data } = await rows(anon.from("tutor_profiles").select("*").limit(1));

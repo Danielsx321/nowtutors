@@ -6,6 +6,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import { getTutorBySlug, getTutorSubjects } from "@/db/queries/tutor-profile";
+import { getPublishedReviewsForTutor } from "@/db/queries/reviews";
+import { ReviewList } from "@/components/features/reviews/review-list";
+import { CardRating } from "@/components/features/reviews/card-rating";
 import {
   getBookableSubjects,
   getPublicBookingCalendar,
@@ -59,7 +62,8 @@ export async function generateMetadata({
  * the public group with no `loading.tsx`, so that 404 is the response status
  * and not only the view (the group's layout.tsx has the full reason).
  *
- * NO ratings or reviews anywhere: they come after launch (§18).
+ * Reviews (v1, 2026-11-22): the rating sits on the sessions line and a Reviews
+ * block follows About, both only once the tutor has a published review.
  *
  * Layout (design round 3 Part E, DESIGN.md v3 "Public pages", after Oranum's
  * expert page): the left column opens on the stage (the photo at 16:9 with the
@@ -100,6 +104,7 @@ export default async function TutorProfilePage({
     bookingSettings,
     instantTtlSeconds,
     usdPerCredit,
+    reviews,
   ] = await Promise.all([
     getTutorSubjects(tutor.userId),
     getPublicBookingCalendar(tutor.userId),
@@ -115,6 +120,7 @@ export default async function TutorProfilePage({
     getBookingSettings(),
     getInstantRequestTtlSeconds(),
     getUsdPerCredit(),
+    tutor.ratingCount > 0 ? getPublishedReviewsForTutor(tutor.userId) : Promise.resolve([]),
   ]);
 
   const bookingMode: BookingMode = !viewer
@@ -207,7 +213,15 @@ export default async function TutorProfilePage({
               items={[country, tutor.languages.length > 0 ? tutor.languages.join(", ") : null]}
               tags={[]}
             />
-            <p data-numeric className="mt-1 text-body text-text-muted">
+            <p data-numeric className="mt-1 flex flex-wrap items-center gap-x-1 text-body text-text-muted">
+              {tutor.ratingCount > 0 && (
+                <>
+                  <a href="#reviews" className="focus-ring rounded-sm text-text hover:underline">
+                    <CardRating avg={tutor.ratingAvg} count={tutor.ratingCount} className="text-body" />
+                  </a>
+                  {" · "}
+                </>
+              )}
               {tutor.completedSessions > 0
                 ? `${tutor.completedSessions.toLocaleString()} ${tutor.completedSessions === 1 ? "session" : "sessions"}`
                 : "No sessions yet"}
@@ -234,6 +248,14 @@ export default async function TutorProfilePage({
             <Block title={`About ${firstName}`}>
               <p className="max-w-[68ch] whitespace-pre-line text-body text-text">{tutor.about}</p>
             </Block>
+          )}
+
+          {reviews.length > 0 && (
+            <div id="reviews" className="scroll-mt-[72px]">
+              <Block title="Reviews">
+                <ReviewList reviews={reviews} ratingAvg={tutor.ratingAvg} ratingCount={tutor.ratingCount} />
+              </Block>
+            </div>
           )}
 
           {week && (

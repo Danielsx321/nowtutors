@@ -26,6 +26,8 @@ interface BookingDetailViewProps {
    * The page decides, because only a student may start a conversation.
    */
   messageAction?: React.ReactNode;
+  /** Shown under the details, e.g. the student's review form on a completed lesson. */
+  footer?: React.ReactNode;
 }
 
 /**
@@ -49,6 +51,7 @@ export function BookingDetailView({
   viewerTimeZone,
   backHref,
   messageAction,
+  footer,
 }: BookingDetailViewProps) {
   const meta = bookingStatusMeta(booking.status);
   const dateFmt = new Intl.DateTimeFormat("en-US", {
@@ -128,6 +131,8 @@ export function BookingDetailView({
               </span>
             </div>
           )}
+
+          {footer}
 
           {booking.studentNotes && (
             <div className="space-y-1">

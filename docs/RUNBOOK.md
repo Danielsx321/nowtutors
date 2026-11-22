@@ -971,3 +971,26 @@ console keeps logging what would have been blocked.
 change a weight range, download the new latin woff2 from Google Fonts' CSS for that range, replace
 the file and update `weight` in `src/app/layout.tsx`.
 
+
+## Reviews v1 (2026-11-22)
+
+Students review a completed lesson on `/dashboard/bookings/[id]`; admins hide or show at `/admin/reviews`.
+Table and rules: SPEC §4.3, `drizzle/0031_reviews.sql`.
+
+**Rolling out on production** (in this order; the new code reads `reviews`, so the table goes first):
+
+1. Before merging the PR: `CONFIRM_PROD=1 pnpm db:migrate:prod` from `~/nowtutors` on the PR branch
+   (`feat/reviews-v1`), then `CONFIRM_PROD=1 pnpm db:verify-rls:prod`. The migration only adds a table,
+   its triggers and its policy, so the code live on `main` keeps working while it runs.
+2. Check in the Supabase SQL editor on the production project:
+   `select count(*) from reviews;` (0) and
+   `select tgname from pg_trigger where tgrelid = 'public.reviews'::regclass and not tgisinternal;`
+   (`reviews_guard`, `reviews_recompute_rating`, `set_updated_at`).
+3. Merge the PR and wait for the Vercel production deploy.
+4. Open any tutor profile (no rating shows until a first review) and `/admin/reviews` (empty list).
+
+**If a tutor's rating looks wrong.** The trigger keeps it equal to the published rows. Compare
+`select rating_avg, rating_count from tutor_profiles where user_id = '<id>';` with
+`select round(avg(rating)::numeric, 2), count(*) from reviews where tutor_id = '<id>' and is_published;`.
+If they differ, a write bypassed the table (for example a hand edit of `tutor_profiles`); re-run the
+recompute with `update reviews set updated_at = now() where id = (select id from reviews where tutor_id = '<id>' limit 1);`.

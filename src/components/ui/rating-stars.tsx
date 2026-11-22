@@ -13,8 +13,8 @@ export interface RatingStarsProps
 }
 
 /**
- * Read-only 5-star rating with fractional fill. In the inventory but not
- * rendered anywhere until reviews exist (SPEC §18), after launch. Filled stars are ink, not
+ * Read-only 5-star rating with fractional fill. Rendered since reviews v1
+ * (2026-11-22): profile Reviews block, review form, /admin/reviews. Filled stars are ink, not
  * green: green is the live signal and nothing else (DESIGN.md).
  */
 export function RatingStars({
@@ -32,7 +32,7 @@ export function RatingStars({
   const clamped = Math.max(0, Math.min(5, value));
   const label =
     count != null
-      ? `Rated ${clamped.toFixed(1)} out of 5 from ${count} reviews`
+      ? `Rated ${clamped.toFixed(1)} out of 5 from ${count} ${count === 1 ? "review" : "reviews"}`
       : `Rated ${clamped.toFixed(1)} out of 5`;
   return (
     <div

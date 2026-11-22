@@ -186,7 +186,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 > `bookings.reminder_24h_sent_at` / `reminder_1h_sent_at`
 > added. `credit_transactions.type` gains `instant_hold` / `instant_release` / `instant_capture`
 > (now **unused** — §18 made instant billing a single flat `booking_debit`; enum values retained).
-> The `reviews` table is deferred (no Review type in the current build). `broadcasts` /
+> The `reviews` table was deferred (no Review type in the Bubble build) and was built on 2026-11-22 (reviews v1, `drizzle/0031`, §4.3). `broadcasts` /
 > `broadcast_viewers` are NET-NEW, not parity. `platform_settings.presence_stale_seconds`
 > removed (threshold baked into the `live_tutors` view); `credit_packages` added
 > (`max_instant_minutes` / `min_instant_credits` later removed by §18). Booking overlap is a scheduled-only GiST
@@ -232,7 +232,7 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | is_live | boolean default false | broadcasting or available for instant |
 | live_mode | enum `instant` \| `broadcast` \| null | what "live" currently means |
 | last_seen_at | timestamptz | heartbeat target |
-| rating_avg | numeric(3,2) default 0 | denormalized, recomputed on new review. **Server-only** (`tutor_stats_guard`, `drizzle/0027`), with the next three |
+| rating_avg | numeric(3,2) default 0 | denormalized, recomputed from published reviews by the `reviews_recompute_rating` trigger (`drizzle/0031`) on every review insert, hide, show or delete. **Server-only** (`tutor_stats_guard`, `drizzle/0027`), with the next three |
 | rating_count | integer default 0 |  |
 | completed_sessions | integer default 0 | denormalized |
 | total_minutes_taught | integer default 0 |  |
@@ -398,7 +398,20 @@ separate statement, issued after the rollback** and conditional on the row still
 write inside the transaction would be rolled back with everything else, leaving the request looking
 untouched (§7.4).
 
-**`reviews`** — **DEFERRED (not built in Phase 1).** No Review type exists in the current Bubble build (Decision C). Ratings are denormalized scalars on `tutor_profiles` (`rating_avg`, `rating_count`) with nothing writing them yet. If reviews become a feature: `booking_id uuid unique FK, student_id, tutor_id, rating smallint check (rating between 1 and 5), comment text, is_published boolean default true`.
+**`reviews`** — **built 2026-11-22 (reviews v1, `drizzle/0031`; DECISIONS 2026-11-22).** Deferred in Phase 1 (no Review type in the Bubble build, Decision C) and brought into v1 after the outside reviewer's audit, on Daniels' approval.
+
+| column | type | notes |
+|---|---|---|
+| id | uuid pk | |
+| booking_id | uuid not null, unique, FK bookings on delete cascade | one review per lesson |
+| student_id | uuid not null, FK profiles on delete cascade | the booking's student |
+| tutor_id | uuid not null, FK profiles on delete cascade | the booking's tutor |
+| rating | smallint not null | check 1 to 5 |
+| comment | text | optional, at most 1,000 characters (check) |
+| is_published | boolean not null default true | false = hidden by an admin (`/admin/reviews`) |
+| created_at, updated_at | timestamptz | `set_updated_at` |
+
+Index: `(tutor_id, created_at desc) where is_published`. **Writers: the server only** (`actions/reviews.ts` `submitReview` for the student, `setReviewPublished` for an admin, both on the trusted Drizzle connection). RLS: SELECT for anon and authenticated where `is_published`, or the row's own student or tutor, or an admin; **no client INSERT, UPDATE or DELETE policy**. `reviews_guard` (BEFORE INSERT) refuses any row that does not match a `completed` booking of that student with that tutor, whoever writes it. `reviews_recompute_rating` (AFTER INSERT/UPDATE/DELETE) sets `tutor_profiles.rating_avg` (2 dp) and `rating_count` from the published rows; it runs in the writer's session, which `tutor_stats_guard` (0027) admits. Nothing is imported from outside platforms and nothing is seeded on production ("Banned tells").
 
 ### 4.4 Money
 
@@ -697,7 +710,9 @@ PUBLIC
                                    About, Subjects, "This week" (open start times per day in the viewer's
                                    timezone, from the same calendar the panel books from), Background, and
                                    a sticky panel: rate, "Start now" (if instant-available), "Book a
-                                   session", Message, trust lines. No reviews until after launch (§18)
+                                   session", Message, trust lines. Reviews (v1, 2026-11-22): the rating on the
+                                   sessions line and a Reviews block after About, both only once the tutor
+                                   has a published review
 /live                              Currently live broadcasts
 /live/[broadcastId]                Viewer page (Agora audience)
 /how-it-works, /pricing, /faq
@@ -751,6 +766,7 @@ ADMIN  (role = admin)
 /admin/tutors                      Approval queue
 /admin/bookings                    All bookings, filters, force-complete/cancel
 /admin/payments                    PayPal records, reconciliation view
+/admin/reviews                     Newest reviews, hidden ones included, with Hide / Show (reviews v1, 2026-11-22)
 /admin/withdrawals                 Queue: approve → pay → mark paid with reference
 /admin/availability                Monthly availability bonus: live hours this month per tutor against the
                                    threshold, months paid, "run now" for the job on the 1st (2026-10-14, monthly 2026-11-15)
@@ -797,13 +813,13 @@ Filters: subject (multi), price range (**credit bands in credits/hour**, compare
 
 > **Unknown `subject` / `lang` slugs return an empty result set; they do NOT throw.** This is deliberate, and the asymmetry with `sort` / `price` / `minRating` (which reject — §3.3) is a decision, not an inconsistency. Those three are **closed enumerations**: an unrecognised value can only be a typo or a stale link, and silently coercing or dropping it would show results that do not match the URL. Subject and language slugs are **open, admin-editable data** — a subject can be renamed or deactivated, so a previously valid slug in a shared link becomes unknown through no fault of the user. Both behaviours fail safe: the enums fail loudly, and an unknown slug yields a visibly empty grid ("no tutors match your filters") rather than silently widening the query — never Bubble's `ignore_empty_constraints` failure, where the filter disappears and unrelated results look correct.
 
-> **No `rating` sort** — reviews are dropped for v1 (§18), so there is no rating data to sort by; the code has never had one. The **`minRating` filter stays** in both spec and code (parsed, composed, and unit-tested) but is dormant and unsurfaced until reviews exist. An unrecognised `sort` value is rejected, not silently coerced (§3.3).
+> **No `rating` sort** — the code has never had one. Reviews exist since 2026-11-22 (§4.3), but a sort or a `minRating` filter would bury every tutor without reviews yet, which is nearly all of them at launch, so both stay unsurfaced until enough tutors have reviews (DECISIONS 2026-11-22). The **`minRating` filter stays** in both spec and code (parsed, composed, and unit-tested), dormant. An unrecognised `sort` value is rejected, not silently coerced (§3.3).
 
 Base query: `tutor_profiles` where `approval_status = 'approved'` and owning profile not suspended. When `live_now` is on, query the `live_tutors` view instead (Section 3.1) — **this is the fix for the stale LIVE badge, and it must be a view join, not a boolean check.**
 
 Layout (amended 2026-09-18, live-globe rebuild Part C; pages.html, Browse): kicker and title, a search pill that searches subjects (the browser suggests names from the active list; Search picks the best match and sets `?subject=`, keeping other filters; text matching no subject says so), a chip row (Live now first, All subjects, the five most-taught subjects, then Price and Language as dropdown chips) with the result count and sort beside it, and the card grid with the no-show promise tile after the third card. There is no side rail and no phone-only filter sheet: every filter is a chip, and the chip row scrolls sideways on phones. `minRating` stays dormant as above.
 
-Card contents (amended 2026-09-16, design overhaul Part 3, and 2026-09-18, live-globe Part D; DESIGN.md "Cards"): photo inset (initials fallback), a "Live now" chip and the green on-air ring only when in `live_tutors` for instant sessions AND `accepts_instant`, a "LIVE" chip linking to the broadcast when broadcasting, nothing at all when offline; favourite heart; name and country (by name); headline; the first subject as a tag; proof row (Experience, Sessions, Rate with the "≈ $" anchor from the direct-pay basis package); one action: teal "Request now" (to the profile's Start now panel), outline "Watch live", or ink "Book a session". No rating until reviews exist (§18). A `row` variant is used below `md`. The filter bar leads with a "Live now" chip and shows the result count across all pages.
+Card contents (amended 2026-09-16, design overhaul Part 3, and 2026-09-18, live-globe Part D; DESIGN.md "Cards"): photo inset (initials fallback), a "Live now" chip and the green on-air ring only when in `live_tutors` for instant sessions AND `accepts_instant`, a "LIVE" chip linking to the broadcast when broadcasting, nothing at all when offline; favourite heart; name and country (by name); headline; the first subject as a tag; proof row (Experience, Sessions, Rate with the "≈ $" anchor from the direct-pay basis package); one action: teal "Request now" (to the profile's Start now panel), outline "Watch live", or ink "Book a session". The rating ("★ 4.8 (12)") sits beside the country once the tutor has a published review (reviews v1, 2026-11-22); a tutor with none shows nothing, never a zero. A `row` variant is used below `md`. The filter bar leads with a "Live now" chip and shows the result count across all pages.
 
 Avatar rendering: `next/image` with `remotePatterns` configured for the Supabase Storage domain, plus a generated initials fallback. (The current "LIVE tutor card photos not rendering" bug is an image-host configuration issue in Bubble; in Next it's the `remotePatterns` allowlist. Get this right in Phase 3 and it never recurs.)
 
@@ -1685,7 +1701,7 @@ The values are declared once in `src/app/globals.css` and mirrored as data in `s
 
 ### 10.2 Component inventory
 
-Primitives (`src/components/ui/`): `Button` (primary / **highlight** / **ink** / **outline** / ghost / **live** / danger × sm / md / lg / icon, loading, asChild; `secondary` is a deprecated alias of `outline`), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `DatePicker`, `TimePicker`, `Label`, `FieldError`, `Card` (`interactive`), `StatCard`, `Badge` (neutral / accent / live / success / warning / danger / solid), **`LiveChip`** (replaces `LivePill`: always a text label, "Live now" or "LIVE" with an optional viewer count), **`OnAirRing`** (the green ring for instant-available tutors, `still` variant), **`StatRow`** (Experience, Sessions, Rate), **`Money`** (credits with the "≈ $" anchor from the basis package), **`AlertDialog`** (money and destructive confirms; `role="alertdialog"`), **`Progress`** (linear), `ProgressRing` (the 60-second countdown), `Avatar` (initials fallback on `surface-muted`), `RatingStars` (in the inventory, unrendered until reviews exist, §18), `SubjectChip`, `Tabs`, `Modal`, `Drawer`, `Toast`, `Tooltip`, `DropdownMenu`, `Pagination`, `EmptyState`, `Skeleton`, `Spinner`, `PriceTag`, `CreditBalance`, `Table` (`numeric` cells), `Breadcrumb`, `Alert`. Plus `Wordmark` in `components/layout/`, alongside the site shell: **`SiteHeader`** (wordmark, pill nav with the current page as a teal pill, Log in / Sign up signed out or the avatar and a link to the role home signed in, and a menu sheet below `md`), **`SiteFooter`** (brand, the live count read server-side, two actions, the Learn / Teach / Account columns and the trust pair, as a dark island) and **`SiteShell`** (header + main + footer, which reads the viewer and the live count itself).
+Primitives (`src/components/ui/`): `Button` (primary / **highlight** / **ink** / **outline** / ghost / **live** / danger × sm / md / lg / icon, loading, asChild; `secondary` is a deprecated alias of `outline`), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `DatePicker`, `TimePicker`, `Label`, `FieldError`, `Card` (`interactive`), `StatCard`, `Badge` (neutral / accent / live / success / warning / danger / solid), **`LiveChip`** (replaces `LivePill`: always a text label, "Live now" or "LIVE" with an optional viewer count), **`OnAirRing`** (the green ring for instant-available tutors, `still` variant), **`StatRow`** (Experience, Sessions, Rate), **`Money`** (credits with the "≈ $" anchor from the basis package), **`AlertDialog`** (money and destructive confirms; `role="alertdialog"`), **`Progress`** (linear), `ProgressRing` (the 60-second countdown), `Avatar` (initials fallback on `surface-muted`), `RatingStars` (rendered since reviews v1, 2026-11-22: profile Reviews block, review form, `/admin/reviews`), `SubjectChip`, `Tabs`, `Modal`, `Drawer`, `Toast`, `Tooltip`, `DropdownMenu`, `Pagination`, `EmptyState`, `Skeleton`, `Spinner`, `PriceTag`, `CreditBalance`, `Table` (`numeric` cells), `Breadcrumb`, `Alert`. Plus `Wordmark` in `components/layout/`, alongside the site shell: **`SiteHeader`** (wordmark, pill nav with the current page as a teal pill, Log in / Sign up signed out or the avatar and a link to the role home signed in, and a menu sheet below `md`), **`SiteFooter`** (brand, the live count read server-side, two actions, the Learn / Teach / Account columns and the trust pair, as a dark island) and **`SiteShell`** (header + main + footer, which reads the viewer and the live count itself).
 
 Composed: `TutorCard`, `BookingCard`, `SlotPicker`, `AvailabilityGrid`, `MessageBubble`, `ConversationListItem`, `TransactionRow`, `VideoTile`, `SessionControlBar`, `IncomingRequestModal`, `WaitingForTutorModal`. Part 2 added `BottomNav` (the mobile bottom bar) and `UnreadCountProvider` (one Realtime channel for both badge sites); Parts 3 to 6 add the room pieces (`Lobby`, `ControlBar`, `SidePanel`, `ConnectionBanner`, `SessionEnded`), the tutor pieces (`TodayFeed`, `EarningsStages`, `PayoutInFlight`) and the admin `DataTable`; each lands in its part's SPEC amendment.
 
@@ -1701,7 +1717,7 @@ Responsive from 360px. **One** visible keyboard focus ring, 2px `focus` / 2px of
 
 Loading and empty states designed, not afterthoughts: an empty bookings list invites the student to browse tutors.
 
-**Trust line (settled with Noora 2026-09-16).** Student booking surfaces may promise: "If your tutor doesn't show, your credits come back." It matches the force-cancel refund rule (§7.6). "Secure payment via PayPal" ships alongside it. Reviews stay out of v1 and come after launch (§18); tutor photos are required at approval (built in Part 6).
+**Trust line (settled with Noora 2026-09-16).** Student booking surfaces may promise: "If your tutor doesn't show, your credits come back." It matches the force-cancel refund rule (§7.6). "Secure payment via PayPal" ships alongside it. Reviews came into v1 on 2026-11-22 (§4.3): first-party only, shown once a tutor has one; tutor photos are required at approval (built in Part 6).
 
 **Banned tells (v2, 2026-09-17).** The rebuild bans what made the first mockups read as a template, and two of them are enforced by `tests/unit/design-tokens.test.ts`: **no CSS gradient anywhere in `src/`** outside a named allowlist (the globe's fallback sphere and the skeleton shimmer), and **no `text-spark`** (orange is a mark; readable orange is `spark-text`). The rest are review rules: no tinted tile or coloured circle behind an icon, no coloured side stripe on a card or alert, no multicolour rules under a section, no gradient headline text or background glow, no second loud fill competing with the screen's primary action, no glassmorphism outside the home hero's proof strip, no tracked all-caps eyebrow, and no invented content (ratings, awards, badges, streaks or goals the app does not have). Icons are plain lines, stroke 1.8, in `currentColor` or teal. Full list with the reason for each: `docs/DESIGN.md`, "Banned tells".
 
@@ -2133,8 +2149,10 @@ CLAUDE.md standing rule. Original numbering is kept so existing cross-references
    Bubble app offers all four durations on both the instant and scheduled booking popups; the
    three-value menu would have silently dropped the 120-minute option at cutover. See DECISIONS
    Phase 6.
-2. **Reviews** — **dropped for v1** (no Review type in the current Bubble build; recorded in the
-   Phase 1 DECISIONS). No `reviews` table; rating stays a denormalized scalar on `tutor_profiles`.
+2. **Reviews** — dropped for v1 in Phase 1 (no Review type in the Bubble build), then **built on
+   2026-11-22** (reviews v1, §4.3, `drizzle/0031`) after the outside reviewer's audit, on Daniels'
+   approval: a student reviews a completed lesson once, the rating shows on the card and profile from
+   the first review, and an admin can hide one at `/admin/reviews`. Settled.
 3. **Broadcast chat** — broadcasts are **net-new** functionality beyond current parity (Phase 1
    decision), so live broadcast chat is **deferred to the broadcast phase** and is not a v1-parity
    question. (Not covered by the resolution batch that settled the rest — see DECISIONS.)
