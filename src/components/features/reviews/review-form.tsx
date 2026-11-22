@@ -39,7 +39,7 @@ export function ReviewForm({
 
   if (sent) {
     return (
-      <section aria-labelledby="review-title" className="grid gap-2 rounded-card border border-border p-4">
+      <section id="review" aria-labelledby="review-title" className="grid scroll-mt-[72px] gap-2 rounded-card border border-border p-4">
         <h2 id="review-title" className="font-display text-body-lg font-semibold text-text">
           Your review
         </h2>
@@ -72,9 +72,10 @@ export function ReviewForm({
 
   return (
     <form
+      id="review"
       onSubmit={onSubmit}
       aria-labelledby="review-title"
-      className="grid gap-3 rounded-card border border-border p-4"
+      className="grid scroll-mt-[72px] gap-3 rounded-card border border-border p-4"
     >
       <h2 id="review-title" className="font-display text-body-lg font-semibold text-text">
         How was your lesson with {tutorFirstName}?

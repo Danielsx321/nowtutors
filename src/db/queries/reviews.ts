@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { profiles, reviews, tutorProfiles } from "@/db/schema";
+import { bookings, profiles, reviews, subjects, tutorProfiles } from "@/db/schema";
 import { reviewerName } from "@/lib/reviews/review";
 
 export interface PublicReview {
@@ -91,4 +91,49 @@ export async function getRecentReviewsForAdmin(limit = 100): Promise<AdminReview
     tutorName: r.tutorName,
     tutorSlug: r.tutorSlug,
   }));
+}
+
+export interface LessonToReview {
+  bookingId: string;
+  tutorName: string | null;
+  tutorAvatarUrl: string | null;
+  subjectName: string | null;
+  endedAt: Date;
+}
+
+/** How far back the dashboard asks for a review (days after the lesson ended). */
+export const REVIEW_PROMPT_DAYS = 30;
+
+/**
+ * The student's completed lessons from the last {@link REVIEW_PROMPT_DAYS}
+ * days with no review yet, newest first: the dashboard's "Rate your lessons"
+ * prompt. Instant and scheduled both count. A lesson drops off once reviewed
+ * or once it is older than the window, so the prompt never nags forever.
+ */
+export async function getLessonsToReview(studentId: string, limit = 3, now = new Date()): Promise<LessonToReview[]> {
+  const ended = sql<Date>`coalesce(${bookings.endedAt}, ${bookings.scheduledEndAt}, ${bookings.createdAt})`;
+  const since = new Date(now.getTime() - REVIEW_PROMPT_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      tutorName: profiles.displayName,
+      tutorAvatarUrl: profiles.avatarUrl,
+      subjectName: subjects.name,
+      endedAt: ended,
+    })
+    .from(bookings)
+    .innerJoin(profiles, eq(profiles.id, bookings.tutorId))
+    .leftJoin(subjects, eq(subjects.id, bookings.subjectId))
+    .leftJoin(reviews, eq(reviews.bookingId, bookings.id))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(bookings.status, "completed"),
+        isNull(reviews.id),
+        sql`${ended} > ${since.toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(desc(ended))
+    .limit(limit);
+  return rows.map((r) => ({ ...r, endedAt: new Date(r.endedAt) }));
 }

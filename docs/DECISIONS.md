@@ -5849,3 +5849,17 @@ No migration.
    camera setup can still join.
 4. The checklist moved to `lib/profile/checklist.ts` (unit tested); `getProfileCompleteness` now returns
    `aboutLength` and `hasVideo` as well (`hasAbout` kept).
+
+
+## 2026-11-22 · Review prompts (reviews v1 follow-up)
+
+1. **The session-summary email asks for the rating.** A completed lesson's student summary (already sent
+   once per booking, when its earnings row is written) now leads with "Rate this lesson", linking to
+   `/dashboard/bookings/[id]#review`; "Book again" moves into the body. A student no-show keeps "Book
+   again", since there is nothing to rate. No new email type, job or column: the summary's once-only
+   rule already covers it, and its preference (`booking_confirmations`) still applies.
+2. **"Rate your lessons" on the student dashboard.** The first box in the right column lists up to three
+   completed lessons from the last 30 days with no review, each linking to its form. It shows only when
+   there is something to rate, and a lesson drops off once rated or 30 days after it ended, so it never
+   nags forever. Instant and scheduled lessons both count (`getLessonsToReview`).
+
