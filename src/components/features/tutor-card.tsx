@@ -11,6 +11,7 @@ import {
 } from "@/components/features/favourite-heart";
 import type { TutorCardData } from "@/db/queries/tutors";
 import { countryName } from "@/lib/geo/country-centroids";
+import { CardRating } from "@/components/features/reviews/card-rating";
 
 export interface TutorCardProps {
   tutor: TutorCardData;
@@ -88,7 +89,8 @@ function SubjectChipsFixed({ subjects }: { subjects: string[] }) {
  * the name with the country on a navy strip along the photo's bottom edge;
  * under the photo the stacked rate beside the subject chips (two lines at
  * most, so every card is the same height); one full-width action. Experience and sessions moved to the profile's identity
- * line. No rating until reviews exist, after launch (SPEC §18).
+ * line. The rating shows beside the country once the tutor has a published
+ * review (reviews v1, 2026-11-22); a new tutor shows none, never a zero.
  *
  * The action follows the state: blue "Request now" when a request can start a
  * session this minute, outline "Watch live" for a broadcast, ink "Book a
@@ -179,6 +181,7 @@ export function TutorCard({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {chip}
                 {country && <span className="text-caption text-text-muted">{country}</span>}
+                <CardRating avg={tutor.ratingAvg} count={tutor.ratingCount} className="text-text" />
               </div>
             </div>
             {heart}
@@ -219,11 +222,14 @@ export function TutorCard({
           <h3 className="truncate font-display text-[17px] font-semibold leading-tight tracking-[-0.01em]">
             {title}
           </h3>
-          {country && (
-            <span className="max-w-[45%] shrink-0 truncate text-caption font-medium text-on-ink/80">
-              {country}
-            </span>
-          )}
+          <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2">
+            <CardRating avg={tutor.ratingAvg} count={tutor.ratingCount} className="text-on-ink" />
+            {country && (
+              <span className="min-w-0 truncate text-caption font-medium text-on-ink/80">
+                {country}
+              </span>
+            )}
+          </span>
         </div>
       </OnAirRing>
 

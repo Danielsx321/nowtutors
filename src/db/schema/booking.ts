@@ -1,9 +1,12 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
+  check,
   index,
   integer,
   numeric,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -104,5 +107,36 @@ export const sessionRequests = pgTable(
   ],
 );
 
-// NOTE: reviews table deferred — no Review type exists in the Bubble build
-// (Decision C). Ratings live as scalar columns on tutor_profiles.
+// Reviews v1 (drizzle/0031, 2026-11-22; SPEC §4.3). One per completed booking,
+// written by its student through actions/reviews.ts only (no client write
+// policy). The BEFORE INSERT guard checks the booking is completed and theirs;
+// an AFTER trigger keeps tutor_profiles.rating_avg / rating_count equal to the
+// published rows. is_published = false is an admin hide.
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: uuidPk(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    rating: smallint("rating").notNull(),
+    comment: text("comment"),
+    isPublished: boolean("is_published").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("reviews_booking_unique").on(t.bookingId),
+    index("reviews_tutor_published_idx")
+      .on(t.tutorId, t.createdAt.desc())
+      .where(sql`${t.isPublished}`),
+    check("reviews_rating_chk", sql`${t.rating} BETWEEN 1 AND 5`),
+    check("reviews_comment_len_chk", sql`${t.comment} IS NULL OR length(${t.comment}) <= 1000`),
+  ],
+);
