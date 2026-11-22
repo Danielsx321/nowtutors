@@ -5,6 +5,8 @@
  */
 const LABELS: Record<string, string> = {
   "tutor.approve": "Approved a tutor",
+  "review.hide": "Hid a review",
+  "review.show": "Showed a hidden review again",
   "tutor.reject": "Rejected a tutor application",
   "tutor.request_changes": "Asked a tutor for changes",
   "tutor.mark_reviewed": "Re-reviewed a changed tutor profile",

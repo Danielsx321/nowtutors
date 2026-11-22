@@ -6,6 +6,8 @@ import { requireRole } from "@/lib/auth/guards";
 import { getBookingDetailForParticipant } from "@/db/queries/bookings";
 import { BookingDetailView } from "@/components/features/booking/booking-detail-view";
 import { MessageTutorButton } from "@/components/features/messaging/message-tutor-button";
+import { getReviewForBooking } from "@/db/queries/reviews";
+import { ReviewForm } from "@/components/features/reviews/review-form";
 
 export const metadata = { title: "Booking · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -25,6 +27,10 @@ export default async function StudentBookingDetailPage({
   ]);
   if (!booking || !booking.isStudent) notFound();
 
+  // Reviews v1 (2026-11-22): a completed lesson asks for one review.
+  const review = booking.status === "completed" ? await getReviewForBooking(booking.id) : null;
+  const tutorFirstName = booking.otherPartyName?.trim().split(/\s+/)[0] || "your tutor";
+
   return (
     <BookingDetailView
       booking={booking}
@@ -38,6 +44,15 @@ export default async function StudentBookingDetailPage({
           loginHref={`/login?next=/dashboard/bookings/${booking.id}`}
           className="w-full sm:w-auto"
         />
+      }
+      footer={
+        booking.status === "completed" ? (
+          <ReviewForm
+            bookingId={booking.id}
+            tutorFirstName={tutorFirstName}
+            existing={review ? { rating: review.rating, comment: review.comment } : null}
+          />
+        ) : undefined
       }
     />
   );
