@@ -225,6 +225,13 @@
       "when": 1794800000000,
       "tag": "0031_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794810000000,
+      "tag": "0032_tutor_session_counts",
+      "breakpoints": true
     }
   ]
 }

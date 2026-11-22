@@ -234,8 +234,8 @@ Postgres. All tables have `id uuid primary key default gen_random_uuid()`, `crea
 | last_seen_at | timestamptz | heartbeat target |
 | rating_avg | numeric(3,2) default 0 | denormalized, recomputed from published reviews by the `reviews_recompute_rating` trigger (`drizzle/0031`) on every review insert, hide, show or delete. **Server-only** (`tutor_stats_guard`, `drizzle/0027`), with the next three |
 | rating_count | integer default 0 |  |
-| completed_sessions | integer default 0 | denormalized |
-| total_minutes_taught | integer default 0 |  |
+| completed_sessions | integer default 0 | denormalized: the tutor's `completed` bookings, recounted by the `bookings_session_counts` trigger (`drizzle/0032`, 2026-11-22) whenever a booking's status, minutes or tutor changes; server-only |
+| total_minutes_taught | integer default 0 | sum of `billed_minutes` (else `duration_minutes`) over the same completed bookings, same trigger |
 | profile_changed_at | timestamptz null | stamped when an **approved** tutor changes a MATERIAL field (§7.1 re-review) |
 | profile_reviewed_at | timestamptz null | stamped by an admin's "Mark reviewed" action |
 
