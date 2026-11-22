@@ -5834,3 +5834,18 @@ No migration.
    by rating would bury them; the dormant filter stays dormant until reviews are common.
 10. **Where a student leaves one:** the completed booking's page (`/dashboard/bookings/[id]`). A nudge
     after the lesson (an email or a dashboard prompt) is a follow-up, not in this PR.
+
+
+## 2026-11-22 · Audit pass 2, profile quality (outside reviewer's video audit, point 8)
+
+1. **About needs 150 characters at onboarding** (`ABOUT_MIN`, about two sentences), with a live counter.
+   The reviewer found profiles with a one-line bio next to long ones.
+2. **Not retroactive.** The profile editor keeps the old 30-character floor (`ABOUT_MIN_LEGACY`). Raising
+   it there would lock every short-bio tutor out of changing their rate or photo, and an About edit is a
+   material change that flags re-review (§4.1), so forcing rewrites would also fill the admin queue at
+   once. Instead the Today checklist says "Grow your About to 150+ characters (now N)".
+3. **Intro video offered at onboarding**, optional, same YouTube / Vimeo / Loom rule as the editor (one
+   validator, shared). The checklist asks for one until it is there. Not required: a tutor without a
+   camera setup can still join.
+4. The checklist moved to `lib/profile/checklist.ts` (unit tested); `getProfileCompleteness` now returns
+   `aboutLength` and `hasVideo` as well (`hasAbout` kept).

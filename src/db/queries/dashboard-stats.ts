@@ -270,6 +270,9 @@ export interface ProfileCompleteness {
   /** Active weekly availability rules. */
   availabilityRules: number;
   hasAbout: boolean;
+  /** Trimmed length of the About text (audit pass 2: a short bio is flagged). */
+  aboutLength: number;
+  hasVideo: boolean;
 }
 
 /**
@@ -277,22 +280,27 @@ export interface ProfileCompleteness {
  * photo, subjects, weekly availability and an About. Facts, not a score.
  */
 export async function getProfileCompleteness(tutorId: string): Promise<ProfileCompleteness> {
-  const rows = await db.execute<{ has_photo: boolean; subjects: number; rules: number; has_about: boolean }>(sql`
+  type Row = { has_photo: boolean; subjects: number; rules: number; about_length: number; has_video: boolean };
+  const rows = await db.execute<Row>(sql`
     select
       (p.avatar_url is not null and p.avatar_url <> '') as has_photo,
       (select count(*) from tutor_subjects ts where ts.tutor_id = ${tutorId})::int as subjects,
       (select count(*) from availability_rules ar where ar.tutor_id = ${tutorId} and ar.is_active)::int as rules,
-      (coalesce(length(trim(tp.about)), 0) > 0) as has_about
+      coalesce(length(trim(tp.about)), 0)::int as about_length,
+      (tp.intro_video_url is not null and tp.intro_video_url <> '') as has_video
     from profiles p
     join tutor_profiles tp on tp.user_id = p.id
     where p.id = ${tutorId}
   `);
-  const r = Array.from(rows as Iterable<{ has_photo: boolean; subjects: number; rules: number; has_about: boolean }>)[0];
+  const r = Array.from(rows as Iterable<Row>)[0];
+  const aboutLength = Number(r?.about_length ?? 0);
   return {
     hasPhoto: !!r?.has_photo,
     subjects: Number(r?.subjects ?? 0),
     availabilityRules: Number(r?.rules ?? 0),
-    hasAbout: !!r?.has_about,
+    hasAbout: aboutLength > 0,
+    aboutLength,
+    hasVideo: !!r?.has_video,
   };
 }
 

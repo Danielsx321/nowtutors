@@ -22,7 +22,7 @@ describe("tutor forms require a photo", () => {
   const base = {
     fullName: "Ada Obi",
     headline: "Maths for GCSE and A-level",
-    about: "I have taught maths for eight years and love exam prep.",
+    about: "I have taught maths for ten years, from first algebra to final exams. I explain each idea step by step, check you have it, and build your confidence for the test.",
     subjects: [{ slug: "algebra", level: "all" as const }],
     hourlyRateCredits: 40,
     languages: ["English" as const],
