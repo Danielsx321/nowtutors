@@ -5787,3 +5787,22 @@ No migration.
 4. **Sign-up asks for the full name.** Stored as `full_name` in the auth user's metadata only (no schema
    change); onboarding starts its name field filled from it (or from Google's `full_name` / `name`), and
    the profile is still written at onboarding as before.
+
+
+## 2026-11-22 · Audit pass 2, home (outside reviewer's video audit, point 4)
+
+1. **The band stays the hero.** The reviewer asked for a warmer, student-first hero. A second hero over
+   the navy search band would undo the client's round 3 structure (Oranum layout, 2026-09-26), so the
+   band itself changes: heading "Stuck on it? Get a real tutor in minutes", a subline on both ways to
+   learn, and under the search a "How it works" jump and "Teach on NowTutors? Become a tutor". The band
+   takes optional children for this; `/tutors` passes none.
+2. **How it works and values follow the tutor grid, not precede it.** The same audit (point 2) wanted the
+   tutors visible without scrolling, so the sections sit after the eight cards and the band links down to
+   them. `Steps` is un-parked and restyled to the browse column's plain h2 (the parked version used a
+   tracked all-caps kicker, a banned tell); step 1 reads "Find your tutor", since booking for later is
+   the other half.
+3. **Values say only what the app does.** "Real people, not a chatbot", "Tutors checked before they
+   teach" (the admin approval every profile passes) and "Live now or booked for later". The reviewer's
+   "available 24/7" is left out: tutors set their own hours, so it can't be promised.
+4. **"Become a tutor" back in the header**, signed out only, as a quiet text link before Log in, and in
+   the mobile menu. It goes to `/signup`, which already asks learn or teach.

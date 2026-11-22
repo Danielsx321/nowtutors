@@ -42,6 +42,17 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("link", { name: "Sign up" }).getAttribute("href")).toBe("/signup");
   });
 
+  it("offers Become a tutor when signed out, and hides it once signed in (audit, 18 Nov 2026)", () => {
+    pathname.current = "/";
+    const { unmount } = render(<SiteHeader viewer={null} />);
+    const links = screen.getAllByRole("link", { name: "Become a tutor" });
+    expect(links.length).toBeGreaterThan(0);
+    for (const l of links) expect(l.getAttribute("href")).toBe("/signup");
+    unmount();
+    render(<SiteHeader viewer={{ home: "/dashboard", displayName: "Ada Obi", avatarUrl: null }} />);
+    expect(screen.queryByRole("link", { name: "Become a tutor" })).toBeNull();
+  });
+
   it("marks All tutors as current on browse without the live filter", () => {
     pathname.current = "/tutors";
     search.current = "";

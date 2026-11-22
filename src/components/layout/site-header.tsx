@@ -32,6 +32,9 @@ export interface SiteHeaderViewer {
  * and nothing here knows the colour. Wordmark left, two text links with the
  * current one underlined (query-aware, see `NavLinks`), a subject search on the browse pages, and the two
  * actions on the right: Log in as text, Sign up as the orange act-now fill.
+ * Signed out, "Become a tutor" sits before Log in as a quiet text link
+ * (audit, 18 Nov 2026: the reviewer could only find it in the footer); it
+ * goes to `/signup`, which asks learn or teach.
  * Signed in, the actions become the person's avatar and a link to their own
  * home, because a signed-in visitor on a public page is one click from being
  * lost.
@@ -96,6 +99,9 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
           ) : (
             <div className="hidden items-center gap-1 md:flex">
               <Button asChild variant="ghost" size="sm">
+                <Link href="/signup">Become a tutor</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
                 <Link href="/login">Log in</Link>
               </Button>
               <Button asChild variant="highlight" size="sm">
@@ -136,6 +142,11 @@ export function SiteHeader({ viewer }: { viewer?: SiteHeaderViewer | null }) {
                       <DrawerClose asChild>
                         <Button asChild variant="highlight">
                           <Link href="/signup">Sign up</Link>
+                        </Button>
+                      </DrawerClose>
+                      <DrawerClose asChild>
+                        <Button asChild variant="ghost">
+                          <Link href="/signup">Become a tutor</Link>
                         </Button>
                       </DrawerClose>
                     </>
