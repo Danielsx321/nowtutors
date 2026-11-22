@@ -114,7 +114,7 @@ describe("legal pages", () => {
     // note and no to-confirm markers; the blanks it left are left out.
     { name: "terms", Page: TermsPage, h1: "Terms and Conditions", path: "/legal/terms", draft: false },
     { name: "privacy", Page: PrivacyPage, h1: "Privacy Policy", path: "/legal/privacy", draft: false },
-    { name: "refunds", Page: RefundsPage, h1: "Refunds and no-shows", path: "/legal/refunds", draft: true },
+    { name: "refunds", Page: RefundsPage, h1: "Refunds and no-shows", path: "/legal/refunds", draft: false },
   ];
   for (const { name, Page, h1, path, draft } of pages) {
     it(`${name}: one h1, the draft note and markers only while a draft, a known route`, () => {

@@ -90,7 +90,7 @@ describe("captcha schemas", () => {
     const { schemas, captcha } = await load(undefined);
     expect(captcha.CAPTCHA_REQUIRED).toBe(false);
     expect(schemas.loginSchema.safeParse({ email: "a@b.co", password: "x" }).success).toBe(true);
-    expect(schemas.signupSchema.safeParse({ email: "a@b.co", ...PW }).success).toBe(true);
+    expect(schemas.signupSchema.safeParse({ fullName: "Ada Lovelace", email: "a@b.co", ...PW }).success).toBe(true);
     expect(schemas.forgotPasswordSchema.safeParse({ email: "a@b.co" }).success).toBe(true);
     expect(schemas.changePasswordSchema.safeParse(CHANGE).success).toBe(true);
   });
@@ -100,7 +100,7 @@ describe("captcha schemas", () => {
     expect(captcha.CAPTCHA_REQUIRED).toBe(true);
     const cases = [
       [schemas.loginSchema, { email: "a@b.co", password: "x" }],
-      [schemas.signupSchema, { email: "a@b.co", ...PW }],
+      [schemas.signupSchema, { fullName: "Ada Lovelace", email: "a@b.co", ...PW }],
       [schemas.forgotPasswordSchema, { email: "a@b.co" }],
       [schemas.changePasswordSchema, CHANGE],
     ] as const;
@@ -154,18 +154,22 @@ describe("captcha wiring, site key set", () => {
 
   it("signup sends the token beside the redirect and maps a refusal", async () => {
     const { auth } = await load(KEY);
-    await expect(auth.signup({ email: "a@b.co", ...PW })).resolves.toEqual({ error: CAPTCHA });
+    await expect(auth.signup({ fullName: "Ada Lovelace", email: "a@b.co", ...PW })).resolves.toEqual({ error: CAPTCHA });
     expect(m.signUp).not.toHaveBeenCalled();
 
-    await expect(auth.signup({ email: "a@b.co", ...PW, captchaToken: "tok" })).resolves.toMatchObject({ ok: true });
+    await expect(auth.signup({ fullName: "Ada Lovelace", email: "a@b.co", ...PW, captchaToken: "tok" })).resolves.toMatchObject({ ok: true });
     expect(m.signUp).toHaveBeenCalledWith({
       email: "a@b.co",
       password: "Passw0rd1",
-      options: { emailRedirectTo: "https://nowtutors.test/auth/callback?next=/onboarding", captchaToken: "tok" },
+      options: {
+        emailRedirectTo: "https://nowtutors.test/auth/callback?next=/onboarding",
+        captchaToken: "tok",
+        data: { full_name: "Ada Lovelace" },
+      },
     });
 
     m.signUp.mockResolvedValue({ data: { session: null }, error: CAPTCHA_REFUSAL });
-    await expect(auth.signup({ email: "a@b.co", ...PW, captchaToken: "tok" })).resolves.toEqual({ error: CAPTCHA });
+    await expect(auth.signup({ fullName: "Ada Lovelace", email: "a@b.co", ...PW, captchaToken: "tok" })).resolves.toEqual({ error: CAPTCHA });
   });
 
   it("the reset request sends the token, maps a refusal, and stays neutral otherwise", async () => {
@@ -218,7 +222,7 @@ describe("captcha wiring, no site key", () => {
       password: "x",
       options: { captchaToken: undefined },
     });
-    await expect(auth.signup({ email: "a@b.co", ...PW })).resolves.toMatchObject({ ok: true });
+    await expect(auth.signup({ fullName: "Ada Lovelace", email: "a@b.co", ...PW })).resolves.toMatchObject({ ok: true });
     await expect(auth.requestPasswordReset({ email: "a@b.co" })).resolves.toMatchObject({ ok: true });
     await expect(settings.changePassword(CHANGE)).resolves.toEqual({ ok: true });
   });

@@ -5770,3 +5770,20 @@ No migration.
 7. **Rollback is one line.** `CSP_HEADER = "Content-Security-Policy-Report-Only"` and redeploy. RUNBOOK
    "Content-Security-Policy" has the after-deploy check.
 
+
+## 2026-11-18 · Audit quick wins (outside reviewer's video audit)
+
+1. **Refunds page leaves draft.** The three `[to confirm]` blanks are filled only from text the final
+   Terms (PR 172) already state: the support email they use, refunds of eligible PayPal payments through
+   the original payment method, and "credits cannot be exchanged directly for cash" (so wallet credits
+   are not paid out on their own; a payment refund is reviewed on request). No new policy is added.
+   Noora can still change the wording.
+2. **Header links: "Online now" and "All tutors", query-aware.** "Live tutors" read as if other tutors
+   don't teach live. The header now reads `?live=1` (via `useSearchParams` behind Suspense), so the
+   underline follows the filter, and both links land on `#results` so the change is in view. The browse
+   band heading says which list you're on ("Tutors online now" / "Browse all tutors"). The search band
+   padding is trimmed (py-10/14 to py-8/10).
+3. **Footer no-show promise links to `/legal/refunds#no-show`** with a one-line explanation.
+4. **Sign-up asks for the full name.** Stored as `full_name` in the auth user's metadata only (no schema
+   change); onboarding starts its name field filled from it (or from Google's `full_name` / `name`), and
+   the profile is still written at onboarding as before.

@@ -29,7 +29,7 @@ export function SignupForm({ next }: { next?: string }) {
     formState: { errors, isSubmitting },
   } = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { email: "", password: "", confirmPassword: "" },
+    defaultValues: { fullName: "", email: "", password: "", confirmPassword: "" },
   });
 
   const onSubmit = handleSubmit(async (values) => {
@@ -58,6 +58,21 @@ export function SignupForm({ next }: { next?: string }) {
       <GoogleButton label="Sign up with Google" />
       <AuthDivider />
       <form onSubmit={onSubmit} noValidate className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="fullName" required>
+            Full name
+          </Label>
+          <Input
+            id="fullName"
+            type="text"
+            autoComplete="name"
+            invalid={!!errors.fullName}
+            aria-describedby="fullName-error"
+            {...register("fullName")}
+          />
+          <FieldError id="fullName-error">{errors.fullName?.message}</FieldError>
+        </div>
+
         <div className="space-y-1.5">
           <Label htmlFor="email" required>
             Email

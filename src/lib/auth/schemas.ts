@@ -46,8 +46,12 @@ export const loginSchema = z.object({
 });
 export type LoginValues = z.infer<typeof loginSchema>;
 
+const fullName = z.string().trim().min(2, "Enter your name.").max(80);
+
+/** Sign-up asks for the name too (audit, 18 Nov 2026); onboarding starts filled with it. */
 export const signupSchema = z
   .object({
+    fullName,
     email,
     password: strongPassword,
     confirmPassword: z.string(),
@@ -81,7 +85,6 @@ export const roleChoiceSchema = z.object({
 });
 export type RoleChoiceValues = z.infer<typeof roleChoiceSchema>;
 
-const fullName = z.string().trim().min(2, "Enter your name.").max(80);
 const timezone = z.string().trim().min(1, "Select your timezone.");
 const subjectSlugs = z.array(z.string().trim().min(1)).max(30);
 const avatarUrl = z

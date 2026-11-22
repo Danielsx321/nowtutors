@@ -43,13 +43,17 @@ export const publicNav: { label: string; href: string }[] = [
 
 /**
  * The site header's links (DESIGN.md v3, design round 3 Part B). Two links,
- * both into browse: the live list first, then everyone. "Teach" moved to the
+ * both into browse: the online list first, then everyone. "Teach" moved to the
  * footer ("Become a tutor"); "How it works" went with the v2 home blocks it
  * pointed at (parked in round 3 Part C).
+ *
+ * "Online now", not "Live tutors" (audit, 18 Nov 2026): every tutor teaches
+ * live, so "Live tutors" read as if the others don't. Both links land on the
+ * results heading (`#results`), so the change is in view without scrolling.
  */
 export const siteNav: { label: string; href: string }[] = [
-  { label: "Live tutors", href: "/tutors?live=1" },
-  { label: "All tutors", href: "/tutors" },
+  { label: "Online now", href: "/tutors?live=1#results" },
+  { label: "All tutors", href: "/tutors#results" },
 ];
 
 /**
