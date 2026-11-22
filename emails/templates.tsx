@@ -516,7 +516,13 @@ export const templates: { [T in EmailType]: Template<T> } = {
       <Shell
         preview={p.noShow ? "The tutor waited, but you didn't join." : "Thanks for learning on NowTutors."}
         heading={p.noShow ? "You missed this one." : "Session done."}
-        cta={{ label: "Book again", href: ctx.url("/tutors") }}
+        // Reviews v1 (2026-11-22): a completed lesson asks for a rating first;
+        // the booking page holds the form (#review). A no-show has nothing to rate.
+        cta={
+          p.noShow
+            ? { label: "Book again", href: ctx.url("/tutors") }
+            : { label: "Rate this lesson", href: ctx.url(`/dashboard/bookings/${p.bookingId}#review`) }
+        }
         manageUrl={ctx.manageUrl}
         footerNote={replyLine(ctx)}
       >
@@ -535,7 +541,13 @@ export const templates: { [T in EmailType]: Template<T> } = {
             credits aren&rsquo;t returned. If something went wrong on our side, reply and tell us.
           </P>
         ) : (
-          <P>If anything about the session wasn&rsquo;t right, reply to this email and tell us.</P>
+          <>
+            <P>
+              How did it go? Rating {p.otherPartyName.split(" ")[0]} takes a few seconds and helps other students
+              choose. Ready for the next one? <A href={ctx.url("/tutors")}>Book again</A>.
+            </P>
+            <P>If anything about the session wasn&rsquo;t right, reply to this email and tell us.</P>
+          </>
         )}
       </Shell>
     ),

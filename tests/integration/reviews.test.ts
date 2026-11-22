@@ -6,6 +6,7 @@ import {
   openConnection,
   type TestConnection,
 } from "./helpers/test-db";
+import { getLessonsToReview } from "@/db/queries/reviews";
 
 /**
  * Reviews v1 (drizzle/0031) against the test project. The rules under test
@@ -101,7 +102,17 @@ describe("reviews (test project)", () => {
     expect(s.count).toBe(s.want_count);
   });
 
-  it("checks the rating range and the comment length", async () => {
+  it("lists a completed lesson on the student's dashboard prompt until it is reviewed", async () => {
+    const b = await createFixtureBooking(conn, { status: "completed", startedMinutesAgo: 60 });
+    bookings.push(b.bookingId);
+    const before = await getLessonsToReview(b.studentId, 50);
+    expect(before.map((l) => l.bookingId)).toContain(b.bookingId);
+    await insertReview(b, 5);
+    const after = await getLessonsToReview(b.studentId, 50);
+    expect(after.map((l) => l.bookingId)).not.toContain(b.bookingId);
+  });
+
+    it("checks the rating range and the comment length", async () => {
     const b = await createFixtureBooking(conn, { status: "completed", startedMinutesAgo: 60 });
     bookings.push(b.bookingId);
     expect(await failure(insertReview(b, 6))).toMatch(/reviews_rating_chk/);

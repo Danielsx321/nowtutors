@@ -24,6 +24,8 @@ import { PeopleList } from "@/components/features/dashboard/people-list";
 import { DashboardColumns, RailBox } from "@/components/features/dashboard/dashboard-columns";
 import { BookingsTable } from "@/components/features/dashboard/bookings-table";
 import { cn } from "@/lib/utils";
+import { getLessonsToReview } from "@/db/queries/reviews";
+import { RateLessons } from "@/components/features/reviews/rate-lessons";
 
 export const metadata = { title: "Dashboard · NowTutors" };
 export const dynamic = "force-dynamic";
@@ -76,7 +78,7 @@ export default async function StudentDashboardPage() {
   ]);
   const timeZone = me?.timezone ?? "UTC";
 
-  const [liveCount, live, tutors, months] = await Promise.all([
+  const [liveCount, live, tutors, months, toReview] = await Promise.all([
     getLiveTutorCount().catch(() => 0),
     browseTutors(parseTutorSearchParams(new URLSearchParams("live=1")), { viewerId: user.id }).catch(() => ({
       cards: [],
@@ -84,6 +86,7 @@ export default async function StudentDashboardPage() {
     })),
     getStudentTutors(user.id, 4).catch(() => []),
     getLearnerHoursByMonth(user.id, timeZone, 5),
+    getLessonsToReview(user.id, 3).catch(() => []),
   ]);
 
   const now = new Date();
@@ -211,6 +214,11 @@ export default async function StudentDashboardPage() {
 
   const rail = (
     <>
+      {toReview.length > 0 && (
+        <RailBox title="Rate your lessons">
+          <RateLessons lessons={toReview} timeZone={timeZone} />
+        </RailBox>
+      )}
       <RailBox title="Your learning">
         <div className="grid justify-items-center gap-1.5 text-center">
           <div className="relative mb-1.5 rounded-full border-2 border-primary p-1.5">

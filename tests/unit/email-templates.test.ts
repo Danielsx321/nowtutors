@@ -154,6 +154,16 @@ describe("Part 2 templates", () => {
     expect(free.text).toContain("Nothing was charged");
   });
 
+  it("asks the student to rate a completed lesson, and not a missed one (reviews v1)", async () => {
+    const rate = "https://nowtutors.test/dashboard/bookings/3f0c1b7e-0000-4000-8000-000000000001#review";
+    const done = await renderEmail("session-summary-student", SAMPLE_PROPS["session-summary-student"], { recipient, appUrl });
+    expect(done.html).toContain(rate);
+    expect(done.text).toContain("Rate this lesson");
+    const missed = await renderEmail("session-summary-student", { ...SAMPLE_PROPS["session-summary-student"], noShow: true }, { recipient, appUrl });
+    expect(missed.html).not.toContain("#review");
+    expect(missed.text).toContain("Book again");
+  });
+
   it("words a no-show differently on each side", async () => {
     const s = await renderEmail("session-summary-student", { ...SAMPLE_PROPS["session-summary-student"], noShow: true }, { recipient, appUrl });
     expect(s.subject).toBe("You missed your Spanish session");
