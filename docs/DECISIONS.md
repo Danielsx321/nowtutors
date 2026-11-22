@@ -5863,3 +5863,18 @@ No migration.
    there is something to rate, and a lesson drops off once rated or 30 days after it ended, so it never
    nags forever. Instant and scheduled lessons both count (`getLessonsToReview`).
 
+
+## 2026-11-22 · Tutor session counts (drizzle/0032)
+
+1. **The counts are now real.** `completed_sessions` and `total_minutes_taught` had no app writer, so
+   profiles said "No sessions yet" for tutors who had taught, which read oddly beside a review. A trigger
+   on `bookings` recounts the tutor from their completed bookings whenever a status, the minutes or the
+   tutor changes.
+2. **Recount, not +1.** An admin moving a booking out of `completed` takes it back off; a repeat write
+   changes nothing.
+3. **No SECURITY DEFINER.** Clients can't write bookings since 0021, so every write that fires the trigger
+   is the trusted server or the service role, which `tutor_stats_guard` (0027) admits.
+4. **Backfilled once** in the migration. On production this sets every tutor to their true count; on dev
+   and test it replaces the seed's invented numbers. Browse's "most sessions" sort and the relevance
+   tiebreaker read the same column, so they now rank on real lessons.
+
